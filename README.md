@@ -12,6 +12,7 @@ Image reverse prompting is a separate sibling extension:
 
 - Floating assistant for composition, layout, and prompt rewriting
 - Frontend Pi runtime: stream, reason, tool calls, abort, terminal recovery
+- FIFO follow-ups while a response is active, with visible pause/resume recovery
 - Python-authoritative Model Profiles (HTTP + local llama.cpp)
 - Server-owned secrets; browser never receives plaintext keys or local paths
 - Cross-browser sessions with a server-side SQLite authority and IndexedDB cache
@@ -64,10 +65,13 @@ The model only sees these tools (frontend registry + Python validation / host):
 | `search_resources` | read | Search styles, wildcards, LoRAs, models, embeddings |
 | `inspect_resource` | read | Inspect one resource by logical ID |
 | `search_danbooru_tags` | read | Live Danbooru tag search for 1–12 concepts |
-| `inspect_danbooru_tags` | read | Inspect 1–12 tags (+ optional wiki) |
+| `inspect_danbooru_tags` | read | Inspect 1–12 tags with Wiki bodies by default |
 | `related_danbooru_tags` | read | Related tags for one verified seed |
+| `search_danbooru_wikis` | read | Search arbitrary Wiki and Tag Group titles |
+| `inspect_danbooru_wikis` | read | Read Wiki/Group bodies and bounded next-hop references |
 
-The model receives 9 tools: 7 read-only and 2 write tools. Write tools require a
+The model receives 11 Forge tools: 9 read-only and 2 write tools, plus the
+frontend prompt toolkit and on-demand skill loader. Write tools require a
 fresh hash from a prior read. Non-empty prompt fields must
 use `patches` or `diff`; a full `prompt` body is accepted only when the current
 field is empty. Browser arguments are revalidated by Python before Forge DOM

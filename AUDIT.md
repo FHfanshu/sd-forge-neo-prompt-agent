@@ -838,3 +838,160 @@ local-only under `docs/archive/`.
   browser scenarios, and browser-script syntax checks.
 - Residual scope: profile changes intentionally take effect at the next idle
   send boundary. An in-flight provider request is never switched mid-stream.
+
+## 2026-07-23 Grounded Image Instructions And Mobile Multi-Select
+
+- Root cause: the system prompt did not require the model to establish visible
+  image facts before rewriting Forge prompts, so a vision model could jump from
+  a partial reading to unsupported edits. The attachment input already declared
+  HTML `multiple`, but some mobile media-picker routes still presented a
+  single-selection flow.
+- Changed `frontend/src/agent/controller.ts` to require a per-image factual
+  inventory of visible content, visual style, and composition before prompt
+  changes, including uncertainty boundaries and multi-image separation. Image
+  caption requests now produce one concise detailed English NL version and one
+  evidence-equivalent purely Chinese version. Both follow content, style, then
+  composition as one continuous context rather than disconnected fragments. Changed
+  `frontend/src/components/Surface.svelte` to prefer the native open-file picker
+  with explicit multi-selection and retain the standard multi-file input as a
+  compatibility fallback.
+- Added `IMAGE-INPUT-001` acceptance coverage and focused controller/surface
+  regressions. The focused suites passed 55 tests and Svelte check reported 0
+  errors and 0 warnings. The affected gate passed 21 Python tests, 114 selected
+  frontend tests, and all 7 browser scenarios. The final full gate passed 102
+  Python tests, all frontend tests, the production build and bundle budget, all
+  7 browser scenarios, and browser-script syntax checks.
+- Residual scope: the final picker UI is controlled by the mobile browser and
+  operating system. Browsers without the native picker API use the existing
+  standards-based multi-file input and still support incremental attachment.
+
+## 2026-07-23 Provider EOF Retry Classification
+
+- Root cause: an unexpected provider EOF retained the successful upstream HTTP
+  status 200. The frontend checked any present status code before its structured
+  provider error code, so `provider_unexpected_eof` was incorrectly treated as
+  non-retryable. The frontend retry-code names also omitted the backend's actual
+  `provider_connection_error` and `provider_timeout` classifications.
+- Changed `frontend/src/providers/proxy-stream.ts` so structured transient codes
+  take priority over the accompanying HTTP status and aligned the connection and
+  timeout codes. The existing safe pre-output policy remains: at most three
+  attempts with capped 500 ms, 1 s exponential delays; no replay after text,
+  reasoning, or tool output begins.
+- Added regressions for repeated HTTP-200 unexpected EOF recovery and the capped
+  exponential delay sequence. Advanced `SESSION-LIFECYCLE-001` to revision 3
+  and reviewed all mapped lifecycle tests. The affected gate passed 28 Python
+  tests, 116 selected frontend tests, and all 7 browser scenarios. The full gate
+  passed 102 Python tests, all frontend tests, the production build and bundle
+  budget, all 7 browser scenarios, and browser-script syntax checks.
+
+## 2026-07-27 Parallel Read Tools, Compact Prompt Results, And On-Demand Skills
+
+- Root causes: the agent runtime explicitly selected sequential tool execution
+  and all Forge tools were marked sequential, so even independent reads waited
+  for one another. Usage projection discarded provider cache counters. Prompt
+  results hid the useful receipt inside a disclosure while devoting space to
+  moved and normalized groups whose ordering was not actionable. A server skill
+  endpoint and browser loader existed, but no active Pi tool exposed them.
+- Changed the runtime and tool metadata so a model-returned batch of independent
+  read tools runs concurrently, while any batch containing a Forge mutation is
+  serialized. The process drawer stays collapsed by default; the prompt receipt
+  is always visible before the final answer and shows only added and removed
+  fragments. Usage now renders input, output, and cache-read tokens. Added the
+  bounded `load_skill` tool with `danbooru_tags`, `anima_dit`, and
+  `forge_couple` guides, including host-side reuse of successfully loaded skills.
+  The Forge Couple guide documents the locally installed 7.1.0 prompt-region
+  contract without claiming control of that extension's UI settings.
+- Advanced `AGENT-TOOLS-001`, `UI-FEEDBACK-001`, and `PROMPT-DIFF-001`, and added
+  `PROMPT-SKILL-001` with focused concurrency, UI, host-bridge, and skill tests.
+  The affected gate passed 48 Python tests, 118 selected frontend tests, and all
+  7 browser scenarios. The full gate passed 104 Python tests, 11 browser host
+  contracts, 186 frontend tests, Svelte check with 0 errors and 0 warnings, the
+  production build and bundle budget, all 7 browser scenarios, and every browser
+  script syntax check.
+- Residual scope: `load_skill` supplies prompt-writing knowledge only. It does
+  not enable Forge Couple or change its mode, separator, orientation, or mapping;
+  those UI settings remain user-controlled. Live Forge was not restarted during
+  this increment; verification used the production bundle and mock-host browser
+  acceptance suite.
+
+## 2026-07-27 Borderless Chat Transcript
+
+- Root cause: the earlier compact-chat work changed visibility and ordering but
+  retained the previous visual containers. The assistant accent rail, process
+  outline, nested process/tool rails, prompt-diff panel, count pills, header
+  divider, and highlighted diff backgrounds still produced a card-inside-card
+  appearance even with the process collapsed.
+- Changed `frontend/src/styles.css` so the chat reads as one continuous surface.
+  Assistant answers, the process disclosure, expanded reasoning and tool output,
+  and the always-visible prompt change receipt now use spacing, type weight, and
+  semantic text color without decorative borders, rails, container fills, or
+  count pills. The outer movable window and composer retain boundaries because
+  they are interactive controls. Windows forced-colors mode retains its explicit
+  prompt-change outline so the receipt remains distinguishable without color.
+- Advanced `UI-FEEDBACK-001` to revision 5 and `PROMPT-DIFF-001` to revision 3.
+  Added a focused style regression and reviewed the mapped surface/runtime tests.
+  The 43 focused frontend tests passed, Svelte check reported 0 errors and 0
+  warnings, and the desktop mock-host browser flow passed with a fresh
+  `chat-messages.png` visual capture. The affected gate passed 48 Python tests,
+  118 selected frontend tests, and all 7 browser scenarios. The final full gate
+  passed 104 Python tests, 11 browser host contracts, 187 frontend tests, Svelte
+  check with 0 errors and 0 warnings, the production build and bundle budget,
+  all 7 browser scenarios, and every browser-script syntax check.
+- Opened the running Forge instance at `127.0.0.1:7860` in a fresh headless
+  Chromium session without sending a message or mutating Forge state. The live
+  chat loaded the rebuilt bundle, reported no header divider, and rendered a
+  restored prompt-change/tool/cache/final-answer turn as a continuous borderless
+  transcript. A final `real-forge-borderless.png` capture records that state.
+- Residual scope: profile settings, modal popovers, the outer floating-window
+  boundary, form fields, and image controls retain borders where they communicate
+  interaction or containment. This increment targets the conversation transcript
+  and does not flatten every control in the extension.
+
+## 2026-07-28 Stable Send And Separate Stop Controls
+
+- Root cause: `Surface.svelte` cleared the draft and then awaited session setup,
+  attachment materialization, controller connection, and profile/session refresh
+  before the controller published `activeRequestId`. During that gap the UI gave
+  no working feedback. Once active state arrived, an `{active ? Stop : Send}`
+  branch replaced the primary send button in the same screen position. A retry
+  click could therefore land on Stop, and unmodified Enter explicitly called
+  `stop()` during an active response.
+- Changed `frontend/src/components/Surface.svelte` to set a synchronous local
+  submission latch before any await, ignore duplicate submissions, and render
+  immediate Sending feedback. The primary send button now remains the same DOM
+  control and screen target throughout submission. It is disabled while busy;
+  Stop appears as a separate, visually secondary control beside it. Enter during
+  an active or pending request no longer aborts. Drafts typed during generation
+  remain available for the next send.
+- Changed `frontend/src/styles.css` to give only the short pre-activation state a
+  visible spinner while preserving reduced-motion behavior, and to keep Stop a
+  secondary error-colored action rather than a replacement primary button.
+  Added delayed-submission unit coverage and a browser assertion that the exact
+  send DOM node survives the transition to an active request. Advanced
+  `UI-FEEDBACK-001` to revision 6 with an explicit `submission` scenario.
+- Regression-first evidence: the focused tests initially failed because the
+  active state exposed only Stop and the delayed pre-activation state exposed no
+  busy feedback. After the implementation, the two focused cases passed.
+- `python tools/test_gate.py affected`: passed 48 Python tests, Svelte check with
+  0 errors and 0 warnings, 119 affected frontend tests, all 7 Playwright
+  scenarios, and acceptance validation with 18 requirements / 53 mappings.
+- `python tools/test_gate.py full`: passed 104 Python tests, 11 browser-host
+  contracts, Svelte check with 0 errors and 0 warnings, 188 frontend tests, the
+  production bundle and gzip budgets, all 7 Playwright scenarios, and all
+  browser-script syntax checks.
+
+## 2026-07-28 Natural-Language Prompt Write Enforcement
+- Root cause/fix: image-style directives and explicit prose requests allowed tag-only writes; intent routing and pre-write validation now require new substantive NL while preserving tags/syntax. `PROMPT-TOOLKIT-001@2` adds `natural-language-write`.
+- Regression-first focused tests passed; affected passed 48 Python/121 frontend/7 browser tests, and full passed 104 Python/11 host/190 frontend/Svelte 0/0/build/budget/7 Playwright/acceptance 18/54.
+
+## 2026-07-28 Danbooru Wiki Default and Concrete Style Brainstorming
+- Root cause: batch inspection defaulted Wiki off and URL-only results counted as research; abstract aesthetics were copied instead of expanded. Defaults now include Wiki bodies across Python/API/host/schema, runtime requires non-empty bodies, and system/Anima guidance translates style labels into concrete visual candidates.
+- Regression-first default tests failed as expected, then targeted tests passed; affected passed 48 Python, 121 frontend and 7 browser tests, and full passed 104 Python, 12 host, 190 frontend, Svelte 0/0, build/budget, 7 Playwright, syntax, and acceptance 18/56.
+
+## 2026-07-28 Agentic Danbooru Wiki and Tag Group Navigation
+- Root cause/fix: tag tools could read one exact Wiki but could not search arbitrary Wiki/Group titles or expose next hops. Added validated Wiki search and batch inspection tools across Python/API/host/frontend; DText references are deduplicated and capped at 80, bodies at 12,000 characters, and Agent policy follows only relevant inspected branches.
+- Regression-first failures covered missing tools and routes. Live `frutiger_aero` inspection found 20 references and followed `tag_group:visual_aesthetic` to 59 bounded entries; affected passed 50 Python/121 frontend/7 browser tests, and full passed 106 Python/13 host/190 frontend/Svelte 0/0/build/budget/7 Playwright/acceptance 18/57.
+
+## 2026-07-28 FIFO Follow-up Queue
+- Root cause/fix: active requests disabled Send and silently retained text. The composer now queues up to eight FIFO follow-ups, shows/removes them in a borderless list, advances after success, and pauses after failure, cancellation, or preparation-time stop.
+- Focused tests cover ordering, immediate acknowledgement, removal, failure resume, and preparation-time cancellation. Affected passed 50 Python/124 frontend/7 browser tests; full passed 106 Python/13 host/193 frontend/Svelte 0/0/build/budget/7 Playwright/acceptance 18/58.

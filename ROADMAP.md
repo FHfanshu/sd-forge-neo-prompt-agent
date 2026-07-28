@@ -206,6 +206,8 @@ inspect_resource
 search_danbooru_tags
 inspect_danbooru_tags
 related_danbooru_tags
+search_danbooru_wikis
+inspect_danbooru_wikis
 ```
 
 Every tool needs a frontend TypeBox schema, backend validation, timeout,
@@ -217,14 +219,16 @@ Exit criteria:
 - stale prompt mutations remain hash guarded;
 - failed or aborted tools do not leave the runtime blocked.
 
-Frontend TypeBox schemas and Python validation cover all nine listed tools.
+Frontend TypeBox schemas and Python validation cover all eleven listed tools.
 Positive/negative prompts share a required `field` selector; Forge
 catalogs share `kind`. Prompt
 and generation mutations are freshness guarded, nested patch and generation
 values are revalidated, and catalog output is a logical-ID allowlist. Full
 prompt overwrite is allowed only when the current field is empty. Danbooru tag
-tools execute through the existing resource host path. `ask_teacher` is not
-part of the agent tool surface. Browser-host prompt and generation tools call
+and Wiki tools execute through the existing resource host path. Wiki inspection
+returns bounded bodies and parsed next-hop references so the agent can explore
+relevant Wiki and Tag Group branches without an unbounded crawler. `ask_teacher`
+is not part of the agent tool surface. Browser-host prompt and generation tools call
 the Python validation boundary before reading or mutating Forge DOM.
 
 ## Phase 7: Profiles
@@ -351,7 +355,21 @@ Implemented:
 - bounded analyze, split, deduplicate, sort, normalize, validate, and compose;
 - enforced toolkit-before-write Agent Loop ordering;
 - live negative activation hash and changed-but-inactive reporting;
-- persisted tool-result-derived semantic evidence and compact diff UI.
+- persisted tool-result-derived semantic evidence and compact add/remove diff UI;
+- a continuous borderless chat transcript that uses spacing and typography
+  instead of nested process, tool-result, and prompt-diff cards or rails;
+- immediate send acknowledgement with a position-stable primary send control
+  and a separate secondary stop control, preventing delayed mode-swap aborts;
+- a compact FIFO follow-up queue at the composer: successful turns advance it,
+  while failure or cancellation keeps pending work visible, removable, and resumable;
+- on-demand `load_skill` guidance for Danbooru tags, Anima DiT prompts, and
+  Forge Couple regional/multi-character prompting;
+- intent-aware natural-language prompt writes: explicit NL requests and
+  attached-image style transfers require a new substantive prose block unless
+  the user explicitly asks for tags only, with tag-only substitutions rejected
+  before they can mutate Forge state;
+- concurrent same-turn read-only tool batches while every batch containing a
+  live Forge mutation remains sequential.
 
 Remaining:
 
