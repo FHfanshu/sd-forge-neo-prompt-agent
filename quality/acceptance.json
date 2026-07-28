@@ -85,19 +85,48 @@
       "assertion_policy": "Assert stable profile identity, visible form semantics, exact deletion target, and failure recovery; do not depend on dropdown internals."
     },
     {
+      "id": "IMAGE-INPUT-001",
+      "revision": 1,
+      "area": "agent",
+      "title": "Grounded image analysis and multi-image input",
+      "acceptance": [
+        "Before changing a prompt from attached images, the agent grounds itself in a per-image factual inventory of visible content, visual style, and composition and separates evidence from uncertainty.",
+        "Requested image captions provide one detailed objective English natural-language version and one evidence-equivalent purely Chinese version, each flowing as one coherent context ordered by content, style, and composition without filler or unsupported speculation.",
+        "A supported system picker is explicitly asked for multiple images in one selection, while the standard multi-file input remains available as the compatibility fallback."
+      ],
+      "required_scenarios": [
+        "visual-grounding",
+        "bilingual-caption",
+        "multi-select"
+      ],
+      "paths": [
+        "frontend/src/agent/controller.ts",
+        "frontend/src/components/Surface.svelte",
+        "frontend/tests/prompt-agent-controller.test.ts",
+        "frontend/tests/surface.test.ts"
+      ],
+      "assertion_policy": "Assert the semantic analysis order, two caption languages, explicit multi-select request, and fallback availability; do not depend on private picker UI or exact prose outside the required contract."
+    },
+    {
       "id": "UI-FEEDBACK-001",
-      "revision": 3,
+      "revision": 7,
       "area": "ui",
       "title": "Compact lifecycle and process feedback",
       "acceptance": [
         "On-demand local model startup shows a distinct loading phase and elapsed time.",
         "Completion, failure, and cancellation clear the loading state without leaving the composer disabled.",
-        "Each user turn presents one final assistant response while reasoning, intermediate responses, tools, aggregate usage, and tool failures remain available in one default-collapsed process drawer; only a terminal turn failure marks the whole drawer as failed, while a recovered tool failure remains scoped to that tool."
+        "Each user turn presents one final assistant response while reasoning, intermediate responses, tools, aggregate input/output/cache-read usage, and tool failures remain available in one default-collapsed process drawer; only a terminal turn failure marks the whole drawer as failed, while a recovered tool failure remains scoped to that tool.",
+        "The chat transcript is one continuous borderless reading surface: assistant responses, the process drawer, expanded reasoning, and tool results use spacing and typography instead of nested card borders, decorative horizontal rules, or vertical rails.",
+        "A send action produces immediate pending feedback before session, attachment, controller, or profile preparation completes; duplicate clicks are ignored until that submission reaches a terminal state.",
+        "The primary send control keeps its position while a request is active and accepts another composer submission as a FIFO follow-up for after the current response. Stop remains a separate secondary control, so neither a click at the send position nor Enter in the composer can accidentally stop the response.",
+        "Queued follow-ups appear immediately in one compact borderless list, can be removed before execution, advance only after a successful response, and remain visibly paused and resumable after failure or cancellation."
       ],
       "required_scenarios": [
         "loading",
         "recovery",
-        "process"
+        "process",
+        "submission",
+        "queue"
       ],
       "paths": [
         "backend/prompt_agent/local_runtime.py",
@@ -106,18 +135,20 @@
         "frontend/src/components/Surface.svelte",
         "frontend/src/components/WorkingIndicator.svelte",
         "frontend/src/stores/runtime.ts",
+        "frontend/src/styles.css",
+        "frontend/tests/style-tokens.test.ts",
         "frontend/tests/surface.test.ts",
         "tests/test_local_runtime.py"
       ],
-      "assertion_policy": "Assert user-visible phase and recovery, not polling count or timer implementation."
+      "assertion_policy": "Assert immediate user-visible submission feedback, stable control semantics, terminal recovery, and later usability; do not depend on polling counts, exact timing, or private promise ordering."
     },
     {
       "id": "SESSION-LIFECYCLE-001",
-      "revision": 2,
+      "revision": 3,
       "area": "session",
       "title": "Terminal request recovery",
       "acceptance": [
-        "Transient network failures and HTTP 408, 425, 429, 500, 502, 503, or 504 retry before any streamed output, with at most three total attempts by default.",
+        "Transient connection errors, timeouts, unexpected provider EOFs (including EOF reported with upstream HTTP 200), and HTTP 408, 425, 429, 500, 502, 503, or 504 retry before any streamed output, with at most three total attempts by default and capped exponential backoff.",
         "A request is never automatically replayed after assistant content, reasoning, or a tool call has started.",
         "Provider failure and user abort both reach a terminal runtime state.",
         "The active request is cleared and the composer can submit again."
@@ -191,13 +222,13 @@
     },
     {
       "id": "AGENT-LOOKUP-001",
-      "revision": 1,
+      "revision": 2,
       "area": "agent",
       "title": "Verified named-entity background lookup",
       "acceptance": [
         "Named-entity background questions first search and inspect local Forge styles.",
-        "Danbooru lookup is used only when no local style matches.",
-        "Unverified text is hidden and cannot become the persisted answer."
+        "Danbooru lookup is used only when no local style matches, and it searches a canonical Wiki title before inspecting the selected page.",
+        "Unverified text is hidden and cannot become the persisted answer; a URL, candidate, or uninspected next-hop reference is not verified evidence."
       ],
       "required_scenarios": [
         "style-first",
@@ -210,31 +241,47 @@
         "frontend/src/providers/proxy-stream.ts",
         "frontend/tests/agent-runtime.test.ts"
       ],
-      "assertion_policy": "Assert forced tool sequence, source fallback, and visible transcript semantics."
+      "assertion_policy": "Assert style-first lookup, forced Wiki search then inspection fallback, non-empty body evidence, and visible transcript semantics."
     },
     {
       "id": "AGENT-TOOLS-001",
-      "revision": 1,
+      "revision": 4,
       "area": "agent",
       "title": "Forge tool authority and freshness",
       "acceptance": [
         "The agent receives only the declared Forge tool surface.",
         "Browser tool arguments are revalidated by Python.",
-        "Prompt and generation mutations require fresh hashes."
+        "Prompt and generation mutations require fresh hashes.",
+        "Independent read-only tool calls emitted in one model turn execute concurrently.",
+        "A tool batch containing any Forge write executes sequentially so mutations cannot race live state.",
+        "Danbooru batch inspection includes bounded Wiki bodies by default; only an explicit include_wiki=false requests metadata-only results, and URL-only search output never counts as inspected background content.",
+        "Danbooru Wiki tools search arbitrary Wiki and Tag Group titles and inspect selected pages with bounded bodies plus deduplicated bounded next-hop references, enabling deliberate multi-round exploration without an unbounded crawler."
       ],
       "required_scenarios": [
         "surface",
         "revalidation",
-        "freshness"
+        "freshness",
+        "parallel-reads",
+        "serialized-writes",
+        "danbooru-wiki-default",
+        "wiki-navigation"
       ],
       "paths": [
         "backend/prompt_agent/forge_tools.py",
+        "prompt_agent/danbooru.py",
+        "scripts/prompt_agent.py",
         "frontend/src/tools/**",
+        "frontend/src/agent/agent-runtime.ts",
+        "frontend/src/agent/controller.ts",
         "javascript/prompt_agent*.js",
+        "frontend/tests/agent-runtime.test.ts",
+        "frontend/tests/forge-tools.test.ts",
         "tests/test_forge_tools.py",
-        "tests/test_host_bridge.py"
+        "tests/test_host_bridge.py",
+        "tests/test_resources.py",
+        "tests/test_frontend_resources.js"
       ],
-      "assertion_policy": "Exact tool names are contractual; internal registry implementation is not."
+      "assertion_policy": "Assert exact tool names, read/write execution semantics, default Wiki-body retrieval across host and backend boundaries, canonical Wiki search, bounded parsed references, and that verified background requires body content; internal registry implementation is not contractual."
     },
     {
       "id": "PROVIDER-TOOLS-001",
@@ -309,37 +356,76 @@
     },
     {
       "id": "PROMPT-TOOLKIT-001",
-      "revision": 1,
+      "revision": 2,
       "area": "agent",
       "title": "Hybrid prompt toolkit and enforced write order",
       "acceptance": [
         "Mixed natural-language, Danbooru-tag, special-syntax, and unknown prompt content round trips without silent conversion or loss.",
         "Deduplication, sorting, normalization, validation, and composition are deterministic, bounded, and conservative about selected pools and prompt groups.",
-        "A requested cleanup must successfully run prompt_toolkit before edit_prompt, and only edit_prompt may mutate Forge state."
+        "A requested cleanup must successfully run prompt_toolkit before edit_prompt, and only edit_prompt may mutate Forge state.",
+        "Explicit natural-language writes and attached-image style transfers require a new substantive natural-language block unless the user requests tags only; tag-only edit_prompt calls are rejected before Forge state changes."
       ],
       "required_scenarios": [
         "hybrid-preservation",
         "deterministic-operations",
-        "toolkit-before-write"
+        "toolkit-before-write",
+        "natural-language-write"
       ],
       "paths": [
         "frontend/src/prompts/**",
         "frontend/src/tools/prompt-toolkit.ts",
+        "frontend/src/tools/forge-tools.ts",
         "frontend/src/agent/agent-runtime.ts",
         "frontend/src/agent/controller.ts",
+        "prompt_agent/prompt_skills.py",
         "frontend/tests/prompt-toolkit.test.ts",
-        "frontend/tests/agent-runtime.test.ts"
+        "frontend/tests/agent-runtime.test.ts",
+        "frontend/tests/prompt-agent-controller.test.ts",
+        "tests/test_resources.py"
       ],
-      "assertion_policy": "Assert lossless parsing, pool-local transformations, special-token preservation, and observable tool order; do not lock parser implementation details."
+      "assertion_policy": "Assert lossless parsing, pool-local transformations, special-token preservation, observable tool order, NL intent routing, and pre-write rejection of tag-only substitutions; do not lock parser implementation details."
+    },
+    {
+      "id": "PROMPT-SKILL-001",
+      "revision": 2,
+      "area": "agent",
+      "title": "On-demand specialized prompt skills",
+      "acceptance": [
+        "The active agent exposes one bounded load_skill tool with only the curated Danbooru, Anima DiT, and Forge Couple skill names.",
+        "Only the requested skill guide is loaded into the tool result, and repeated host loads reuse the session cache.",
+        "The Forge Couple skill reflects the installed 7.1.0 prompt-line, separator, region, common-prompt, and validation semantics without claiming unsupported UI control.",
+        "Abstract aesthetic labels are treated as brainstorming seeds and translated into a broad candidate inventory of concrete visible cues before a selective model-facing prompt is written."
+      ],
+      "required_scenarios": [
+        "registration",
+        "load",
+        "catalog",
+        "host-cache",
+        "forge-couple",
+        "abstract-style-translation"
+      ],
+      "paths": [
+        "prompt_agent/prompt_skills.py",
+        "scripts/prompt_agent.py",
+        "javascript/prompt_agent_02_resources.js",
+        "frontend/src/tools/load-skill.ts",
+        "frontend/src/tools/tool-registry.ts",
+        "frontend/src/agent/controller.ts",
+        "frontend/tests/load-skill.test.ts",
+        "frontend/tests/prompt-agent-controller.test.ts",
+        "tests/test_resources.py",
+        "tests/test_host_bridge.py"
+      ],
+      "assertion_policy": "Assert the bounded catalog, requested-guide loading, cache reuse, version-specific Forge Couple semantics, and concrete visual translation of abstract aesthetics; do not lock the full guide text."
     },
     {
       "id": "PROMPT-DIFF-001",
-      "revision": 1,
+      "revision": 3,
       "area": "ui",
       "title": "Confirmed prompt mutation diff",
       "acceptance": [
-        "A successful edit_prompt result with confirmed before and after text renders a compact semantic diff before the final assistant answer.",
-        "Added and removed content use green and red styling plus explicit icons and labels, while moved and normalized content remain distinguishable.",
+        "A successful edit_prompt result with confirmed additions or removals renders an always-visible compact borderless semantic diff before the final assistant answer.",
+        "Added and removed content use green and red styling plus explicit icons and labels; moved and normalized-only changes are omitted because their ordering is not presented clearly enough to be useful.",
         "A changed but disabled negative prompt is labeled inactive and never presented as effective generation state."
       ],
       "required_scenarios": [
@@ -351,9 +437,10 @@
         "frontend/src/components/ProcessDrawer.svelte",
         "frontend/src/agent/controller.ts",
         "frontend/src/styles.css",
+        "frontend/tests/style-tokens.test.ts",
         "frontend/tests/surface.test.ts"
       ],
-      "assertion_policy": "Assert visible labels, semantic additions and removals, inactive-negative messaging, and placement before the final answer; do not lock exact colors or DOM nesting."
+      "assertion_policy": "Assert visible labels, semantic additions and removals, inactive-negative messaging, borderless presentation, and placement before the final answer; do not lock exact colors or DOM nesting."
     },
     {
       "id": "PROMPT-STATE-001",

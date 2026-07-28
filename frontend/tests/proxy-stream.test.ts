@@ -1,4 +1,4 @@
-import { createPromptAgentStream } from "../src/providers/proxy-stream";
+import { createPromptAgentStream, retryDelay } from "../src/providers/proxy-stream";
 import { toPromptAgentModel } from "../src/providers/proxy-model";
 import { acceptanceTest } from "./acceptance";
 
@@ -50,7 +50,7 @@ describe("prompt agent proxy stream", () => {
     expect(result.errorMessage).toContain("terminal event");
   });
 
-  acceptanceTest("SESSION-LIFECYCLE-001@2", "retry,failure", "retries a transient HTTP failure before the agent loop sees an error", async () => {
+  acceptanceTest("SESSION-LIFECYCLE-001@3", "retry,failure", "retries a transient HTTP failure before the agent loop sees an error", async () => {
     let attempts = 0;
     const retries: number[] = [];
     const fetchImpl: typeof fetch = async () => {
@@ -102,6 +102,45 @@ describe("prompt agent proxy stream", () => {
 
     expect(attempts).toBe(2);
     expect(result.stopReason).toBe("stop");
+  });
+
+  it("retries an unexpected EOF even when the upstream HTTP status was 200", async () => {
+    let attempts = 0;
+    const retries: number[] = [];
+    const fetchImpl: typeof fetch = async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        return response(
+          { type: "start" },
+          { type: "error", reason: "error", errorCode: "provider_unexpected_eof", statusCode: 200, errorMessage: "The provider stream ended before completion." },
+        );
+      }
+      return response(
+        { type: "start" },
+        { type: "text_start", contentIndex: 0 },
+        { type: "text_delta", contentIndex: 0, delta: "Recovered after EOF" },
+        { type: "text_end", contentIndex: 0 },
+        { type: "done", reason: "stop" },
+      );
+    };
+    const streamFn = createPromptAgentStream(
+      () => "profile-1",
+      undefined,
+      fetchImpl,
+      () => "turn-eof",
+      ({ attempt }) => retries.push(attempt),
+    );
+
+    const result = await (await streamFn(model, { messages: [] }, { maxRetryDelayMs: 0 })).result();
+
+    expect(attempts).toBe(3);
+    expect(retries).toEqual([2, 3]);
+    expect(result.stopReason).toBe("stop");
+    expect(result.content).toEqual([{ type: "text", text: "Recovered after EOF" }]);
+  });
+
+  it("uses capped exponential retry delays", () => {
+    expect([1, 2, 3, 4, 5].map((attempt) => retryDelay(attempt, 5_000))).toEqual([500, 1_000, 2_000, 4_000, 5_000]);
   });
 
   it("does not replay a request after streamed output has begun", async () => {

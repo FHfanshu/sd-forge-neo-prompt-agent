@@ -113,6 +113,41 @@ describe("PiPromptAgentRuntime", () => {
     runtime.destroy();
   });
 
+  acceptanceTest("AGENT-TOOLS-001@4", "parallel-reads,serialized-writes", "runs independent read batches concurrently while serializing any batch that contains a write", async () => {
+    async function peakConcurrency(modes: Array<"parallel" | "sequential">): Promise<number> {
+      let turn = 0;
+      let active = 0;
+      let peak = 0;
+      const tools: AgentTool<any>[] = modes.map((executionMode, index) => ({
+        name: `tool_${index}`,
+        label: `Tool ${index}`,
+        description: "Concurrency probe",
+        parameters: Type.Object({}),
+        executionMode,
+        execute: async () => {
+          active += 1;
+          peak = Math.max(peak, active);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          active -= 1;
+          return { content: [{ type: "text", text: "ok" }], details: { ok: true } };
+        },
+      }));
+      const streamFn: StreamFn = (activeModel) => {
+        turn += 1;
+        return turn === 1
+          ? streamMessage(activeModel as typeof model, tools.map((tool, index) => ({ type: "toolCall", id: `call-${index}`, name: tool.name, arguments: {} })), "toolUse")
+          : streamMessage(activeModel as typeof model, [{ type: "text", text: "done" }]);
+      };
+      const runtime = new PiPromptAgentRuntime({ model, streamFn, tools });
+      await runtime.submit({ text: "Run the independent checks" });
+      runtime.destroy();
+      return peak;
+    }
+
+    await expect(peakConcurrency(["parallel", "parallel", "parallel"])).resolves.toBe(3);
+    await expect(peakConcurrency(["parallel", "sequential", "parallel"])).resolves.toBe(1);
+  });
+
   it("rejects use after destroy", async () => {
     const runtime = new PiPromptAgentRuntime({ model, streamFn: successfulStream });
     runtime.destroy();
@@ -194,7 +229,66 @@ describe("PiPromptAgentRuntime", () => {
     runtime.destroy();
   });
 
-  acceptanceTest("PROMPT-TOOLKIT-001@1", "toolkit-before-write", "blocks deterministic prompt cleanup writes until prompt_toolkit succeeds", async () => {
+  acceptanceTest("PROMPT-TOOLKIT-001@2", "natural-language-write", "blocks a tag-only edit when the user requested natural-language prompt content", async () => {
+    let call = 0;
+    const executed: unknown[] = [];
+    const editPrompt: AgentTool<any> = {
+      name: "edit_prompt",
+      label: "Edit prompt",
+      description: "Edit prompt",
+      parameters: Type.Object({
+        base_hash: Type.String(),
+        patches: Type.Array(Type.Any()),
+      }),
+      execute: async (_id, args) => {
+        executed.push(args);
+        return { content: [{ type: "text", text: "edited" }], details: { ok: true } };
+      },
+    };
+    const streamFn: StreamFn = (activeModel) => {
+      call += 1;
+      if (call === 1) return streamMessage(activeModel as typeof model, [{
+        type: "toolCall",
+        id: "tag-only",
+        name: "edit_prompt",
+        arguments: {
+          base_hash: "fresh",
+          patches: [{ operation: "replace", find: "old prompt", replace: "1boy, solo, blue eyes, underwater, flat color" }],
+        },
+      }], "toolUse");
+      if (call === 2) return streamMessage(activeModel as typeof model, [{
+        type: "toolCall",
+        id: "with-nl",
+        name: "edit_prompt",
+        arguments: {
+          base_hash: "fresh",
+          patches: [{
+            operation: "replace",
+            find: "old prompt",
+            replace: "1boy, solo. A young man floats upside down beneath a rippling water surface, with loose ribbons rising around him.",
+          }],
+        },
+      }], "toolUse");
+      return streamMessage(activeModel as typeof model, [{ type: "text", text: "Added a natural-language scene block." }]);
+    };
+    const runtime = new PiPromptAgentRuntime({ model, streamFn, tools: [editPrompt] });
+
+    await runtime.submit({
+      text: "写点 NL，不要再只写 tag",
+      requirePromptMutation: true,
+      requireNaturalLanguagePrompt: true,
+    });
+
+    expect(executed).toHaveLength(1);
+    expect(executed[0]).toMatchObject({ patches: [expect.objectContaining({ replace: expect.stringContaining("floats upside down") })] });
+    expect(runtime.getMessages()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "toolResult", toolName: "edit_prompt", isError: true }),
+    ]));
+    expect(runtime.getState()).toMatchObject({ status: "completed", error: undefined });
+    runtime.destroy();
+  });
+
+  acceptanceTest("PROMPT-TOOLKIT-001@2", "toolkit-before-write", "blocks deterministic prompt cleanup writes until prompt_toolkit succeeds", async () => {
     let call = 0;
     const executed: string[] = [];
     const editPrompt: AgentTool<any> = {
@@ -257,7 +351,7 @@ describe("PiPromptAgentRuntime", () => {
     runtime.destroy();
   });
 
-  acceptanceTest("AGENT-LOOKUP-001@1", "style-first,unverified-hidden", "suppresses a direct background answer until a matching Forge style is inspected", async () => {
+  acceptanceTest("AGENT-LOOKUP-001@2", "style-first,unverified-hidden", "suppresses a direct background answer until a matching Forge style is inspected", async () => {
     let call = 0;
     const contexts: any[] = [];
     const choices: unknown[] = [];
@@ -297,8 +391,9 @@ describe("PiPromptAgentRuntime", () => {
     runtime.destroy();
   });
 
-  acceptanceTest("AGENT-LOOKUP-001@1", "fallback", "falls back to Danbooru only when no Forge style matches", async () => {
+  acceptanceTest("AGENT-LOOKUP-001@2", "fallback", "searches then inspects a Danbooru Wiki only when no Forge style matches", async () => {
     let call = 0;
+    let inspection = 0;
     const choices: unknown[] = [];
     const searchStyles: AgentTool<any> = {
       name: "search_resources",
@@ -307,25 +402,40 @@ describe("PiPromptAgentRuntime", () => {
       parameters: Type.Object({ kind: Type.String(), query: Type.String() }),
       execute: async () => ({ content: [{ type: "text", text: "no styles" }], details: { ok: true, kind: "style", items: [] } }),
     };
-    const inspectTags: AgentTool<any> = {
-      name: "inspect_danbooru_tags",
-      label: "Inspect tags",
-      description: "Inspect tags",
-      parameters: Type.Object({ names: Type.Array(Type.String()), include_wiki: Type.Boolean() }),
-      execute: async () => ({ content: [{ type: "text", text: "wiki result" }], details: { ok: true, items: [{ name: "moqing" }] } }),
+    const searchWikis: AgentTool<any> = {
+      name: "search_danbooru_wikis",
+      label: "Search Wikis",
+      description: "Search Wikis",
+      parameters: Type.Object({ query: Type.String() }),
+      execute: async () => ({ content: [{ type: "text", text: "candidate" }], details: { ok: true, items: [{ canonical_title: "moqing" }] } }),
+    };
+    const inspectWikis: AgentTool<any> = {
+      name: "inspect_danbooru_wikis",
+      label: "Inspect Wikis",
+      description: "Inspect Wikis",
+      parameters: Type.Object({ titles: Type.Array(Type.String()) }),
+      execute: async () => {
+        inspection += 1;
+        const item = inspection === 1
+          ? { canonical_title: "moqing", url: "https://danbooru.donmai.us/wiki_pages/moqing" }
+          : { canonical_title: "moqing", body: "Verified Danbooru Wiki body." };
+        return { content: [{ type: "text", text: "wiki result" }], details: { ok: true, items: [item] } };
+      },
     };
     const streamFn: StreamFn = (activeModel, _context, options) => {
       choices.push((options as { toolChoice?: string }).toolChoice);
       call += 1;
       if (call === 1) return streamMessage(activeModel as typeof model, [{ type: "toolCall", id: "search-1", name: "search_resources", arguments: { kind: "style", query: "moqing" } }], "toolUse");
-      if (call === 2) return streamMessage(activeModel as typeof model, [{ type: "toolCall", id: "inspect-1", name: "inspect_danbooru_tags", arguments: { names: ["moqing"], include_wiki: true } }], "toolUse");
+      if (call === 2) return streamMessage(activeModel as typeof model, [{ type: "toolCall", id: "wiki-search-1", name: "search_danbooru_wikis", arguments: { query: "moqing" } }], "toolUse");
+      if (call === 3) return streamMessage(activeModel as typeof model, [{ type: "toolCall", id: "wiki-inspect-1", name: "inspect_danbooru_wikis", arguments: { titles: ["moqing"] } }], "toolUse");
+      if (call === 4) return streamMessage(activeModel as typeof model, [{ type: "toolCall", id: "wiki-inspect-2", name: "inspect_danbooru_wikis", arguments: { titles: ["moqing"] } }], "toolUse");
       return streamMessage(activeModel as typeof model, [{ type: "text", text: "No local style matched; Danbooru reports ..." }]);
     };
-    const runtime = new PiPromptAgentRuntime({ model, streamFn, tools: [searchStyles, inspectTags] });
+    const runtime = new PiPromptAgentRuntime({ model, streamFn, tools: [searchStyles, searchWikis, inspectWikis] });
 
     await runtime.submit({ text: "moqing 是谁？", requireBackgroundLookup: true });
 
-    expect(choices).toEqual(["search_resources", "inspect_danbooru_tags", undefined]);
+    expect(choices).toEqual(["search_resources", "search_danbooru_wikis", "inspect_danbooru_wikis", "inspect_danbooru_wikis", undefined]);
     expect(runtime.getState()).toMatchObject({ status: "completed", error: undefined });
     runtime.destroy();
   });

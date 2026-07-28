@@ -38,6 +38,25 @@ afterEach(() => {
 });
 
 describe("Svelte chat surface", () => {
+  acceptanceTest("IMAGE-INPUT-001@1", "multi-select", "requests multi-image selection through the native picker when available", async () => {
+    const user = userEvent.setup();
+    installObjectUrlMocks();
+    const files = [
+      new File([new Uint8Array([1])], "first.png", { type: "image/png" }),
+      new File([new Uint8Array([2])], "second.webp", { type: "image/webp" }),
+    ];
+    const picker = vi.fn(async () => files.map((file) => ({ getFile: async () => file })));
+    vi.stubGlobal("showOpenFilePicker", picker);
+    const { container } = render(Surface, { initialOpen: true, actions: {} });
+
+    await user.click(screen.getByRole("button", { name: "Attach reference images" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Preview first.png" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Preview second.webp" })).toBeInTheDocument();
+    expect(picker).toHaveBeenCalledWith(expect.objectContaining({ multiple: true }));
+    expect(container.querySelector('input[type="file"][multiple]')).not.toBeNull();
+  });
+
   it("renders markdown, tools, reasoning, and usage without branch controls", async () => {
     const { container } = render(Surface, { initialOpen: true, messages: mockMessages, actions: {} });
     expect(await screen.findByRole("dialog", { name: "Prompt Agent chat" })).toBeInTheDocument();
@@ -45,6 +64,7 @@ describe("Svelte chat surface", () => {
     expect(screen.getByText("middle third is carrying too many competing details")).toBeInTheDocument();
     expect(screen.getAllByText("read_prompt").length).toBeGreaterThan(0);
     expect(screen.getByText(/642 in/)).toBeInTheDocument();
+    expect(screen.getByText(/320 cache/)).toBeInTheDocument();
     expect(screen.getByText("Reasoning trace").closest("details")).not.toHaveAttribute("open");
     expect(screen.queryByLabelText("Assistant response branches")).not.toBeInTheDocument();
     const tool = container.querySelector("[data-prompt-agent-tool-result='true']")!;
@@ -52,7 +72,7 @@ describe("Svelte chat surface", () => {
     expect(tool.compareDocumentPosition(response) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@3", "process", "keeps one final response primary while recovered tool failures stay scoped", async () => {
+  acceptanceTest("UI-FEEDBACK-001@7", "process", "keeps one final response primary while recovered tool failures and cache usage stay scoped", async () => {
     const user = userEvent.setup();
     const messages = [
       mockMessages[0],
@@ -65,6 +85,7 @@ describe("Svelte chat surface", () => {
     const process = container.querySelector<HTMLDetailsElement>("[data-prompt-agent-process='true']");
     expect(process).not.toBeNull();
     expect(process?.open).toBe(false);
+    expect(process?.querySelector(":scope > summary")).toHaveTextContent("1284 in · 236 out · 640 cache");
     expect(container.querySelectorAll(".pa-message-assistant")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Copy" })).toHaveLength(2);
     expect(screen.getByText("middle third is carrying too many competing details")).toBeInTheDocument();
@@ -89,8 +110,7 @@ describe("Svelte chat surface", () => {
     expect(screen.getByText("middle third is carrying too many competing details")).toBeInTheDocument();
   });
 
-  acceptanceTest("PROMPT-DIFF-001@1", "confirmed-diff,negative-disabled", "keeps a confirmed red-green prompt diff visible before the final answer and marks disabled negative text", async () => {
-    const user = userEvent.setup();
+  acceptanceTest("PROMPT-DIFF-001@3", "confirmed-diff,negative-disabled", "keeps only confirmed additions and removals visible before the final answer", async () => {
     const mutationTool = {
       ...mockMessages[1],
       id: "negative-prompt-edit",
@@ -112,24 +132,24 @@ describe("Svelte chat surface", () => {
             { kind: "removed" as const, pool: "tags" as const, before: "low quality", reason: "removed" },
             { kind: "added" as const, pool: "tags" as const, after: "bad anatomy", reason: "added" },
             { kind: "added" as const, pool: "tags" as const, after: "extra fingers", reason: "added" },
+            { kind: "moved" as const, pool: "tags" as const, before: "moved-only-tag", after: "moved-only-tag", reason: "moved", fromIndex: 4, toIndex: 1 },
             { kind: "added" as const, pool: "natural_language" as const, after: "Soft window light shapes the portrait.", reason: "added" },
           ],
-          summary: { added: 3, removed: 1, moved: 0, normalized: 0, preservedUnknown: 0 },
+          summary: { added: 3, removed: 1, moved: 1, normalized: 0, preservedUnknown: 0 },
         },
       },
     };
     const { container } = render(Surface, { initialOpen: true, messages: [mutationTool, mockMessages[2]], actions: {} });
 
-    const changeCard = container.querySelector<HTMLDetailsElement>("[data-prompt-change='true']");
+    const changeCard = container.querySelector<HTMLElement>("[data-prompt-change='true']");
     expect(changeCard).not.toBeNull();
-    expect(changeCard?.open).toBe(false);
-    expect(changeCard?.querySelector(":scope > summary")).toHaveTextContent("Negative prompt updated");
+    expect(changeCard?.tagName).toBe("SECTION");
+    expect(changeCard?.querySelector(":scope > header")).toHaveTextContent("Negative prompt updated");
     expect(changeCard?.querySelector(".pa-diff-count-added")).toHaveTextContent("3");
     expect(changeCard?.querySelector(".pa-diff-count-removed")).toHaveTextContent("1");
     expect(changeCard?.closest("[data-prompt-agent-process='true']")).toBeNull();
     expect(screen.queryByText("RAW_EDIT_RESULT_SHOULD_STAY_COMPACT")).not.toBeInTheDocument();
 
-    await user.click(changeCard!.querySelector(":scope > summary")!);
     expect(changeCard).toHaveTextContent("currently disabled and will not affect generation");
     expect(changeCard?.querySelector("del")).toHaveTextContent("low quality");
     expect(changeCard?.querySelector("ins")).toHaveTextContent("bad anatomy");
@@ -139,6 +159,8 @@ describe("Svelte chat surface", () => {
     expect(pools[0].querySelector(".pa-prompt-diff-tag")).toHaveClass("pa-prompt-diff-value");
     expect(pools[1]).toHaveTextContent("Natural language");
     expect(pools[1]).toHaveTextContent("Soft window light shapes the portrait.");
+    expect(changeCard?.querySelector(".pa-diff-count-moved")).toBeNull();
+    expect(changeCard).not.toHaveTextContent("moved-only-tag");
     const finalText = screen.getByText("middle third is carrying too many competing details");
     expect(changeCard!.compareDocumentPosition(finalText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -573,23 +595,74 @@ describe("Svelte chat surface", () => {
     expect(newSession).toHaveBeenCalledOnce();
   });
 
-  it("keeps the next draft while exposing only stop during an active request", async () => {
+  acceptanceTest("UI-FEEDBACK-001@7", "queue", "keeps the primary control stable, queues follow-ups, and exposes stop separately during an active request", async () => {
     const user = userEvent.setup();
     useChatStore.getState().beginRequest("active");
     useRuntimeStore.getState().setWorking("thinking");
     const sendMessage = vi.fn();
+    const queueMessage = vi.fn((input) => {
+      useRuntimeStore.getState().setQueuedFollowUps([{ id: "queued-1", text: input.text, attachmentCount: input.attachments.length, createdAt: 1 }]);
+    });
+    const removeQueuedMessage = vi.fn((id) => {
+      useRuntimeStore.getState().setQueuedFollowUps(useRuntimeStore.getState().queuedFollowUps.filter((item) => item.id !== id));
+    });
     const stopRequest = vi.fn();
-    render(Surface, { initialOpen: true, actions: { sendMessage, stopRequest } });
+    render(Surface, { initialOpen: true, actions: { sendMessage, queueMessage, removeQueuedMessage, stopRequest } });
+    const primary = screen.getByRole("button", { name: "Queue follow-up" });
+    expect(primary).toBeDisabled();
     expect(screen.getByRole("button", { name: "Stop response" })).toBeInTheDocument();
     await fireEvent.input(screen.getByRole("textbox", { name: "Message Prompt Agent" }), { target: { value: "Follow up" } });
-    expect(screen.queryByRole("button", { name: "Queue message" })).not.toBeInTheDocument();
+    expect(primary).toBeEnabled();
     expect(sendMessage).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "Message Prompt Agent" })).toHaveValue("Follow up");
+    await fireEvent.keyDown(screen.getByRole("textbox", { name: "Message Prompt Agent" }), { key: "Enter" });
+    await waitFor(() => expect(queueMessage).toHaveBeenCalledWith(expect.objectContaining({ text: "Follow up" })));
+    expect(screen.getByLabelText("Queued follow-ups")).toHaveTextContent("Next · 1");
+    expect(screen.getByLabelText("Queued follow-ups")).toHaveTextContent("Follow up");
+    expect(screen.getByRole("textbox", { name: "Message Prompt Agent" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Queue follow-up" })).toBe(primary);
+    expect(stopRequest).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Remove queued follow-up" }));
+    expect(removeQueuedMessage).toHaveBeenCalledWith("queued-1");
+    expect(screen.queryByLabelText("Queued follow-ups")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stop response" }));
     expect(stopRequest).toHaveBeenCalledOnce();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@3", "loading,recovery", "shows the current assistant working phase", async () => {
+  acceptanceTest("UI-FEEDBACK-001@7", "submission", "acknowledges send immediately without swapping a stop control under the pointer", async () => {
+    const user = userEvent.setup();
+    let finishSend!: () => void;
+    const sendMessage = vi.fn(() => new Promise<void>((resolve) => { finishSend = resolve; }));
+    const queueMessage = vi.fn();
+    const stopRequest = vi.fn();
+    render(Surface, { initialOpen: true, actions: { sendMessage, queueMessage, stopRequest } });
+    const composer = screen.getByRole("textbox", { name: "Message Prompt Agent" });
+    await user.type(composer, "Send once");
+    const send = screen.getByRole("button", { name: "Send message" });
+
+    await user.click(send);
+
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(send).toHaveAttribute("aria-busy", "true");
+    expect(send).toBeDisabled();
+    expect(screen.getByText("Sending request…")).toBeInTheDocument();
+
+    useChatStore.getState().beginRequest("delayed-active");
+    expect(await screen.findByRole("button", { name: "Queue follow-up" })).toBe(send);
+    expect(screen.getByRole("button", { name: "Stop response" })).toBeInTheDocument();
+    await user.type(composer, "Follow while first request is pending");
+    expect(send).toBeEnabled();
+    await user.click(send);
+    expect(stopRequest).not.toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(queueMessage).toHaveBeenCalledWith(expect.objectContaining({ text: "Follow while first request is pending" }));
+
+    useChatStore.getState().finishRequest("delayed-active");
+    finishSend();
+    await waitFor(() => expect(send).toHaveAttribute("aria-busy", "false"));
+  });
+
+  acceptanceTest("UI-FEEDBACK-001@7", "loading,recovery", "shows the current assistant working phase", async () => {
     useChatStore.getState().beginRequest("active");
     useRuntimeStore.getState().setWorking("submitting");
     render(Surface, { initialOpen: true, actions: {} });

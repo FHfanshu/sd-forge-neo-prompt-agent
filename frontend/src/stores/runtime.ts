@@ -1,5 +1,5 @@
 import { createStore } from "./store";
-import type { HistoryRow, RuntimeSession } from "../contracts";
+import type { HistoryRow, QueuedFollowUp, RuntimeSession } from "../contracts";
 
 export type WorkingPhase = "idle" | "model-loading" | "submitting" | "thinking" | "generating" | "retrying" | "tool" | "cancelling";
 export type RuntimeStartupState = "idle" | "starting" | "ready" | "error";
@@ -13,12 +13,14 @@ export interface RuntimeStore {
   workingPhase: WorkingPhase;
   workingTool: string | null;
   workingDetail: string | null;
+  queuedFollowUps: QueuedFollowUp[];
   error: string | null;
   setSession(session: RuntimeSession | null): void;
   setHistory(history: HistoryRow[]): void;
   setLoading(loading: boolean): void;
   setStartup(startup: RuntimeStartupState): void;
   setWorking(phase: WorkingPhase, detail?: string | null): void;
+  setQueuedFollowUps(items: QueuedFollowUp[]): void;
   setError(error: string | null): void;
   reset(): void;
 }
@@ -32,6 +34,7 @@ export const useRuntimeStore = createStore<RuntimeStore>((set) => ({
   workingPhase: "idle",
   workingTool: null,
   workingDetail: null,
+  queuedFollowUps: [],
   error: null,
   setSession(session) {
     set({ session, sessionId: session?.session_id ?? null });
@@ -52,6 +55,9 @@ export const useRuntimeStore = createStore<RuntimeStore>((set) => ({
       workingDetail: workingPhase === "retrying" || workingPhase === "model-loading" ? detail : null,
     });
   },
+  setQueuedFollowUps(queuedFollowUps) {
+    set({ queuedFollowUps: [...queuedFollowUps] });
+  },
   setError(error) {
     set({ error });
   },
@@ -65,6 +71,7 @@ export const useRuntimeStore = createStore<RuntimeStore>((set) => ({
       workingPhase: "idle",
       workingTool: null,
       workingDetail: null,
+      queuedFollowUps: [],
       error: null,
     });
   },

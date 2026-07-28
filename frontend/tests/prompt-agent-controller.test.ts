@@ -1,5 +1,5 @@
 import { createDefaultProfileState } from "../src/profile-adapter";
-import { PromptAgentController, userRequestedBackgroundLookup, userRequestedPromptMutation, userRequestedPromptToolkit } from "../src/agent/controller";
+import { PromptAgentController, userRequestedBackgroundLookup, userRequestedNaturalLanguagePrompt, userRequestedPromptMutation, userRequestedPromptToolkit } from "../src/agent/controller";
 import { useChatStore } from "../src/stores/chat";
 import { useProfileStore } from "../src/stores/profiles";
 import { useRuntimeStore } from "../src/stores/runtime";
@@ -36,6 +36,15 @@ const installFetch = (stream?: () => Response | Promise<Response>): void => {
   }));
 };
 
+const textResponse = (text = "Done"): Response => new Response([
+  'data: {"type":"start"}',
+  'data: {"type":"text_start","contentIndex":0}',
+  `data: ${JSON.stringify({ type: "text_delta", contentIndex: 0, delta: text })}`,
+  'data: {"type":"text_end","contentIndex":0}',
+  'data: {"type":"done","reason":"stop"}',
+  "",
+].join("\n\n"), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
 describe("PromptAgentController recovery", () => {
   beforeEach(() => {
     repository.putSession.mockReset().mockResolvedValue(undefined);
@@ -67,6 +76,102 @@ describe("PromptAgentController recovery", () => {
 
     expect(useChatStore.getState().activeRequestId).toBeNull();
     expect(useRuntimeStore.getState().workingPhase).toBe("idle");
+    controller.destroy();
+  });
+
+  it("drains queued follow-ups in FIFO order only after the active response completes", async () => {
+    const profiles = createDefaultProfileState();
+    let releaseFirst!: () => void;
+    let streamRequests = 0;
+    const bodies: Array<Record<string, any>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/prompt-agent/api/profiles") return new Response(JSON.stringify(profiles), { status: 200 });
+      bodies.push(JSON.parse(String(init?.body)));
+      streamRequests += 1;
+      if (streamRequests === 1) return await new Promise<Response>((resolve) => { releaseFirst = () => resolve(textResponse("First done")); });
+      return textResponse(`Follow-up ${streamRequests - 1}`);
+    }));
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+
+    const first = controller.actions.sendMessage({ text: "First", attachments: [], reasoning: "none" });
+    await vi.waitFor(() => expect(useChatStore.getState().activeRequestId).toBeTruthy());
+    await vi.waitFor(() => expect(streamRequests).toBe(1));
+    controller.actions.queueMessage({ text: "Second", attachments: [], reasoning: "low" });
+    controller.actions.queueMessage({ text: "Third", attachments: [], reasoning: "low" });
+    expect(useRuntimeStore.getState().queuedFollowUps.map((item) => item.text)).toEqual(["Second", "Third"]);
+    expect(streamRequests).toBe(1);
+
+    releaseFirst();
+    await first;
+    await vi.waitFor(() => expect(streamRequests).toBe(3));
+    await vi.waitFor(() => expect(useRuntimeStore.getState().queuedFollowUps).toEqual([]));
+    await vi.waitFor(() => expect(useChatStore.getState().messages.at(-1)?.content).toBe("Follow-up 2"));
+    const submittedTexts = bodies.map((body) => body.context.messages.findLast((message: any) => message.role === "user")?.content?.find((block: any) => block.type === "text")?.text);
+    expect(submittedTexts).toEqual(["First", "Second", "Third"]);
+    controller.destroy();
+  });
+
+  it("keeps a follow-up paused after failure and resumes it explicitly", async () => {
+    const profiles = createDefaultProfileState();
+    let releaseFailure!: () => void;
+    let streamRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/prompt-agent/api/profiles") return new Response(JSON.stringify(profiles), { status: 200 });
+      streamRequests += 1;
+      if (streamRequests === 1) return await new Promise<Response>((resolve) => {
+        releaseFailure = () => resolve(new Response([
+          'data: {"type":"start"}',
+          'data: {"type":"error","reason":"error","errorMessage":"provider unavailable"}',
+          "",
+        ].join("\n\n"), { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+      });
+      return textResponse("Recovered");
+    }));
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+
+    const first = controller.actions.sendMessage({ text: "First", attachments: [], reasoning: "none" });
+    await vi.waitFor(() => expect(useChatStore.getState().activeRequestId).toBeTruthy());
+    await vi.waitFor(() => expect(streamRequests).toBe(1));
+    controller.actions.queueMessage({ text: "Keep me", attachments: [], reasoning: "low" });
+    releaseFailure();
+    await first;
+
+    expect(streamRequests).toBe(1);
+    expect(useRuntimeStore.getState().queuedFollowUps.map((item) => item.text)).toEqual(["Keep me"]);
+    await controller.actions.resumeQueuedMessages();
+    await vi.waitFor(() => expect(streamRequests).toBe(2));
+    await vi.waitFor(() => expect(useRuntimeStore.getState().queuedFollowUps).toEqual([]));
+    controller.destroy();
+  });
+
+  it("cancels safely during profile preparation and leaves queued work paused", async () => {
+    const profiles = createDefaultProfileState();
+    let streamRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/prompt-agent/api/profiles") return new Response(JSON.stringify(profiles), { status: 200 });
+      streamRequests += 1;
+      return textResponse();
+    }));
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+    let releaseProfile!: () => void;
+    repository.putSession.mockImplementationOnce(() => new Promise<void>((resolve) => { releaseProfile = resolve; }));
+
+    const submission = controller.actions.sendMessage({ text: "First", attachments: [], reasoning: "none" });
+    await vi.waitFor(() => expect(useChatStore.getState().activeRequestId).toBeTruthy());
+    controller.actions.queueMessage({ text: "Keep queued", attachments: [], reasoning: "low" });
+    controller.actions.stopRequest();
+    releaseProfile();
+    await submission;
+
+    expect(streamRequests).toBe(0);
+    expect(useChatStore.getState().activeRequestId).toBeNull();
+    expect(useRuntimeStore.getState().queuedFollowUps.map((item) => item.text)).toEqual(["Keep queued"]);
     controller.destroy();
   });
 
@@ -142,7 +247,7 @@ describe("PromptAgentController recovery", () => {
     controller.destroy();
   });
 
-  acceptanceTest("SESSION-LIFECYCLE-001@2", "failure,recovery", "restores the composer after a terminal provider failure", async () => {
+  acceptanceTest("SESSION-LIFECYCLE-001@3", "failure,recovery", "restores the composer after a terminal provider failure", async () => {
     installFetch(() => new Response([
       'data: {"type":"start"}',
       'data: {"type":"error","reason":"error","errorMessage":"provider unavailable"}',
@@ -160,11 +265,13 @@ describe("PromptAgentController recovery", () => {
     controller.destroy();
   });
 
-  acceptanceTest("SESSION-LIFECYCLE-001@2", "abort,recovery", "aborts the provider request and restores the composer", async () => {
+  acceptanceTest("SESSION-LIFECYCLE-001@3", "abort,recovery", "aborts the provider request and restores the composer", async () => {
     let requestAborted = false;
+    let requestStarted = false;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname === "/prompt-agent/api/profiles") return new Response(JSON.stringify(createDefaultProfileState()), { status: 200 });
+      requestStarted = true;
       const signal = init?.signal;
       const encoder = new TextEncoder();
       return new Response(new ReadableStream<Uint8Array>({
@@ -184,6 +291,7 @@ describe("PromptAgentController recovery", () => {
     await controller.mount();
     const submission = controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" });
     await vi.waitFor(() => expect(useChatStore.getState().activeRequestId).not.toBeNull());
+    await vi.waitFor(() => expect(requestStarted).toBe(true));
 
     controller.actions.stopRequest();
     await submission;
@@ -194,7 +302,7 @@ describe("PromptAgentController recovery", () => {
     controller.destroy();
   });
 
-  it("passes the selected provider adapter and ordered Forge tools into the runtime", async () => {
+  acceptanceTest("IMAGE-INPUT-001@1", "visual-grounding,bilingual-caption", "passes image-grounding and bilingual caption rules into the runtime", async () => {
     installFetch();
     const controller = new PromptAgentController(repository);
     await controller.mount();
@@ -213,21 +321,48 @@ describe("PromptAgentController recovery", () => {
       "search_danbooru_tags",
       "inspect_danbooru_tags",
       "related_danbooru_tags",
+      "search_danbooru_wikis",
+      "inspect_danbooru_wikis",
       "prompt_toolkit",
+      "load_skill",
     ]);
     expect(runtime.getSystemPrompt()).toContain("read prompts or generation parameters before changing them");
     expect(runtime.getSystemPrompt()).toContain("correct the arguments or refresh stale Forge state");
     expect(runtime.getSystemPrompt()).toContain("search_danbooru_tags");
     expect(runtime.getSystemPrompt()).toContain("natural-language descriptions and Danbooru-style tags are both first-class");
     expect(runtime.getSystemPrompt()).toContain("Text in a disabled negative field is editable but not effective");
+    expect(runtime.getSystemPrompt()).toContain("inspect every image before proposing or applying any prompt change");
+    expect(runtime.getSystemPrompt()).toContain("visible content, visual style, and composition");
+    expect(runtime.getSystemPrompt()).toContain("Version 1 is detailed, objective, neutral English natural language");
+    expect(runtime.getSystemPrompt()).toContain("Version 2 conveys the same evidence, order, continuity, and detail in natural, purely Chinese language");
+    expect(runtime.getSystemPrompt()).toContain("continuous order of image content, visual style, then composition");
+    expect(runtime.getSystemPrompt()).toContain("do not turn the result into disconnected bullets, tag fragments, or independent captions");
+    expect(runtime.getSystemPrompt()).toContain("A tag-only edit does not satisfy a natural-language request");
+    expect(runtime.getSystemPrompt()).toContain("Treat names such as Frutiger Aero as brainstorming seeds");
+    expect(runtime.getSystemPrompt()).toContain("scene objects, environment, materials, lighting, palette, atmosphere, and composition");
+    expect(runtime.getSystemPrompt()).toContain("search_danbooru_wikis");
+    expect(runtime.getSystemPrompt()).toContain("inspect_danbooru_wikis");
+    expect(runtime.getSystemPrompt()).toContain("Follow only the relevant next-hop references");
+    expect(runtime.getSystemPrompt()).toContain("Before writing or revising prompts for an Anima checkpoint, call load_skill with anima_dit");
+    expect(runtime.getSystemPrompt()).toContain("Before constructing multi-character or regional prompts for Forge Couple, call load_skill with forge_couple");
     controller.destroy();
   });
 
   it("detects direct prompt mutation requests without treating advice questions as writes", () => {
     expect(userRequestedPromptMutation("把当前提示词改写成雨夜霓虹场景")).toBe(true);
     expect(userRequestedPromptMutation("Rewrite the current prompt with stronger rim light")).toBe(true);
+    expect(userRequestedPromptMutation("改成这种风格的 先解压视觉信息")).toBe(true);
     expect(userRequestedPromptMutation("这个提示词应该怎么改？")).toBe(false);
     expect(userRequestedPromptMutation("Review the composition and suggest improvements")).toBe(false);
+  });
+
+  it("detects explicit NL writes and attached-image style transfers without overriding tags-only requests", () => {
+    expect(userRequestedNaturalLanguagePrompt("写点 NL，不要再只写 tag")).toBe(true);
+    expect(userRequestedNaturalLanguagePrompt("加一段自然语言描述到当前提示词")).toBe(true);
+    expect(userRequestedNaturalLanguagePrompt("改成这种风格的 先解压视觉信息", true)).toBe(true);
+    expect(userRequestedNaturalLanguagePrompt("只用 tag 改成这种风格", true)).toBe(false);
+    expect(userRequestedNaturalLanguagePrompt("NL prompt 应该怎么写？")).toBe(false);
+    expect(userRequestedNaturalLanguagePrompt("改成这种风格的 先解压视觉信息", false)).toBe(false);
   });
 
   it("requires the deterministic toolkit for prompt cleanup operations", () => {

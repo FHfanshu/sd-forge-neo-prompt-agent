@@ -12,7 +12,7 @@
   }
 
   const detail = $derived(message.tool?.detail ?? "");
-  const compactResult = $derived(Boolean(message.tool?.mutation || message.tool?.name === "prompt_toolkit"));
+  const compactResult = $derived(Boolean(message.tool?.mutation || message.tool?.name === "prompt_toolkit" || message.tool?.name === "load_skill"));
   const content = $derived(!compactResult && message.content && message.content !== detail ? message.content : "");
   const status = $derived(message.tool?.status ?? "complete");
   const statusLabel = $derived(t(`chat.tool_status.${status}`, status === "error" ? "failed" : status));

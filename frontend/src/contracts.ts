@@ -86,6 +86,8 @@ export const chatMessageSchema = z.object({
   usage: z.object({
     inputTokens: z.number().int().nonnegative().optional(),
     outputTokens: z.number().int().nonnegative().optional(),
+    cacheReadTokens: z.number().int().nonnegative().optional(),
+    cacheWriteTokens: z.number().int().nonnegative().optional(),
     totalTokens: z.number().int().nonnegative().optional(),
     latencyMs: z.number().int().nonnegative().optional(),
   }).optional(),
@@ -289,8 +291,18 @@ export interface MessageSubmission {
   id?: string;
 }
 
+export interface QueuedFollowUp {
+  id: string;
+  text: string;
+  attachmentCount: number;
+  createdAt: number;
+}
+
 export interface PromptAgentActionHandlers {
   sendMessage(input: SendMessageInput): MessageSubmission | void | Promise<MessageSubmission | void>;
+  queueMessage(input: SendMessageInput): MessageSubmission | void | Promise<MessageSubmission | void>;
+  removeQueuedMessage(id: string): void | Promise<void>;
+  resumeQueuedMessages(): void | Promise<void>;
   stopRequest(): void;
   attachFiles(files: File[]): ChatAttachment[] | void | Promise<ChatAttachment[] | void>;
   replaceAttachment(id: string, file: File): ChatAttachment | void | Promise<ChatAttachment | void>;

@@ -72,9 +72,9 @@ async function installMockHost(page: Page, hostDelayMs = 0): Promise<void> {
           emit(0, { type: "start" });
           emit(60, { type: "text_start", contentIndex: 0 });
           emit(80, { type: "text_delta", contentIndex: 0, delta: "Mock assistant " });
-          emit(slow ? 10_000 : 160, { type: "text_delta", contentIndex: 0, delta: "reply" });
-          emit(slow ? 10_100 : 180, { type: "text_end", contentIndex: 0 });
-          emit(slow ? 10_120 : 200, { type: "done", reason: "stop", usage: { input: 12, output: 4, totalTokens: 16, cacheRead: 0, cacheWrite: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }, true);
+          emit(slow ? 60_000 : 160, { type: "text_delta", contentIndex: 0, delta: "reply" });
+          emit(slow ? 60_100 : 180, { type: "text_end", contentIndex: 0 });
+          emit(slow ? 60_120 : 200, { type: "done", reason: "stop", usage: { input: 12, output: 4, totalTokens: 16, cacheRead: 0, cacheWrite: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }, true);
           const cancelTurn = () => {
             if (closed) return;
             closed = true;
@@ -261,7 +261,7 @@ test("mounted desktop UI exercises chat, history, profiles, and attachments", as
   expect(wireJson.match(/bW9jay1pbWFnZQ==/g)).toHaveLength(1);
   expect(wireJson).toContain('"mimeType":"image/png"');
   await expect.poll(async () => page.evaluate(() => (window as Window & { __mockRevokedObjectUrls?: string[] }).__mockRevokedObjectUrls?.length ?? 0)).toBe(1);
-  await expect(page.getByText("12 in · 4 out", { exact: true })).toBeVisible();
+  await expect(page.getByText("12 in · 4 out · 0 cache", { exact: true })).toBeVisible();
   const userMessage = page.locator(".pa-message-user").filter({ hasText: "Review this composition" });
   await expect(userMessage).toBeVisible();
   await expect(userMessage.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
@@ -311,7 +311,7 @@ test("mounted desktop UI exercises chat, history, profiles, and attachments", as
   await expect(settings.getByRole("tab", { name: "路由" })).toBeVisible();
 });
 
-acceptanceTest("SESSION-LIFECYCLE-001@2", "abort,recovery", "active turns abort and restore a usable composer", async ({ page }) => {
+acceptanceTest("SESSION-LIFECYCLE-001@3", "abort,recovery", "active turns abort and restore a usable composer", async ({ page }) => {
   test.setTimeout(40_000);
   await installMockHost(page);
   await page.addInitScript(() => { (window as Window & { __mockSlowTurn?: boolean }).__mockSlowTurn = true; });
@@ -319,15 +319,27 @@ acceptanceTest("SESSION-LIFECYCLE-001@2", "abort,recovery", "active turns abort 
   await page.getByRole("button", { name: "Open Prompt Agent" }).click();
   const input = page.getByRole("textbox", { name: "Message Prompt Agent" });
   await input.fill("Start a slow response");
-  await page.getByRole("button", { name: "Send message" }).click();
+  const send = page.getByRole("button", { name: "Send message" });
+  const originalSend = await send.elementHandle();
+  await send.click();
   await expect(input).toHaveValue("");
   await expect(page.getByRole("button", { name: "Stop response" })).toBeVisible();
+  const queue = page.getByRole("button", { name: "Queue follow-up" });
+  await expect(queue).toBeVisible();
+  await expect(queue).toBeDisabled();
+  expect(await queue.evaluate((element, original) => element === original, originalSend)).toBe(true);
   await expect(page.getByText("Mock assistant", { exact: true })).toBeVisible();
   await expect(page.getByText("Generating response…", { exact: true })).toBeVisible();
+  await input.fill("Keep the cyan bubbles but simplify the background");
+  await queue.click();
+  await expect(page.getByLabel("Queued follow-ups")).toContainText("Next · 1");
+  await expect(page.getByLabel("Queued follow-ups")).toContainText("Keep the cyan bubbles");
   await capture(page, "assistant-working");
   await page.getByRole("button", { name: "Stop response" }).click();
   await expect(page.getByRole("button", { name: "Stop response" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Send message" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Queue follow-up" })).toBeVisible();
+  await expect(page.getByLabel("Queued follow-ups")).toContainText("Paused");
+  await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
 });
 
 acceptanceTest("SESSION-REFRESH-001@1", "interruption,no-replay,recovery", "refresh preserves partial content, interrupts unfinished work, and never resumes it", async ({ page }) => {

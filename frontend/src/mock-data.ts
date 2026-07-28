@@ -24,7 +24,7 @@ export const mockMessages: ChatMessage[] = [
     content: "The focal subject is clear, but the **middle third is carrying too many competing details**. Consider moving the secondary prop closer to the light falloff and reserving the brightest contrast for the face.",
     reasoning: "I compared the subject hierarchy, contrast anchors, and negative space around the main silhouette.",
     status: "complete",
-    usage: { inputTokens: 642, outputTokens: 118, latencyMs: 4200 },
+    usage: { inputTokens: 642, outputTokens: 118, cacheReadTokens: 320, latencyMs: 4200 },
     attachments: [],
     createdAt: 3,
   },
@@ -37,6 +37,9 @@ export const mockHistory: HistoryRow[] = [
 
 export const noopActions: PromptAgentActionHandlers = {
   sendMessage: () => undefined,
+  queueMessage: () => undefined,
+  removeQueuedMessage: () => undefined,
+  resumeQueuedMessages: () => undefined,
   stopRequest: () => undefined,
   attachFiles: () => undefined,
   replaceAttachment: () => undefined,

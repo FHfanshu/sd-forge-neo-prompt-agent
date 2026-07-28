@@ -38,8 +38,10 @@ const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_MAX_RETRY_DELAY_MS = 5_000;
 const RETRYABLE_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRYABLE_PROXY_CODES = new Set([
+  "provider_connection_error",
   "provider_network_error",
   "provider_rate_limited",
+  "provider_timeout",
   "provider_unexpected_eof",
 ]);
 
@@ -316,11 +318,12 @@ async function safeHttpError(response: Response): Promise<string> {
 }
 
 function isRetryableProxyEvent(event: ProxyEvent): boolean {
+  if (RETRYABLE_PROXY_CODES.has(event.errorCode ?? "")) return true;
   if (event.statusCode !== undefined) return RETRYABLE_HTTP_STATUS.has(event.statusCode);
-  return RETRYABLE_PROXY_CODES.has(event.errorCode ?? "");
+  return false;
 }
 
-function retryDelay(attempt: number, maxDelayMs: number): number {
+export function retryDelay(attempt: number, maxDelayMs: number): number {
   return Math.min(500 * 2 ** (attempt - 1), maxDelayMs);
 }
 

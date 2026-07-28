@@ -1,5 +1,6 @@
 import { Agent, type AgentMessage, type AgentOptions, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Message, Model } from "@earendil-works/pi-ai";
+import { parseHybridPrompt } from "../prompts/prompt-parser";
 import type { RuntimeListener } from "./runtime-events";
 import {
   initialAgentRuntimeState,
@@ -14,6 +15,7 @@ export interface AgentInput {
   reasoningLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   requirePromptMutation?: boolean;
   requirePromptToolkit?: boolean;
+  requireNaturalLanguagePrompt?: boolean;
   requireBackgroundLookup?: boolean;
 }
 
@@ -61,9 +63,10 @@ const runtimeError = (error: unknown): AgentRuntimeError => ({
 
 const PROMPT_MUTATION_CORRECTION = "The user requested an actual rewrite of the current Forge prompt, but no edit_prompt call has succeeded. Do not finish with advice or claim the prompt changed. Read the current prompt again if needed. For deduplication, sorting, normalization, validation, or pool composition, call prompt_toolkit on the exact current prompt and pass its recommended_patch to edit_prompt. Then call edit_prompt with the latest base_hash and corrected arguments. Finish only after edit_prompt succeeds; if Forge reports a non-retryable blocker, explain that blocker clearly.";
 const MAX_PROMPT_MUTATION_CORRECTIONS = 2;
-const BACKGROUND_LOOKUP_CORRECTION = "The user asked for background information about a named entity. Your previous text-only answer is not acceptable and must not be shown. Character trigger words are stored in Forge style templates: first call search_resources with kind=style and the entity as query, then inspect_resource with kind=style for the best matching ID. If no style matches, fall back to inspect_danbooru_tags with include_wiki=true or search_danbooru_tags. Do not claim who or what the entity is from memory. Only answer after a successful inspection, and identify whether the source was a local Forge style or Danbooru.";
+const NATURAL_LANGUAGE_EDIT_CORRECTION = "The user explicitly requested natural-language prompt content. This edit adds only tags or reuses existing prose, so it was blocked before Forge changed. Keep useful tags and special syntax, but add a new substantive English natural-language block derived from the user's request and attached-image visual inventory. Use at least one complete sentence; normally use two to four short, concrete sentences for content, style, and composition. Then retry edit_prompt with the latest prompt hash. A tag-only edit does not satisfy this request.";
+const BACKGROUND_LOOKUP_CORRECTION = "The user asked for background information about a named entity. Your previous text-only answer is not acceptable and must not be shown. Character trigger words are stored in Forge style templates: first call search_resources with kind=style and the entity as query, then inspect_resource with kind=style for the best matching ID. If no style matches, call search_danbooru_wikis to find the canonical Wiki title, then inspect_danbooru_wikis. A search result, reference, or URL is not inspected content. Follow relevant returned references with another inspection when the first page is insufficient. Do not claim who or what the entity is from memory. Only answer after a successful inspection with a non-empty Wiki body, and identify whether the source was a local Forge style or Danbooru.";
 const MAX_BACKGROUND_LOOKUP_CORRECTIONS = 2;
-type BackgroundLookupStage = "style-search" | "style-inspect" | "danbooru";
+type BackgroundLookupStage = "style-search" | "style-inspect" | "danbooru-wiki-search" | "danbooru-wiki-inspect";
 
 function isControlMessage(message: AgentMessage): message is PromptAgentControlMessage {
   return message.role === "promptAgentControl";
@@ -81,6 +84,66 @@ function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
   ));
 }
 
+type PromptEditPatch = {
+  operation?: unknown;
+  find?: unknown;
+  replace?: unknown;
+  replacement?: unknown;
+  text?: unknown;
+};
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function substantiveNaturalLanguage(text: string): string[] {
+  if (!text) return [];
+  try {
+    return parseHybridPrompt(text).pools.naturalLanguage
+      .map((item) => item.text.trim())
+      .filter((item) => (item.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) ?? []).length >= 8);
+  } catch {
+    return [];
+  }
+}
+
+function normalizedNaturalLanguage(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+}
+
+function patchAddsNaturalLanguage(patch: PromptEditPatch): boolean {
+  const operation = stringValue(patch.operation);
+  if (operation === "delete") return false;
+  const after = stringValue(patch.replacement) || stringValue(patch.replace) || stringValue(patch.text);
+  const added = substantiveNaturalLanguage(after);
+  if (!added.length) return false;
+  if (!["replace", "replace_all", "replace_n"].includes(operation)) return true;
+  const before = new Set(substantiveNaturalLanguage(stringValue(patch.find)).map(normalizedNaturalLanguage));
+  return added.some((item) => !before.has(normalizedNaturalLanguage(item)));
+}
+
+export function editAddsSubstantiveNaturalLanguage(args: unknown): boolean {
+  const edit = recordValue(args);
+  if (!edit) return false;
+  if (substantiveNaturalLanguage(stringValue(edit.prompt)).length) return true;
+  if (Array.isArray(edit.patches) && edit.patches.some((item) => {
+    const patch = recordValue(item);
+    return patch ? patchAddsNaturalLanguage(patch) : false;
+  })) return true;
+  const diffAdditions = stringValue(edit.diff)
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .map((line) => line.slice(1))
+    .join("\n");
+  return substantiveNaturalLanguage(diffAdditions).length > 0;
+}
+
 export class PiPromptAgentRuntime implements PromptAgentRuntime {
   private readonly agent: Agent;
   private readonly listeners = new Set<RuntimeListener>();
@@ -93,6 +156,7 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
   private promptMutationCorrections = 0;
   private promptToolkitRequired = false;
   private promptToolkitSucceeded = false;
+  private naturalLanguagePromptRequired = false;
   private backgroundLookupRequired = false;
   private backgroundLookupSucceeded = false;
   private backgroundLookupCorrections = 0;
@@ -125,10 +189,13 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
         if (context.toolCall.name === "edit_prompt" && this.promptToolkitRequired && !this.promptToolkitSucceeded) {
           return { block: true, reason: "This prompt cleanup requires prompt_toolkit first. Read the exact current prompt, run the requested deterministic toolkit action, then pass recommended_patch to edit_prompt." };
         }
+        if (context.toolCall.name === "edit_prompt" && this.naturalLanguagePromptRequired && !editAddsSubstantiveNaturalLanguage(context.args)) {
+          return { block: true, reason: NATURAL_LANGUAGE_EDIT_CORRECTION };
+        }
         return options.beforeToolCall?.(context, signal);
       },
       afterToolCall: options.afterToolCall,
-      toolExecution: "sequential",
+      toolExecution: "parallel",
     });
     this.state = this.snapshot("idle");
     this.unsubscribeAgent = this.agent.subscribe((event) => {
@@ -188,6 +255,7 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
     this.promptMutationCorrections = 0;
     this.promptToolkitRequired = input.requirePromptToolkit === true;
     this.promptToolkitSucceeded = false;
+    this.naturalLanguagePromptRequired = input.requireNaturalLanguagePrompt === true;
     this.backgroundLookupRequired = input.requireBackgroundLookup === true;
     this.backgroundLookupSucceeded = false;
     this.backgroundLookupCorrections = 0;
@@ -245,6 +313,7 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
     this.promptMutationCorrections = 0;
     this.promptToolkitRequired = false;
     this.promptToolkitSucceeded = false;
+    this.naturalLanguagePromptRequired = false;
     this.backgroundLookupRequired = false;
     this.backgroundLookupSucceeded = false;
     this.backgroundLookupCorrections = 0;
@@ -265,6 +334,7 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
     this.promptMutationCorrections = 0;
     this.promptToolkitRequired = false;
     this.promptToolkitSucceeded = false;
+    this.naturalLanguagePromptRequired = false;
     this.backgroundLookupRequired = false;
     this.backgroundLookupSucceeded = false;
     this.backgroundLookupCorrections = 0;
@@ -341,23 +411,40 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
     if (!this.backgroundLookupRequired || this.backgroundLookupSucceeded) return undefined;
     if (this.backgroundLookupStage === "style-search") return "search_resources";
     if (this.backgroundLookupStage === "style-inspect") return "inspect_resource";
-    return "inspect_danbooru_tags";
+    if (this.backgroundLookupStage === "danbooru-wiki-search") return "search_danbooru_wikis";
+    return "inspect_danbooru_wikis";
   }
 
   private recordBackgroundLookup(toolName: string, details: unknown): void {
     if (!this.backgroundLookupRequired || !details || typeof details !== "object") return;
     const result = details as Record<string, unknown>;
     if (toolName === "search_resources" && result.kind === "style") {
-      this.backgroundLookupStage = Array.isArray(result.items) && result.items.length > 0 ? "style-inspect" : "danbooru";
+      this.backgroundLookupStage = Array.isArray(result.items) && result.items.length > 0 ? "style-inspect" : "danbooru-wiki-search";
       return;
     }
     if (toolName === "inspect_resource" && result.kind === "style" && result.ok === true) {
       this.backgroundLookupSucceeded = true;
       return;
     }
-    if (["inspect_danbooru_tags", "search_danbooru_tags", "related_danbooru_tags"].includes(toolName) && result.ok === true) {
-      this.backgroundLookupSucceeded = true;
+    if (toolName === "search_danbooru_wikis" && result.ok === true) {
+      const groups = Array.isArray(result.results) ? result.results : [result];
+      const hasCandidate = groups.some((group) => group && typeof group === "object"
+        && Array.isArray((group as Record<string, unknown>).items)
+        && ((group as Record<string, unknown>).items as unknown[]).length > 0);
+      if (hasCandidate) this.backgroundLookupStage = "danbooru-wiki-inspect";
+      return;
     }
+    if (!["inspect_danbooru_tags", "inspect_danbooru_wikis"].includes(toolName) || result.ok !== true || !Array.isArray(result.items)) return;
+    const hasWikiBody = result.items.some((item) => {
+      if (!item || typeof item !== "object") return false;
+      const record = item as Record<string, unknown>;
+      const wiki = record.wiki;
+      const body = typeof record.body === "string"
+        ? record.body
+        : wiki && typeof wiki === "object" ? (wiki as Record<string, unknown>).body : undefined;
+      return typeof body === "string" && body.trim().length > 0;
+    });
+    if (hasWikiBody) this.backgroundLookupSucceeded = true;
   }
 
   private emit(): void {

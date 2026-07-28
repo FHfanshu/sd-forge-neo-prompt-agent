@@ -33,7 +33,10 @@
   const assistantMessages = $derived([...intermediateMessages, finalMessage]);
   const reasoningMessages = $derived(assistantMessages.filter((message) => Boolean(message.reasoning)));
   const visibleIntermediateMessages = $derived(intermediateMessages.filter((message) => Boolean(message.content.trim())));
-  const mutationTools = $derived(tools.filter((message) => Boolean(message.tool?.mutation)));
+  const mutationTools = $derived(tools.filter((message) => {
+    const mutation = message.tool?.mutation;
+    return Boolean(mutation && (mutation.summary.added > 0 || mutation.summary.removed > 0));
+  }));
   const processTools = $derived(tools);
   const failedTools = $derived(processTools.filter((message) => message.tool?.status === "error").length);
   const turnFailed = $derived(finalMessage.status === "error");
@@ -41,8 +44,9 @@
     (total, message) => ({
       input: total.input + (message.usage?.inputTokens ?? 0),
       output: total.output + (message.usage?.outputTokens ?? 0),
+      cache: total.cache + (message.usage?.cacheReadTokens ?? 0),
     }),
-    { input: 0, output: 0 },
+    { input: 0, output: 0, cache: 0 },
   ));
   const hasProcess = $derived(Boolean(processTools.length || reasoningMessages.length || visibleIntermediateMessages.length));
   const summary = $derived.by(() => {
@@ -63,7 +67,7 @@
   <details class:pa-process-error={turnFailed} class="pa-process-drawer" data-prompt-agent-process="true">
     <summary>
       <span class="pa-process-title"><ChevronRight size={13} aria-hidden="true" /><strong>{summary}</strong></span>
-      {#if usage.input || usage.output}<span class="pa-process-usage">{usage.input} in · {usage.output} out</span>{/if}
+      {#if usage.input || usage.output || usage.cache}<span class="pa-process-usage">{usage.input} in · {usage.output} out · {usage.cache} cache</span>{/if}
     </summary>
     <div class="pa-process-content">
       {#each visibleIntermediateMessages as message (message.id)}

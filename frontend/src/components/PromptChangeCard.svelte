@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowUpDown, ChevronRight, Minus, Plus } from "lucide-svelte";
+  import { Minus, Plus } from "lucide-svelte";
   import type { PromptMutationEvidence } from "../contracts";
   import { useI18nStore } from "../stores/i18n";
 
@@ -19,18 +19,9 @@
     }[pool]);
   }
 
-  function kindLabel(kind: PromptMutationEvidence["changes"][number]["kind"]): string {
-    return t(`chat.prompt_diff.kind.${kind}`, {
-      added: "Added",
-      removed: "Removed",
-      moved: "Moved",
-      normalized: "Normalized",
-    }[kind]);
-  }
-
   const pools = $derived.by(() => {
     const order = ["tags", "natural_language", "special", "unknown"] as const;
-    const kindOrder = ["added", "removed", "moved", "normalized"] as const;
+    const kindOrder = ["added", "removed"] as const;
     return order
       .map((pool) => ({
         pool,
@@ -46,20 +37,17 @@
   const disabledNegative = $derived(evidence.field === "negative" && evidence.effective === false);
 </script>
 
-<details class="pa-prompt-change" data-prompt-change="true">
-  <summary>
+<section class="pa-prompt-change" data-prompt-change="true" aria-label={title}>
+  <header>
     <span class="pa-prompt-change-title">
-      <ChevronRight size={14} aria-hidden="true" />
       <strong>{title}</strong>
       {#if disabledNegative}<span class="pa-prompt-inactive">{t("chat.prompt_diff.disabled", "disabled")}</span>{/if}
     </span>
     <span class="pa-prompt-change-counts" aria-label={t("chat.prompt_diff.change_summary", "Prompt change summary")}>
       {#if evidence.summary.added}<span class="pa-diff-count pa-diff-count-added"><Plus size={12} aria-hidden="true" />{evidence.summary.added}</span>{/if}
       {#if evidence.summary.removed}<span class="pa-diff-count pa-diff-count-removed"><Minus size={12} aria-hidden="true" />{evidence.summary.removed}</span>{/if}
-      {#if evidence.summary.moved}<span class="pa-diff-count pa-diff-count-moved"><ArrowUpDown size={11} aria-hidden="true" />{evidence.summary.moved}</span>{/if}
-      {#if evidence.summary.normalized}<span class="pa-diff-count pa-diff-count-normalized">≈{evidence.summary.normalized}</span>{/if}
     </span>
-  </summary>
+  </header>
   <div class="pa-prompt-change-body">
     {#if disabledNegative}
       <p class="pa-prompt-inactive-note" role="status">
@@ -74,16 +62,14 @@
              {#each group.groups as changeGroup (changeGroup.kind)}
                <div class={`pa-prompt-diff-row pa-prompt-diff-${changeGroup.kind}`}>
                  <span class="pa-prompt-diff-kind">
-                   {#if changeGroup.kind === "added"}<Plus size={12} aria-hidden="true" />{:else if changeGroup.kind === "removed"}<Minus size={12} aria-hidden="true" />{:else}<ArrowUpDown size={11} aria-hidden="true" />{/if}
-                   {kindLabel(changeGroup.kind)}
+                   {#if changeGroup.kind === "added"}<Plus size={12} aria-hidden="true" />{t("chat.prompt_diff.kind.added", "Added")}{:else}<Minus size={12} aria-hidden="true" />{t("chat.prompt_diff.kind.removed", "Removed")}{/if}
                  </span>
                  <span class:pa-prompt-diff-tags={group.pool === "tags"} class="pa-prompt-diff-values">
                    {#each changeGroup.changes as change, index (`${change.kind}-${change.fromIndex ?? "x"}-${change.toIndex ?? "x"}-${index}`)}
                      <span class:pa-prompt-diff-tag={group.pool === "tags"} class="pa-prompt-diff-value">
                        {#if change.kind === "removed"}<del>{change.before ?? ""}</del>
                        {:else if change.kind === "added"}<ins>{change.after ?? ""}</ins>
-                       {:else if change.kind === "normalized"}<del>{change.before ?? ""}</del><span aria-hidden="true"> → </span><ins>{change.after ?? ""}</ins>
-                       {:else}{change.after ?? change.before ?? ""}{/if}
+                       {:else}<ins>{change.after ?? ""}</ins>{/if}
                      </span>{#if group.pool === "tags" && index < changeGroup.changes.length - 1}<span class="pa-prompt-diff-separator" aria-hidden="true">, </span>{/if}
                    {/each}
                  </span>
@@ -97,4 +83,4 @@
     {/if}
     {#if evidence.truncated}<p class="pa-prompt-diff-truncated">{t("chat.prompt_diff.truncated", "Additional changes are hidden.")}</p>{/if}
   </div>
-</details>
+</section>

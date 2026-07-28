@@ -89,6 +89,8 @@
   let connectionState = $state<"idle" | "connecting" | "ready" | "failed">("idle");
   let connectionError = $state<string | null>(null);
   let sessionTransition: Promise<void> | null = null;
+  let submissionInFlight = $state(false);
+  let queueSubmissionInFlight = $state(false);
   let messageScroll = $state<HTMLDivElement>();
   let followLatest = $state(true);
   let wasShellOpen = false;
@@ -104,6 +106,10 @@
   const currentLayout = $derived(clampWindowLayout($useUiStore.layouts[kind], viewport, windowMinimum));
   const activeProfile = $derived($useProfileStore.profiles.find((profile) => profile.id === $useProfileStore.activeProfileId && profile.enabled));
   const workingPhase = $derived($useRuntimeStore.workingPhase);
+  const requestActive = $derived(Boolean($useChatStore.activeRequestId));
+  const queuedFollowUps = $derived($useRuntimeStore.queuedFollowUps);
+  const submissionPending = $derived(submissionInFlight && !requestActive && queuedFollowUps.length === 0);
+  const visibleWorkingPhase = $derived((submissionInFlight || requestActive) && workingPhase === "idle" ? "submitting" : workingPhase);
   const workingReasoning = $derived([...visibleMessages].reverse().find((message) => message.role === "assistant" && message.status === "streaming" && message.reasoning)?.reasoning ?? "");
   const runtimeStarting = $derived($useRuntimeStore.startup === "starting");
   const hasVisibleTerminalError = $derived(visibleMessages.some((message) => message.role === "assistant" && message.status === "error"));
@@ -307,8 +313,18 @@
     return await activeController.actions.sendMessage(input);
   }
 
+  async function queueMessage(input: SendMessageInput): Promise<MessageSubmission | void> {
+    if (actionOverrides.queueMessage) return await actionOverrides.queueMessage(input);
+    const activeController = await ensureControllerReady();
+    if (!activeController) throw new Error("Prompt Agent runtime controller is unavailable");
+    return await activeController.actions.queueMessage(input);
+  }
+
   async function submit(): Promise<void> {
-    if (!draft.trim() && !attachments.length) return;
+    const queueing = requestActive || queuedFollowUps.length > 0;
+    if ((queueing ? queueSubmissionInFlight : submissionInFlight) || (!draft.trim() && !attachments.length)) return;
+    if (queueing) queueSubmissionInFlight = true;
+    else submissionInFlight = true;
     notice = null;
     const submittedDraft = draft;
     const submittedAttachments = [...attachments];
@@ -325,7 +341,8 @@
         reasoning,
         editOf: editingMessageId ?? undefined,
       };
-      await send(input);
+      if (queueing) await queueMessage(input);
+      else await send(input);
       releaseImageAttachments(submittedAttachments);
       if (editingMessageId === input.editOf) {
         releaseImageAttachments(preEditDraft?.attachments ?? []);
@@ -339,6 +356,27 @@
       requestAnimationFrame(() => resizeComposer());
       if (error instanceof DOMException && error.name === "AbortError") return;
       notice = attachmentErrorText(error) || t("assistant.error.send", "Message could not be sent. Check the active model and try again.");
+    } finally {
+      if (queueing) queueSubmissionInFlight = false;
+      else submissionInFlight = false;
+    }
+  }
+
+  async function removeQueuedMessage(id: string): Promise<void> {
+    notice = null;
+    try {
+      await action("removeQueuedMessage")(id);
+    } catch (error) {
+      notice = errorText(error);
+    }
+  }
+
+  async function resumeQueuedMessages(): Promise<void> {
+    notice = null;
+    try {
+      await action("resumeQueuedMessages")();
+    } catch (error) {
+      notice = errorText(error);
     }
   }
 
@@ -496,6 +534,32 @@
     } catch (error) {
       releaseImageAttachments(added);
       notice = attachmentErrorText(error) || t("assistant.error.attach", "The images could not be attached. Try them again.");
+    }
+  }
+
+  async function chooseAttachments(): Promise<void> {
+    type ImagePickerWindow = Window & {
+      showOpenFilePicker?: (options: {
+        multiple: boolean;
+        excludeAcceptAllOption: boolean;
+        types: Array<{ description: string; accept: Record<string, string[]> }>;
+      }) => Promise<Array<{ getFile(): Promise<File> }>>;
+    };
+    const picker = (window as ImagePickerWindow).showOpenFilePicker;
+    if (!picker) {
+      fileInput?.click();
+      return;
+    }
+    try {
+      const handles = await picker({
+        multiple: true,
+        excludeAcceptAllOption: true,
+        types: [{ description: "Images", accept: { "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif"] } }],
+      });
+      await addFiles(await Promise.all(handles.map((handle) => handle.getFile())));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      fileInput?.click();
     }
   }
 
@@ -685,7 +749,7 @@
                   {roleLabel(message)}
                 </span><span class="pa-message-meta">
                   {#if message.status === "cancelled"}<span class="pa-status-marker pa-status-cancelled"><XCircle size={12} /> {t("chat.status.cancelled", "Cancelled")}</span>{:else if message.status === "error"}<span class="pa-status-marker pa-status-error">{t("chat.status.error", "Error")}</span>{/if}
-                  {#if message.usage && (message.role !== "assistant" || (!group.tools.length && !group.intermediateMessages.some((item) => Boolean(item.content.trim() || item.reasoning)) && !message.reasoning))}<span class="pa-usage"><Clipboard size={11} /> {[message.usage.inputTokens !== undefined ? `${message.usage.inputTokens} in` : "", message.usage.outputTokens !== undefined ? `${message.usage.outputTokens} out` : "", message.usage.latencyMs !== undefined ? `${(message.usage.latencyMs / 1000).toFixed(1)}s` : ""].filter(Boolean).join(" · ")}</span>{/if}
+                  {#if message.usage && (message.role !== "assistant" || (!group.tools.length && !group.intermediateMessages.some((item) => Boolean(item.content.trim() || item.reasoning)) && !message.reasoning))}<span class="pa-usage"><Clipboard size={11} /> {[message.usage.inputTokens !== undefined ? `${message.usage.inputTokens} in` : "", message.usage.outputTokens !== undefined ? `${message.usage.outputTokens} out` : "", message.usage.cacheReadTokens !== undefined ? `${message.usage.cacheReadTokens} cache` : "", message.usage.latencyMs !== undefined ? `${(message.usage.latencyMs / 1000).toFixed(1)}s` : ""].filter(Boolean).join(" · ")}</span>{/if}
                   {#if message.role === "assistant"}<button type="button" class="pa-message-collapse" onclick={() => toggleMessage(message.id)} aria-label={collapsedMessageIds.has(message.id) ? t("chat.expand", "Expand response") : t("chat.collapse", "Collapse response")}>{#if collapsedMessageIds.has(message.id)}<ChevronRight size={14} />{:else}<ChevronDown size={14} />{/if}</button>{/if}
                 </span></div>
                   {#if collapsedMessageIds.has(message.id)}<button type="button" class="pa-message-collapsed-preview" onclick={() => toggleMessage(message.id)}>{reasoningPreview(message.content)}</button>{:else}
@@ -698,17 +762,18 @@
              {/each}
               {#each renderMessages.pendingTools as tool (tool.id)}<div class="pa-orphan-tools"><ToolCard message={tool} onundo={undoToolMutation} /></div>{/each}
           {:else}
-             <div class="pa-empty-state"><Sparkles size={20} aria-hidden="true" /><strong>{t("assistant.empty.title", "Start with the current prompt")}</strong><p>{t("assistant.empty.hint", "Ask Prompt Agent to review composition, rewrite a prompt, inspect installed resources, or attach reference images.")}</p><div><button type="button" onclick={() => useSuggestion(t("assistant.quick.review_prompt", "Read the current prompt and suggest the highest-impact improvement."))}>{t("assistant.quick.review", "Review current prompt")}</button><button type="button" onclick={() => fileInput?.click()}>{t("assistant.quick.reference", "Analyze reference images")}</button></div></div>
+             <div class="pa-empty-state"><Sparkles size={20} aria-hidden="true" /><strong>{t("assistant.empty.title", "Start with the current prompt")}</strong><p>{t("assistant.empty.hint", "Ask Prompt Agent to review composition, rewrite a prompt, inspect installed resources, or attach reference images.")}</p><div><button type="button" onclick={() => useSuggestion(t("assistant.quick.review_prompt", "Read the current prompt and suggest the highest-impact improvement."))}>{t("assistant.quick.review", "Review current prompt")}</button><button type="button" onclick={() => void chooseAttachments()}>{t("assistant.quick.reference", "Analyze reference images")}</button></div></div>
           {/if}
-          {#if $useChatStore.activeRequestId && workingPhase !== "idle"}<WorkingIndicator phase={workingPhase} tool={$useRuntimeStore.workingTool} statusDetail={$useRuntimeStore.workingDetail} reasoning={workingReasoning} />{/if}
+          {#if (submissionInFlight || requestActive) && visibleWorkingPhase !== "idle"}<WorkingIndicator phase={visibleWorkingPhase} tool={$useRuntimeStore.workingTool} statusDetail={$useRuntimeStore.workingDetail} reasoning={workingReasoning} />{/if}
         </div>
 
         <form class:pa-composer-drop-active={dropActive} class="pa-composer" onsubmit={(event) => { event.preventDefault(); void submit(); }} ondragover={(event) => { event.preventDefault(); dropActive = true; }} ondragleave={() => dropActive = false} ondrop={(event) => { event.preventDefault(); dropActive = false; void addFiles(Array.from(event.dataTransfer?.files ?? [])); }}>
           {#if editingMessageId}<div class="pa-editing-banner" role="status"><span><Pencil size={13} /> {t("chat.editing", "Editing message")}</span><button type="button" onclick={cancelEdit}>{t("chat.cancel_edit", "Cancel")}</button></div>{/if}
-          {#if attachments.length}<div class="pa-filmstrip" aria-label={t("assistant.attached_images", "Attached reference images")}>{#each attachments as attachment, index (attachment.id)}<div class="pa-filmstrip-item"><button type="button" class="pa-filmstrip-preview" onclick={() => lightbox = { attachments, index }} oncontextmenu={(event) => { event.preventDefault(); attachmentMenuId = attachment.id; }} aria-label={tf("assistant.preview_named", "Preview {name}", { name: attachment.name })}><img src={attachmentPreviewUrl(attachment)} alt={attachment.name} width="58" height="54" /><span class="pa-filmstrip-name">{attachment.name}</span></button><button type="button" class="pa-filmstrip-remove" onclick={() => void removeAttachment(attachment.id)} aria-label={tf("assistant.remove_named", "Remove {name}", { name: attachment.name })}><X size={12} /></button><button type="button" class="pa-filmstrip-more" onclick={() => attachmentMenuId = attachmentMenuId === attachment.id ? null : attachment.id} aria-label={tf("assistant.edit_named", "Edit {name}", { name: attachment.name })}>•••</button>{#if attachmentMenuId === attachment.id}<div class="pa-attachment-menu" role="menu"><button type="button" role="menuitem" onclick={() => { replacementId = attachment.id; replacementInput?.click(); attachmentMenuId = null; }}><Pencil size={13} /> {t("common.replace", "Replace")}</button><button type="button" role="menuitem" onclick={() => { void removeAttachment(attachment.id); attachmentMenuId = null; }}><Trash2 size={13} /> {t("common.remove", "Remove")}</button></div>{/if}</div>{/each}<button type="button" class="pa-filmstrip-add" onclick={() => fileInput?.click()} aria-label={t("assistant.attach_another", "Attach another image")}><Plus size={17} /></button></div>{/if}
-            <textarea name="prompt-agent-message" autocomplete="off" bind:this={composerInput} bind:value={draft} rows="1" placeholder={t("assistant.input.placeholder", "Ask about or change the current prompt…")} aria-label={t("assistant.input.label", "Message Prompt Agent")} onfocus={() => { composerFocused = true; $useUiStore.bringToFront("chat"); }} onblur={() => composerFocused = false} oninput={(event) => resizeComposer(event.currentTarget)} onkeydown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) { event.preventDefault(); if ($useChatStore.activeRequestId) stop(); else void submit(); } }}></textarea>
-          <div class="pa-composer-bottom"><div class="pa-composer-tools"><button type="button" class="pa-composer-icon" onclick={() => fileInput?.click()} aria-label={t("assistant.attach", "Attach reference images")}><ImagePlus size={16} /></button></div>
-              <div class="pa-composer-tools"><div class="pa-composer-picker-row" aria-label={t("assistant.model_controls", "Model controls")}><ModelPicker /><ReasoningPicker /></div>{#if $useChatStore.activeRequestId}<button type="button" class="pa-send-button pa-stop-button" onclick={stop} disabled={$useRuntimeStore.workingPhase === "cancelling"} aria-label={t("assistant.stop", "Stop response")}><CircleStop size={17} /></button>{:else}<button type="submit" class="pa-send-button" onpointerdown={keepComposerFocus} disabled={!draft.trim() && !attachments.length} aria-label={t("assistant.send", "Send message")}><Send size={17} /></button>{/if}</div>
+          {#if queuedFollowUps.length}<section class="pa-followup-queue" aria-label={t("assistant.queue.label", "Queued follow-ups")}><div class="pa-followup-heading"><span><Clock3 size={13} /> {tf("assistant.queue.next", "Next · {count}", { count: queuedFollowUps.length })}</span>{#if !requestActive}<span class="pa-followup-paused">{t("assistant.queue.paused", "Paused")}</span><button type="button" onclick={() => void resumeQueuedMessages()}>{t("assistant.queue.continue", "Continue")}</button>{/if}</div><ol>{#each queuedFollowUps as item, index (item.id)}<li><span class="pa-followup-index">{index + 1}</span><span class="pa-followup-text">{item.text.trim() || tf("assistant.queue.attachments_only", "{count} attached image(s)", { count: item.attachmentCount })}</span>{#if item.attachmentCount > 0 && item.text.trim()}<span class="pa-followup-attachments">+{item.attachmentCount} <ImagePlus size={11} /></span>{/if}<button type="button" onclick={() => void removeQueuedMessage(item.id)} aria-label={t("assistant.queue.remove", "Remove queued follow-up")}><X size={13} /></button></li>{/each}</ol></section>{/if}
+          {#if attachments.length}<div class="pa-filmstrip" aria-label={t("assistant.attached_images", "Attached reference images")}>{#each attachments as attachment, index (attachment.id)}<div class="pa-filmstrip-item"><button type="button" class="pa-filmstrip-preview" onclick={() => lightbox = { attachments, index }} oncontextmenu={(event) => { event.preventDefault(); attachmentMenuId = attachment.id; }} aria-label={tf("assistant.preview_named", "Preview {name}", { name: attachment.name })}><img src={attachmentPreviewUrl(attachment)} alt={attachment.name} width="58" height="54" /><span class="pa-filmstrip-name">{attachment.name}</span></button><button type="button" class="pa-filmstrip-remove" onclick={() => void removeAttachment(attachment.id)} aria-label={tf("assistant.remove_named", "Remove {name}", { name: attachment.name })}><X size={12} /></button><button type="button" class="pa-filmstrip-more" onclick={() => attachmentMenuId = attachmentMenuId === attachment.id ? null : attachment.id} aria-label={tf("assistant.edit_named", "Edit {name}", { name: attachment.name })}>•••</button>{#if attachmentMenuId === attachment.id}<div class="pa-attachment-menu" role="menu"><button type="button" role="menuitem" onclick={() => { replacementId = attachment.id; replacementInput?.click(); attachmentMenuId = null; }}><Pencil size={13} /> {t("common.replace", "Replace")}</button><button type="button" role="menuitem" onclick={() => { void removeAttachment(attachment.id); attachmentMenuId = null; }}><Trash2 size={13} /> {t("common.remove", "Remove")}</button></div>{/if}</div>{/each}<button type="button" class="pa-filmstrip-add" onclick={() => void chooseAttachments()} aria-label={t("assistant.attach_another", "Attach another image")}><Plus size={17} /></button></div>{/if}
+            <textarea name="prompt-agent-message" autocomplete="off" bind:this={composerInput} bind:value={draft} rows="1" placeholder={requestActive ? t("assistant.input.follow_up", "Add a follow-up for after this response…") : t("assistant.input.placeholder", "Ask about or change the current prompt…")} aria-label={t("assistant.input.label", "Message Prompt Agent")} onfocus={() => { composerFocused = true; $useUiStore.bringToFront("chat"); }} onblur={() => composerFocused = false} oninput={(event) => resizeComposer(event.currentTarget)} onkeydown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) { event.preventDefault(); void submit(); } }}></textarea>
+          <div class="pa-composer-bottom"><div class="pa-composer-tools"><button type="button" class="pa-composer-icon" onclick={() => void chooseAttachments()} aria-label={t("assistant.attach", "Attach reference images")}><ImagePlus size={16} /></button></div>
+              <div class="pa-composer-tools"><div class="pa-composer-picker-row" aria-label={t("assistant.model_controls", "Model controls")}><ModelPicker /><ReasoningPicker /></div>{#if requestActive}<button type="button" class="pa-stop-button" onclick={stop} disabled={$useRuntimeStore.workingPhase === "cancelling"} aria-label={t("assistant.stop", "Stop response")}><CircleStop size={17} /></button>{/if}<button type="submit" class="pa-send-button" onpointerdown={keepComposerFocus} disabled={(requestActive || queuedFollowUps.length ? queueSubmissionInFlight : submissionInFlight) || (!draft.trim() && !attachments.length)} aria-busy={submissionPending} aria-label={requestActive || queuedFollowUps.length ? t("assistant.queue.send", "Queue follow-up") : t("assistant.send", "Send message")}>{#if submissionPending}<RefreshCw class="pa-send-pending-icon" size={17} />{:else if requestActive || queuedFollowUps.length}<Clock3 size={17} />{:else}<Send size={17} />{/if}</button></div>
            </div>
           <input bind:this={fileInput} type="file" accept="image/*" multiple hidden onchange={(event) => { void addFiles(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} />
           <input bind:this={replacementInput} type="file" accept="image/*" hidden onchange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void replaceAttachment(file); event.currentTarget.value = ""; }} />
