@@ -16,9 +16,12 @@
     const RESOURCE_TOOLS = new Set([
         "search_resources",
         "inspect_resource",
+        "load_skill",
         "search_danbooru_tags",
         "inspect_danbooru_tags",
-        "related_danbooru_tags"
+        "related_danbooru_tags",
+        "search_danbooru_wikis",
+        "inspect_danbooru_wikis"
     ]);
 
     function wait(ms) {
@@ -72,7 +75,7 @@
 
     async function loadPromptSkillTool(args, signal) {
         const name = String(args.name || "").trim().toLowerCase().replace(/[- ]/g, "_");
-        if (!name) return { ok: false, error: "load_prompt_skill requires name" };
+        if (!name) return { ok: false, error: "load_skill requires name" };
         if (assistantState.loadedPromptSkills[name]) return assistantState.loadedPromptSkills[name];
         const result = await resourceGet(`/prompt-agent/api/prompt-skills/${encodeURIComponent(name)}`, {}, signal);
         if (result.ok) assistantState.loadedPromptSkills[name] = result;
@@ -91,7 +94,7 @@
 
     async function inspectDanbooruTagsTool(args, signal) {
         const names = Array.isArray(args.names) ? args.names.join(",") : "";
-        return await resourceGet("/prompt-agent/api/danbooru/tags/inspect-batch", { names: names, include_wiki: !!args.include_wiki }, signal);
+        return await resourceGet("/prompt-agent/api/danbooru/tags/inspect-batch", { names: names, include_wiki: args.include_wiki !== false }, signal);
     }
 
     async function relatedDanbooruTagsTool(args, signal) {
@@ -100,6 +103,20 @@
             category: args.category || "",
             limit: args.limit || 12
         }, signal);
+    }
+
+    async function searchDanbooruWikisTool(args, signal) {
+        const queries = Array.isArray(args.queries) ? JSON.stringify(args.queries) : "";
+        return await resourceGet("/prompt-agent/api/danbooru/wikis/search", {
+            query: args.query || "",
+            queries: queries,
+            limit: args.limit || 12
+        }, signal);
+    }
+
+    async function inspectDanbooruWikisTool(args, signal) {
+        const titles = Array.isArray(args.titles) ? args.titles.join(",") : "";
+        return await resourceGet("/prompt-agent/api/danbooru/wikis/inspect-batch", { titles: titles }, signal);
     }
 
     function resourceMutationGuard(args) {
@@ -246,9 +263,12 @@
         const args = tool.arguments || {};
         if (name === "search_resources") return await searchResourcesTool(args, signal);
         if (name === "inspect_resource") return await inspectResourceTool(args, signal);
+        if (name === "load_skill") return await loadPromptSkillTool(args, signal);
         if (name === "search_danbooru_tags") return await searchDanbooruTagsTool(args, signal);
         if (name === "inspect_danbooru_tags") return await inspectDanbooruTagsTool(args, signal);
         if (name === "related_danbooru_tags") return await relatedDanbooruTagsTool(args, signal);
+        if (name === "search_danbooru_wikis") return await searchDanbooruWikisTool(args, signal);
+        if (name === "inspect_danbooru_wikis") return await inspectDanbooruWikisTool(args, signal);
         return undefined;
     }
 
@@ -262,6 +282,8 @@
         searchDanbooruTagsTool,
         inspectDanbooruTagsTool,
         relatedDanbooruTagsTool,
+        searchDanbooruWikisTool,
+        inspectDanbooruWikisTool,
         resourceMutationGuard,
         appendFragment,
         formatWeight,

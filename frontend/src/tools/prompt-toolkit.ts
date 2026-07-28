@@ -42,7 +42,7 @@ export function createPromptToolkitTool(): AgentTool<typeof PROMPT_TOOLKIT_SCHEM
     description: "Analyze or safely transform hybrid prompts that may contain both natural-language blocks and Danbooru-style tags. Use deduplicate/sort/normalize to produce recommended_patch, then pass that exact patch to edit_prompt with the latest base_hash. The toolkit never writes Forge state.",
     parameters: PROMPT_TOOLKIT_SCHEMA,
     permission: "read",
-    executionMode: "sequential",
+    executionMode: "parallel",
     execute: async (_toolCallId, params: PromptToolkitParameters, signal) => {
       const options = params.options;
       const result = runPromptToolkit(params.action, params.prompt, params.pool ?? "all", {

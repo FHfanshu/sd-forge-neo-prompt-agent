@@ -5,9 +5,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from prompt_agent.danbooru import inspect_danbooru_tag, inspect_danbooru_tags, related_danbooru_tags, search_danbooru_tags
+from prompt_agent.danbooru import (
+    inspect_danbooru_tag,
+    inspect_danbooru_tags,
+    inspect_danbooru_wikis,
+    related_danbooru_tags,
+    search_danbooru_tags,
+    search_danbooru_wikis,
+)
 from prompt_agent.forge_resources import inspect_resource, search_resources
 from prompt_agent.prompt_skills import automatic_prompt_skill, load_prompt_skill
+from quality.acceptance import acceptance
 
 
 class ResourceCatalogTests(unittest.TestCase):
@@ -67,6 +75,7 @@ class ResourceCatalogTests(unittest.TestCase):
         self.assertEqual("bad", result["negative_prompt"])
 
 class PromptSkillTests(unittest.TestCase):
+    @acceptance("PROMPT-SKILL-001@2", "abstract-style-translation")
     def test_anima_skill_loads_and_is_model_specific(self):
         result = load_prompt_skill("anima-dit")
         self.assertTrue(result["ok"])
@@ -75,6 +84,9 @@ class PromptSkillTests(unittest.TestCase):
         self.assertIn("256 tokens is an absolute ceiling, not a target", result["guide"])
         self.assertIn("negative prompt has no effect", result["guide"])
         self.assertIn("CFG must be above 1", result["guide"])
+        self.assertIn("do not answer with prose in chat while writing only tags", result["guide"])
+        self.assertIn("Treat labels such as `Frutiger Aero` as brainstorming seeds", result["guide"])
+        self.assertIn("translucent aqua bubbles", result["guide"])
         self.assertEqual("anima_dit", automatic_prompt_skill("anima", "anything"))
         self.assertEqual("anima_dit", automatic_prompt_skill("all", "Anima-Aesthetic-v1"))
         self.assertEqual("", automatic_prompt_skill("sdxl", "other-model"))
@@ -87,8 +99,63 @@ class PromptSkillTests(unittest.TestCase):
         self.assertIn("tag_group%3Aimage_composition", result["guide"])
         self.assertIn("Never fabricate a canonical tag name", result["guide"])
 
+    @acceptance("PROMPT-SKILL-001@2", "catalog,forge-couple")
+    def test_forge_couple_skill_is_versioned_and_covers_multi_character_regions(self):
+        result = load_prompt_skill("forge-couple")
+        self.assertTrue(result["ok"])
+        self.assertEqual("7.1.0", result["version"])
+        self.assertIn("Repeat the total subject count", result["guide"])
+        self.assertIn("Horizontal direction maps lines left to right", result["guide"])
+        self.assertIn("Do not insert `BREAK`", result["guide"])
+        self.assertIn("current Prompt Agent tool surface edits prompt text but does not control Forge Couple settings", result["guide"])
+
+        missing = load_prompt_skill("../../secrets")
+        self.assertFalse(missing["ok"])
+        self.assertEqual(["anima_dit", "danbooru_tags", "forge_couple"], missing["available"])
+
 
 class DanbooruLookupTests(unittest.TestCase):
+    @acceptance("AGENT-TOOLS-001@4", "wiki-navigation")
+    def test_wiki_search_and_group_inspection_expose_bounded_next_hops(self):
+        search_payload = [
+            {"type": "tag", "label": "frutiger aero", "value": "frutiger_aero", "category": 0},
+            {"type": "tag", "label": "tag group:visual aesthetic", "value": "tag_group:visual_aesthetic"},
+        ]
+        wiki_payload = [{
+            "id": 184001,
+            "title": "frutiger_aero",
+            "body": "Glossy [[bubble]]s and [[retrofuturism|retrofuturistic]] design. See [[Tag Group:Visual aesthetic]] and [[bubble]].",
+            "other_names": ["frutigeraero"],
+            "updated_at": "2026-06-25",
+            "is_deleted": False,
+        }]
+        with patch("prompt_agent.danbooru._request_json", side_effect=[search_payload, wiki_payload]) as request:
+            searched = search_danbooru_wikis("frutiger", limit=5)
+            inspected = inspect_danbooru_wikis(["Frutiger Aero"])
+
+        self.assertEqual("frutiger_aero", searched["items"][0]["canonical_title"])
+        self.assertEqual("wiki", searched["items"][0]["kind"])
+        self.assertEqual("tag_group", searched["items"][1]["kind"])
+        page = inspected["items"][0]
+        self.assertEqual("Glossy [[bubble]]s", page["body"][:18])
+        self.assertEqual(
+            ["bubble", "retrofuturism", "tag_group:visual_aesthetic"],
+            [item["canonical_title"] for item in page["references"]],
+        )
+        self.assertEqual("tag_group", page["references"][2]["kind"])
+        self.assertEqual("wiki_page", request.call_args_list[0].args[1]["search[type]"])
+        self.assertEqual("frutiger_aero", request.call_args_list[1].args[1]["search[title]"])
+
+    def test_wiki_inspection_bounds_body_and_reference_fanout(self):
+        body = " ".join(f"[[tag_{index}]]" for index in range(100)) + ("x" * 13_000)
+        with patch("prompt_agent.danbooru._request_json", return_value=[{"title": "large_group", "body": body}]):
+            result = inspect_danbooru_wikis(["large_group"])
+        page = result["items"][0]
+        self.assertEqual(12_000, len(page["body"]))
+        self.assertTrue(page["truncated"])
+        self.assertEqual(80, len(page["references"]))
+        self.assertTrue(page["references_truncated"])
+
     def test_search_normalizes_query_and_category(self):
         payload = [{"id": 1, "name": "blue_hair", "category": 0, "post_count": 42, "is_deprecated": False}]
         autocomplete = [{"tag": payload[0]}]
@@ -115,15 +182,20 @@ class DanbooruLookupTests(unittest.TestCase):
         self.assertEqual("exact", result["results"][0]["items"][0]["match"])
         self.assertNotIn("items", result)
 
+    @acceptance("AGENT-TOOLS-001@4", "danbooru-wiki-default")
     def test_batch_inspection_and_related_tags_are_bounded(self):
         tag_payload = [{"id": 1, "name": "blue_hair", "category": 0, "post_count": 42, "is_deprecated": False}]
+        wiki_payload = [{"title": "blue_hair", "body": "Blue hair definition", "updated_at": "2026-07-12"}]
         related_payload = {"related_tags": [{"tag": {"id": 2, "name": "long_hair", "category": 0, "post_count": 12, "is_deprecated": False}, "frequency": 0.5}], "wiki_page_tags": []}
-        with patch("prompt_agent.danbooru._request_json", return_value=tag_payload):
+        with patch("prompt_agent.danbooru._request_json", side_effect=[tag_payload, wiki_payload]):
             inspected = inspect_danbooru_tags(["blue hair", "blue_hair"])
+        with patch("prompt_agent.danbooru._request_json", return_value=tag_payload):
+            metadata_only = inspect_danbooru_tags(["blue hair"], include_wiki=False)
         with patch("prompt_agent.danbooru._request_json", return_value=related_payload):
             related = related_danbooru_tags("blue hair", limit=1)
         self.assertEqual(1, len(inspected["items"]))
-        self.assertIsNone(inspected["items"][0].get("wiki"))
+        self.assertEqual("Blue hair definition", inspected["items"][0]["wiki"]["body"])
+        self.assertIsNone(metadata_only["items"][0].get("wiki"))
         self.assertEqual("long hair", related["related"][0]["name"])
 
     def test_inspect_returns_only_exact_tag_and_wiki(self):

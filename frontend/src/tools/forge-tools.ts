@@ -75,13 +75,26 @@ const danbooruSearchSchema = Type.Object({
 
 const danbooruInspectBatchSchema = Type.Object({
   names: Type.Array(Type.String({ minLength: 1, maxLength: 160 }), { minItems: 1, maxItems: 12 }),
-  include_wiki: Type.Optional(Type.Boolean()),
+  include_wiki: Type.Optional(Type.Boolean({
+    default: true,
+    description: "Include the Danbooru Wiki body by default; set false only for metadata-only validation.",
+  })),
 }, { additionalProperties: false });
 
 const danbooruRelatedSchema = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 160 }),
   category: Type.Optional(Type.String({ maxLength: 32 })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 30 })),
+}, { additionalProperties: false });
+
+const danbooruWikiSearchSchema = Type.Object({
+  query: Type.Optional(Type.String({ minLength: 1, maxLength: 160 })),
+  queries: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 160 }), { minItems: 1, maxItems: 12 })),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 30 })),
+}, { additionalProperties: false });
+
+const danbooruWikiInspectSchema = Type.Object({
+  titles: Type.Array(Type.String({ minLength: 1, maxLength: 160 }), { minItems: 1, maxItems: 12 }),
 }, { additionalProperties: false });
 
 const generationParameterSchema = Type.Object({
@@ -120,6 +133,8 @@ export const FORGE_TOOL_SCHEMAS = {
   search_danbooru_tags: danbooruSearchSchema,
   inspect_danbooru_tags: danbooruInspectBatchSchema,
   related_danbooru_tags: danbooruRelatedSchema,
+  search_danbooru_wikis: danbooruWikiSearchSchema,
+  inspect_danbooru_wikis: danbooruWikiInspectSchema,
 } as const;
 
 export type ForgeToolName = keyof typeof FORGE_TOOL_SCHEMAS;
@@ -173,6 +188,8 @@ const TOOL_TIMEOUTS: Record<ForgeToolName, number> = {
   search_danbooru_tags: 30_000,
   inspect_danbooru_tags: 30_000,
   related_danbooru_tags: 20_000,
+  search_danbooru_wikis: 30_000,
+  inspect_danbooru_wikis: 30_000,
 };
 
 const WRITE_TOOLS = new Set<ForgeToolName>([
@@ -281,7 +298,7 @@ function createForgeTool<T extends TSchema>(
     description,
     parameters,
     permission,
-    executionMode: "sequential",
+    executionMode: permission === "write" ? "sequential" : "parallel",
     execute: async (_toolCallId, params, signal) => {
       const args = prepareArguments ? prepareArguments(params) : params as Record<string, unknown>;
       const result = await invokeForgeTool(name, args, permission, signal, options);
@@ -296,7 +313,7 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
     createForgeTool(
       "edit_prompt",
       "Edit prompt",
-      "Edit the positive or negative prompt after read_prompt. Use patches/diff when non-empty; full prompt overwrite only when empty. For negative edits pass negative_state_hash when available and report effective=false truthfully when the field is disabled.",
+      "Edit the positive or negative prompt after read_prompt. Use patches/diff when non-empty; full prompt overwrite only when empty. When the user requests NL or natural-language content, the patch must add a substantive natural-language block; a tag-only replacement is invalid. For negative edits pass negative_state_hash when available and report effective=false truthfully when the field is disabled.",
       FORGE_TOOL_SCHEMAS.edit_prompt,
       "write",
       options,
@@ -306,8 +323,10 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
     createForgeTool("search_resources", "Search Forge resources", "Search styles, wildcards, LoRAs, checkpoints, or embeddings by logical ID.", FORGE_TOOL_SCHEMAS.search_resources, "read", options),
     createForgeTool("inspect_resource", "Inspect Forge resource", "Inspect one logical Forge resource without exposing filesystem paths.", FORGE_TOOL_SCHEMAS.inspect_resource, "read", options),
     createForgeTool("search_danbooru_tags", "Search Danbooru tags", "Search live Danbooru tag candidates for one or more short visual concepts.", FORGE_TOOL_SCHEMAS.search_danbooru_tags, "read", options),
-    createForgeTool("inspect_danbooru_tags", "Inspect Danbooru tags", "Inspect up to 12 selected Danbooru tags in parallel.", FORGE_TOOL_SCHEMAS.inspect_danbooru_tags, "read", options),
+    createForgeTool("inspect_danbooru_tags", "Inspect Danbooru tags", "Inspect up to 12 exact Danbooru tags in parallel and include each Wiki body by default. Set include_wiki=false only for metadata-only validation; search URLs are provenance, not Wiki content.", FORGE_TOOL_SCHEMAS.inspect_danbooru_tags, "read", options),
     createForgeTool("related_danbooru_tags", "Related Danbooru tags", "Expand one verified Danbooru seed with related tag candidates.", FORGE_TOOL_SCHEMAS.related_danbooru_tags, "read", options),
+    createForgeTool("search_danbooru_wikis", "Search Danbooru Wikis", "Search arbitrary Danbooru Wiki and Tag Group titles. Use the returned canonical titles with inspect_danbooru_wikis; search results are candidates, not inspected evidence.", FORGE_TOOL_SCHEMAS.search_danbooru_wikis, "read", options),
+    createForgeTool("inspect_danbooru_wikis", "Inspect Danbooru Wikis", "Inspect up to 12 exact Danbooru Wiki or Tag Group pages in parallel, returning bounded bodies and next-hop references for deliberate multi-step exploration.", FORGE_TOOL_SCHEMAS.inspect_danbooru_wikis, "read", options),
   ];
 }
 

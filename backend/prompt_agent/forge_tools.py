@@ -14,6 +14,8 @@ FORGE_TOOL_NAMES = (
     "search_danbooru_tags",
     "inspect_danbooru_tags",
     "related_danbooru_tags",
+    "search_danbooru_wikis",
+    "inspect_danbooru_wikis",
 )
 _FORBIDDEN_KEYS = frozenset({
     "api_key",
@@ -127,6 +129,16 @@ def validate_forge_tool_request(tool: str, payload: Any) -> dict[str, Any]:
         _safe_text(payload.get("name"), "name", 160, required=True)
         _safe_text(payload.get("category"), "category", 32)
         _bounded_integer(payload.get("limit", 12), "limit", 1, 30)
+    elif tool == "search_danbooru_wikis":
+        _allow_keys(payload, {"query", "queries", "limit"})
+        _validate_danbooru_search(payload)
+    elif tool == "inspect_danbooru_wikis":
+        _allow_keys(payload, {"titles"})
+        titles = payload.get("titles")
+        if not isinstance(titles, list) or not titles or len(titles) > 12:
+            raise ForgeToolValidationError("titles must be a list with 1 to 12 items")
+        for index, title in enumerate(titles):
+            _safe_text(title, f"titles[{index}]", 160, required=True)
     return dict(payload)
 
 

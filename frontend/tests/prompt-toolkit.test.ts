@@ -6,7 +6,7 @@ import { createPromptToolkitTool, PROMPT_TOOLKIT_SCHEMA } from "../src/tools/pro
 import { acceptanceTest } from "./acceptance";
 
 describe("hybrid prompt toolkit", () => {
-  acceptanceTest("PROMPT-TOOLKIT-001@1", "hybrid-preservation", "round trips mixed syntax without changing bytes", () => {
+  acceptanceTest("PROMPT-TOOLKIT-001@2", "hybrid-preservation", "round trips mixed syntax without changing bytes", () => {
     const source = "A woman stands beneath neon signs, 1girl, (blue eyes:1.2), <lora:film:0.8>, __weather__, artist\\,name, BREAK, AND, low quality";
     expect(roundTripPrompt(source)).toBe(source);
     const document = parseHybridPrompt(source);
@@ -33,7 +33,7 @@ describe("hybrid prompt toolkit", () => {
     expect(result.changes.every((change) => change.pool === "tags")).toBe(true);
   });
 
-  acceptanceTest("PROMPT-TOOLKIT-001@1", "deterministic-operations", "deduplicates canonical tags within a group and keeps the stronger weight", () => {
+  acceptanceTest("PROMPT-TOOLKIT-001@2", "deterministic-operations", "deduplicates canonical tags within a group and keeps the stronger weight", () => {
     const source = "1girl, blue_eyes, (blue eyes:1.2), BREAK, blue eyes";
     const result = runPromptToolkit("deduplicate", source, "tags", { weightPolicy: "highest", preserveGroups: true });
     expect(result.output).toBe("1girl, (blue eyes:1.2), BREAK, blue eyes");

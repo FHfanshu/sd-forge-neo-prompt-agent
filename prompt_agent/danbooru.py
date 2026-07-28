@@ -14,8 +14,10 @@ DEFAULT_LIMIT = 12
 MAX_LIMIT = 30
 MAX_QUERIES = 12
 WIKI_BODY_LIMIT = 12_000
+MAX_WIKI_REFERENCES = 80
 _CATEGORIES = {0: "general", 1: "artist", 3: "copyright", 4: "character", 5: "meta"}
 _CATEGORY_IDS = {name: category for category, name in _CATEGORIES.items()}
+_WIKI_LINK_RE = re.compile(r"\[\[([^\]\r\n]+)\]\]")
 
 
 def _limit(value: Any) -> int:
@@ -47,6 +49,27 @@ def _tag_queries(query: str = "", queries: Any = None) -> list[str]:
     return result
 
 
+def _wiki_query(value: Any) -> str:
+    query = re.sub(r"\s+", "_", str(value or "").strip().lower())
+    if not query:
+        raise ValueError("Danbooru Wiki query is required")
+    if len(query) > 160:
+        raise ValueError("Danbooru Wiki query is too long")
+    return query
+
+
+def _wiki_queries(query: str = "", queries: Any = None) -> list[str]:
+    values = queries if isinstance(queries, list) else [query]
+    result = []
+    for value in values:
+        normalized = _wiki_query(value)
+        if normalized not in result:
+            result.append(normalized)
+    if len(result) > MAX_QUERIES:
+        raise ValueError(f"at most {MAX_QUERIES} Danbooru Wiki queries are allowed")
+    return result
+
+
 def _request_json(path: str, params: dict[str, Any]) -> Any:
     url = f"{DANBOORU_URL}{path}?{urlencode(params)}"
     request = Request(url, headers={"User-Agent": "SDForgeNeoPromptAgent/1.0"})
@@ -72,6 +95,125 @@ def _tag_item(tag: dict[str, Any]) -> dict[str, Any]:
         "wiki_url": f"{DANBOORU_URL}/wiki_pages/{canonical_name}",
         "tag_url": f"{DANBOORU_URL}/tags?search%5Bname%5D={canonical_name}",
     }
+
+
+def _wiki_kind(canonical_title: str) -> str:
+    return "tag_group" if canonical_title == "tag_groups" or canonical_title.startswith("tag_group:") else "wiki"
+
+
+def _wiki_reference_items(body: str) -> tuple[list[dict[str, Any]], bool]:
+    references = []
+    seen: set[str] = set()
+    matches = list(_WIKI_LINK_RE.finditer(body))
+    for match in matches:
+        raw = match.group(1).strip()
+        target, _, label = raw.partition("|")
+        target = target.split("#", 1)[0].strip()
+        try:
+            canonical_title = _wiki_query(target)
+        except ValueError:
+            continue
+        if canonical_title in seen:
+            continue
+        references.append({
+            "title": canonical_title.replace("_", " "),
+            "canonical_title": canonical_title,
+            "label": (label.strip() or target).replace("_", " "),
+            "kind": _wiki_kind(canonical_title),
+            "url": f"{DANBOORU_URL}/wiki_pages/{canonical_title}",
+        })
+        seen.add(canonical_title)
+        if len(references) >= MAX_WIKI_REFERENCES:
+            break
+    return references, len(seen) < len({match.group(1).partition("|")[0].strip().casefold() for match in matches})
+
+
+def _wiki_item(wiki: dict[str, Any], fallback_title: str = "") -> dict[str, Any]:
+    canonical_title = _wiki_query(wiki.get("title") or fallback_title)
+    body = str(wiki.get("body") or "")
+    visible_body = body[:WIKI_BODY_LIMIT]
+    references, references_truncated = _wiki_reference_items(visible_body)
+    return {
+        "id": wiki.get("id"),
+        "title": canonical_title.replace("_", " "),
+        "canonical_title": canonical_title,
+        "kind": _wiki_kind(canonical_title),
+        "body": visible_body,
+        "truncated": len(body) > WIKI_BODY_LIMIT,
+        "other_names": [str(value)[:160] for value in wiki.get("other_names", [])[:30] if str(value).strip()] if isinstance(wiki.get("other_names"), list) else [],
+        "is_deleted": bool(wiki.get("is_deleted")),
+        "updated_at": wiki.get("updated_at"),
+        "references": references,
+        "references_truncated": references_truncated,
+        "url": f"{DANBOORU_URL}/wiki_pages/{canonical_title}",
+    }
+
+
+def _wiki_candidate_items(query: str, limit: int) -> list[dict[str, Any]]:
+    payload = _request_json(
+        "/autocomplete.json",
+        {"search[query]": query, "search[type]": "wiki_page", "limit": limit},
+    )
+    result = []
+    seen: set[str] = set()
+    for entry in payload if isinstance(payload, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            canonical_title = _wiki_query(entry.get("value"))
+        except ValueError:
+            continue
+        if canonical_title in seen:
+            continue
+        result.append({
+            "title": str(entry.get("label") or canonical_title.replace("_", " ")),
+            "canonical_title": canonical_title,
+            "kind": _wiki_kind(canonical_title),
+            "category": _CATEGORIES.get(entry.get("category"), "unknown") if entry.get("category") is not None else None,
+            "url": f"{DANBOORU_URL}/wiki_pages/{canonical_title}",
+        })
+        seen.add(canonical_title)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def search_danbooru_wikis(query: str = "", limit: int = DEFAULT_LIMIT, queries: Any = None) -> dict[str, Any]:
+    normalized_queries = _wiki_queries(query, queries)
+    item_limit = _limit(limit)
+    with ThreadPoolExecutor(max_workers=min(6, len(normalized_queries))) as executor:
+        groups = list(executor.map(lambda value: _wiki_candidate_items(value, item_limit), normalized_queries))
+    results = [
+        {"query": normalized.replace("_", " "), "canonical_query": normalized, "items": items}
+        for normalized, items in zip(normalized_queries, groups)
+    ]
+    if len(results) == 1:
+        return {"ok": True, **results[0], "source": DANBOORU_URL}
+    return {"ok": True, "results": results, "source": DANBOORU_URL}
+
+
+def inspect_danbooru_wiki(title: str) -> dict[str, Any]:
+    normalized_title = _wiki_query(title)
+    payload = _request_json("/wiki_pages.json", {"search[title]": normalized_title, "limit": 1})
+    wiki = payload[0] if isinstance(payload, list) and payload and isinstance(payload[0], dict) else None
+    if not wiki:
+        return {
+            "ok": False,
+            "title": normalized_title.replace("_", " "),
+            "canonical_title": normalized_title,
+            "error": "Danbooru Wiki page not found",
+            "source": DANBOORU_URL,
+        }
+    return {"ok": True, **_wiki_item(wiki, normalized_title), "source": DANBOORU_URL}
+
+
+def inspect_danbooru_wikis(titles: Any) -> dict[str, Any]:
+    if not isinstance(titles, list) or not titles:
+        raise ValueError("Danbooru Wiki titles must be a non-empty list")
+    normalized_titles = _wiki_queries(queries=titles)
+    with ThreadPoolExecutor(max_workers=min(6, len(normalized_titles))) as executor:
+        results = list(executor.map(inspect_danbooru_wiki, normalized_titles))
+    return {"ok": True, "items": results, "source": DANBOORU_URL}
 
 
 def _candidate_items(query: str, category_name: str, limit: int) -> list[dict[str, Any]]:
@@ -156,23 +298,12 @@ def inspect_danbooru_tag(name: str, include_wiki: bool = True) -> dict[str, Any]
     if include_wiki:
         wiki_payload = _request_json("/wiki_pages.json", {"search[title]": normalized_name, "limit": 1})
         wiki = wiki_payload[0] if isinstance(wiki_payload, list) and wiki_payload and isinstance(wiki_payload[0], dict) else {}
-        body = str(wiki.get("body") or "")
-        result["wiki"] = (
-            {
-                "title": str(wiki.get("title") or normalized_name),
-                "body": body[:WIKI_BODY_LIMIT],
-                "truncated": len(body) > WIKI_BODY_LIMIT,
-                "updated_at": wiki.get("updated_at"),
-                "url": f"{DANBOORU_URL}/wiki_pages/{normalized_name}",
-            }
-            if wiki
-            else None
-        )
+        result["wiki"] = _wiki_item(wiki, normalized_name) if wiki else None
     result["source"] = DANBOORU_URL
     return result
 
 
-def inspect_danbooru_tags(names: Any, include_wiki: bool = False) -> dict[str, Any]:
+def inspect_danbooru_tags(names: Any, include_wiki: bool = True) -> dict[str, Any]:
     if not isinstance(names, list) or not names:
         raise ValueError("Danbooru tag names must be a non-empty list")
     normalized_names = _tag_queries(queries=names)

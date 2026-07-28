@@ -131,7 +131,9 @@ Use this index to decide where a disputed term belongs, then consult the linked 
 
 ## Escalation
 
-Use the `search_danbooru_tags` tool before asserting a tag when any of these are true. It is a read-only lookup against the live public tag database. It accepts up to 12 concepts in `queries`, combines autocomplete, prefix, and multiword wildcard candidate recall, then returns candidates grouped per query. Use `related_danbooru_tags` to expand one verified seed with co-occurring and wiki-linked candidates. Use `inspect_danbooru_tags` to validate up to 12 selected tags in parallel; set `include_wiki` only for terms whose definitions matter.
+Use `search_danbooru_tags` before asserting a tag. It accepts up to 12 concepts in `queries`, combines autocomplete, prefix, and multiword wildcard recall, then returns candidates grouped per query. Use `related_danbooru_tags` to expand one verified seed. Use `inspect_danbooru_tags` to validate up to 12 selected tags in parallel; Wiki bodies are included by default.
+
+For taxonomy, aesthetics, or Tag Group research, use `search_danbooru_wikis` to find canonical Wiki titles, then `inspect_danbooru_wikis` to read selected pages. Each inspected page returns bounded DText plus deduplicated Wiki and Tag Group references. Follow only relevant references in another inspection round. Stop when the evidence answers the task or the remaining branches are repeated, irrelevant, or too broad. A search result, URL, or uninspected reference is not evidence, and a `tag_group:*` page title is not itself a generation tag.
 
 Search before asserting a tag when any of these are true:
 

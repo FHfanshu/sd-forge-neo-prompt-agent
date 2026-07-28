@@ -19,7 +19,7 @@ from quality.acceptance import acceptance
 
 
 class ForgeToolValidationTests(unittest.TestCase):
-    @acceptance("AGENT-TOOLS-001@1", "surface")
+    @acceptance("AGENT-TOOLS-001@4", "surface")
     def test_agent_tool_names_are_fixed_and_ordered(self):
         self.assertEqual(
             (
@@ -32,11 +32,13 @@ class ForgeToolValidationTests(unittest.TestCase):
                 "search_danbooru_tags",
                 "inspect_danbooru_tags",
                 "related_danbooru_tags",
+                "search_danbooru_wikis",
+                "inspect_danbooru_wikis",
             ),
             FORGE_TOOL_NAMES,
         )
         self.assertNotIn("ask_teacher", FORGE_TOOL_NAMES)
-        self.assertEqual(9, len(FORGE_TOOL_NAMES))
+        self.assertEqual(11, len(FORGE_TOOL_NAMES))
 
     def test_server_owned_paths_and_bridge_fields_are_rejected(self):
         with self.assertRaisesRegex(ForgeToolValidationError, "server-owned"):
@@ -112,10 +114,21 @@ class ForgeToolValidationTests(unittest.TestCase):
             "include_wiki": False,
         })
         self.assertEqual(["1girl", "blue_eyes"], inspect["names"])
+        wiki_search = validate_forge_tool_request("search_danbooru_wikis", {
+            "queries": ["frutiger", "tag group:visual aesthetic"],
+            "limit": 8,
+        })
+        self.assertEqual(2, len(wiki_search["queries"]))
+        wiki_inspect = validate_forge_tool_request("inspect_danbooru_wikis", {
+            "titles": ["frutiger_aero", "tag_group:visual_aesthetic"],
+        })
+        self.assertEqual(2, len(wiki_inspect["titles"]))
         with self.assertRaisesRegex(ForgeToolValidationError, "names must be a list"):
             validate_forge_tool_request("inspect_danbooru_tags", {"names": []})
         with self.assertRaisesRegex(ForgeToolValidationError, "query is required"):
             validate_forge_tool_request("search_danbooru_tags", {})
+        with self.assertRaisesRegex(ForgeToolValidationError, "titles must be a list"):
+            validate_forge_tool_request("inspect_danbooru_wikis", {"titles": []})
 
     def test_catalog_projection_contains_logical_ids_only(self):
         with patch("backend.prompt_agent.forge_tools._model_catalog_items", return_value=[
@@ -148,7 +161,7 @@ class ForgeToolApiTests(unittest.TestCase):
         self.assertEqual("validation_error", response.json()["detail"]["error"]["code"])
         self.assertNotIn("C:/private", response.text)
 
-    @acceptance("AGENT-TOOLS-001@1", "revalidation,freshness")
+    @acceptance("AGENT-TOOLS-001@4", "revalidation,freshness")
     def test_validation_endpoint_revalidates_browser_host_tools(self):
         with TemporaryDirectory() as directory:
             app = FastAPI()

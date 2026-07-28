@@ -15,6 +15,8 @@ const TOOL_NAMES = [
   "search_danbooru_tags",
   "inspect_danbooru_tags",
   "related_danbooru_tags",
+  "search_danbooru_wikis",
+  "inspect_danbooru_wikis",
 ] as const;
 
 function host(result: unknown = { ok: true, value: "done" }) {
@@ -60,6 +62,8 @@ describe("Forge Agent Tools", () => {
       search_danbooru_tags: { queries: ["long hair"] },
       inspect_danbooru_tags: { names: ["1girl", "blue eyes"] },
       related_danbooru_tags: { name: "1girl" },
+      search_danbooru_wikis: { queries: ["frutiger", "tag group:visual aesthetic"] },
+      inspect_danbooru_wikis: { titles: ["frutiger_aero", "tag_group:visual_aesthetic"] },
     } as const;
     expect(tools.map((tool) => tool.name)).toEqual(TOOL_NAMES);
     for (const name of TOOL_NAMES) {
@@ -72,6 +76,11 @@ describe("Forge Agent Tools", () => {
       "edit_prompt",
       "apply_generation_parameters",
     ]);
+    expect(tools.filter((tool) => tool.permission === "read").every((tool) => tool.executionMode === "parallel")).toBe(true);
+    expect(tools.filter((tool) => tool.permission === "write").every((tool) => tool.executionMode === "sequential")).toBe(true);
+    expect((FORGE_TOOL_SCHEMAS.inspect_danbooru_tags as any).properties.include_wiki.default).toBe(true);
+    expect(tools.find((tool) => tool.name === "inspect_danbooru_tags")?.description).toContain("Wiki body by default");
+    expect(tools.find((tool) => tool.name === "inspect_danbooru_wikis")?.description).toContain("next-hop references");
     expect(JSON.stringify(tools)).not.toMatch(/claim|release|bridge_id|lease|owner_id/i);
   });
 

@@ -11,6 +11,53 @@ from quality.acceptance import acceptance
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
 class HostBridgeTests(unittest.TestCase):
+    @acceptance("PROMPT-SKILL-001@2", "host-cache")
+    def test_resource_host_loads_and_caches_one_named_skill(self):
+        root = Path(__file__).resolve().parents[1]
+        resource_source = root / "javascript" / "prompt_agent_02_resources.js"
+        script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const calls = [];
+global.window = {
+  location: { origin: "http://localhost" },
+  setTimeout,
+  __SD_FORGE_NEO_PROMPT_AGENT__: {
+    assistantState: { loadedPromptSkills: {} },
+    promptContextSnapshot: () => ({}),
+    promptFieldRootForTarget: () => ({ target: "txt2img" }),
+    promptAgentApp: () => ({ querySelector: () => null, querySelectorAll: () => [] }),
+    readPromptTool: async () => ({}),
+    positivePromptNoPhrases: () => [],
+    setNativeValueIfAvailable: () => {},
+    setTextboxValue: () => true,
+    styleSelectorValue: () => "",
+  },
+};
+global.fetch = async (url) => {
+  calls.push(url);
+  return { ok: true, json: async () => ({ ok: true, name: "forge_couple", title: "Forge Couple prompt guide", guide: "guide" }) };
+};
+vm.runInThisContext(fs.readFileSync(process.argv.at(-1), "utf8"));
+const tools = window.__SD_FORGE_NEO_PROMPT_AGENT__;
+tools.executeResourceTool({ tool: "load_skill", arguments: { name: "forge_couple" } }).then(async (first) => {
+  const second = await tools.executeResourceTool({ tool: "load_skill", arguments: { name: "forge_couple" } });
+  process.stdout.write(JSON.stringify({ calls, results: [first, second], loaded: Object.keys(tools.assistantState.loadedPromptSkills) }));
+});
+'''
+        completed = subprocess.run(
+            [shutil.which("node"), "-", str(resource_source)],
+            input=script,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(["forge_couple"], result["loaded"])
+        self.assertEqual("forge_couple", result["results"][0]["name"])
+        self.assertEqual(1, len(result["calls"]))
+        self.assertIn("/prompt-agent/api/prompt-skills/forge_couple", result["calls"][0])
+
     def test_boot_waits_for_forge_ui_and_retries_late_svelte_bundle(self):
         root = Path(__file__).resolve().parents[1]
         source = root / "javascript" / "prompt_agent_99_boot.js"

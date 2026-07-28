@@ -7,7 +7,13 @@ import gradio as gr
 from backend.prompt_agent import register_prompt_agent_api
 from backend.prompt_agent.forge_tools import ForgeToolValidationError, execute_catalog_tool, validate_forge_tool_request
 from prompt_agent.forge_resources import inspect_resource, search_resources
-from prompt_agent.danbooru import inspect_danbooru_tags, related_danbooru_tags, search_danbooru_tags
+from prompt_agent.danbooru import (
+    inspect_danbooru_tags,
+    inspect_danbooru_wikis,
+    related_danbooru_tags,
+    search_danbooru_tags,
+    search_danbooru_wikis,
+)
 from prompt_agent.i18n import locale_metadata, translation_bundle
 from prompt_agent.prompt_skills import load_prompt_skill
 from prompt_agent.reference_image import analyze_reference_image
@@ -102,7 +108,7 @@ def _assistant_api(_: gr.Blocks, app):
             raise HTTPException(status_code=502, detail=str(error)) from error
 
     @app.get("/prompt-agent/api/danbooru/tags/inspect-batch")
-    async def prompt_agent_danbooru_tag_inspect_batch(names: str, include_wiki: bool = False):
+    async def prompt_agent_danbooru_tag_inspect_batch(names: str, include_wiki: bool = True):
         try:
             batch = [name for name in names.split(",") if name.strip()]
             validate_forge_tool_request("inspect_danbooru_tags", {"names": batch, "include_wiki": include_wiki})
@@ -117,6 +123,30 @@ def _assistant_api(_: gr.Blocks, app):
         try:
             validate_forge_tool_request("related_danbooru_tags", {"name": name, "category": category, "limit": limit})
             return related_danbooru_tags(name, category, limit)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.get("/prompt-agent/api/danbooru/wikis/search")
+    async def prompt_agent_danbooru_wiki_search(query: str = "", queries: str = "", limit: int = 12):
+        try:
+            batch = json.loads(queries) if queries else None
+            validate_forge_tool_request("search_danbooru_wikis", {"query": query, "queries": batch, "limit": limit})
+            return search_danbooru_wikis(query, limit, batch)
+        except json.JSONDecodeError as error:
+            raise HTTPException(status_code=400, detail="queries must be a JSON array") from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.get("/prompt-agent/api/danbooru/wikis/inspect-batch")
+    async def prompt_agent_danbooru_wiki_inspect_batch(titles: str):
+        try:
+            batch = [title for title in titles.split(",") if title.strip()]
+            validate_forge_tool_request("inspect_danbooru_wikis", {"titles": batch})
+            return inspect_danbooru_wikis(batch)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except Exception as error:
