@@ -10,6 +10,7 @@ const TOOL_NAMES = [
   "edit_prompt",
   "read_generation_parameters",
   "apply_generation_parameters",
+  "generate_image",
   "search_resources",
   "inspect_resource",
   "search_danbooru_tags",
@@ -57,6 +58,7 @@ describe("Forge Agent Tools", () => {
       edit_prompt: { field: "positive", base_hash: "hash" },
       read_generation_parameters: {},
       apply_generation_parameters: { context_hash: "hash", parameters: {} },
+      generate_image: {},
       search_resources: { kind: "model" },
       inspect_resource: { kind: "style", id: "style" },
       search_danbooru_tags: { queries: ["long hair"] },
@@ -75,6 +77,7 @@ describe("Forge Agent Tools", () => {
     expect(tools.filter((tool) => tool.permission === "write").map((tool) => tool.name)).toEqual([
       "edit_prompt",
       "apply_generation_parameters",
+      "generate_image",
     ]);
     expect(tools.filter((tool) => tool.permission === "read").every((tool) => tool.executionMode === "parallel")).toBe(true);
     expect(tools.filter((tool) => tool.permission === "write").every((tool) => tool.executionMode === "sequential")).toBe(true);
@@ -130,6 +133,20 @@ describe("Forge Agent Tools", () => {
     await expect(edit.execute("edit-1", { field: "positive", base_hash: "hash", patches: [{ operation: "append", text: "x" }] }, new AbortController().signal))
       .rejects.toMatchObject({ code: "permission_denied" });
     expect(fake.calls).toHaveLength(0);
+  });
+
+  it("returns the generated render as an image block plus compact metadata", async () => {
+    const fake = host({ ok: true, target: "txt2img", duration_ms: 4200, image_mime_type: "image/png", image_base64: "aW1hZ2U=" });
+    const tool = createForgeAgentTools({ host: () => fake.api }).find((item) => item.name === "generate_image")!;
+
+    const result = await tool.execute("gen-1", {}, new AbortController().signal);
+
+    expect(fake.calls[0]).toMatchObject({ tool: "generate_image", arguments: {} });
+    expect(result.details).toEqual({ ok: true, target: "txt2img", duration_ms: 4200, image_mime_type: "image/png", image_base64: "aW1hZ2U=" });
+    const blocks = result.content as Array<{ type: string; data?: string; mimeType?: string; text?: string }>;
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toEqual({ type: "image", data: "aW1hZ2U=", mimeType: "image/png" });
+    expect(JSON.parse(blocks[1].text!)).toEqual({ ok: true, target: "txt2img", duration_ms: 4200, image_mime_type: "image/png" });
   });
 
   it("does not block a later submission after a failed tool", async () => {

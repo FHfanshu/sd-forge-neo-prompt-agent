@@ -943,6 +943,7 @@
         }
         if (name === "read_generation_parameters") return readGenerationParametersTool(args.target || "active");
         if (name === "apply_generation_parameters") return applyGenerationParametersTool(args);
+        if (name === "generate_image") return promptAgent.generateImageTool(args, signal);
         const resourceExecutor = promptAgent.executeResourceTool;
         if (typeof resourceExecutor === "function") {
             const resourceResult = await resourceExecutor(tool, signal);

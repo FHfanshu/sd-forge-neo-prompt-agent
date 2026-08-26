@@ -187,6 +187,9 @@ def _messages(system_prompt: str, messages: list[dict[str, Any]]) -> list[dict[s
                 "tool_call_id": str(message.get("toolCallId") or ""),
                 "content": text_content(content),
             })
+            image_blocks = [block for block in (content if isinstance(content, list) else []) if isinstance(block, dict) and block.get("type") == "image"]
+            if image_blocks:
+                result.append({"role": "user", "content": _content(image_blocks)})
     if not result or all(item["role"] == "system" for item in result):
         raise ValueError("messages must include user content")
     return result

@@ -96,6 +96,35 @@ class PromptAgentApiTests(unittest.TestCase):
         response = TestClient(app).post(f"{API_PREFIX}/stream", json=payload)
         self.assertEqual(response.status_code, 422)
 
+    def test_stream_reports_undecryptable_secret_instead_of_http_500(self):
+        with TemporaryDirectory() as directory:
+            authority = ProfileAuthority(Path(directory))
+            with patch("backend.prompt_agent.profiles.protect_text", return_value="encrypted"):
+                authority.create({
+                    "id": "remote",
+                    "displayName": "Remote",
+                    "modelId": "model",
+                    "protocol": "openai-chat-completions",
+                    "runtime": "remote-http",
+                    "endpoint": "https://provider.invalid/v1",
+                    "api_key": "secret-value",
+                })
+            app = FastAPI()
+            register_prompt_agent_api(app, authority)
+            stale = OSError(87, "The parameter is incorrect")
+            payload = {
+                "profile_id": "remote",
+                "request_id": "request-stale-secret",
+                "context": {"messages": [{"role": "user", "content": "Hi", "timestamp": 1}]},
+            }
+            with patch("backend.prompt_agent.profiles.unprotect_text", side_effect=stale):
+                response = TestClient(app).post(f"{API_PREFIX}/stream", json=payload)
+
+        self.assertEqual(response.status_code, 422)
+        error = response.json()["detail"]
+        self.assertEqual("secret_unavailable", error["code"])
+        self.assertNotIn("secret-value", response.text)
+
     def test_profile_crud_routes_persist_without_returning_plaintext_secret(self):
         with TemporaryDirectory() as directory:
             app = FastAPI()
@@ -381,12 +410,15 @@ class PromptAgentApiTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(["https://hk-api.moyuu.cc/v1beta/openai/models"], calls)
 
-    def test_gemini_connection_test_uses_native_model_metadata_request(self):
+    def test_gemini_connection_test_uses_native_model_catalog_request(self):
         calls: list[tuple[str, dict[str, str]]] = []
 
         class Response:
             def raise_for_status(self):
                 return None
+
+            def json(self):
+                return {"models": [{"name": "models/gemini-2.5-flash"}, {"name": "models/other"}]}
 
         class Client:
             async def __aenter__(self):
@@ -396,7 +428,7 @@ class PromptAgentApiTests(unittest.TestCase):
                 return False
 
             async def get(self, url, **kwargs):
-                calls.append((url, kwargs["params"]))
+                calls.append((url, kwargs["headers"]))
                 return Response()
 
         profile = {
@@ -411,8 +443,38 @@ class PromptAgentApiTests(unittest.TestCase):
             result = asyncio.run(test_profile_connection(profile))
 
         self.assertTrue(result["ok"])
-        self.assertIn("/v1beta/models/gemini-2.5-flash", calls[0][0])
-        self.assertEqual({"key": "secret-value"}, calls[0][1])
+        self.assertTrue(calls[0][0].endswith("/v1beta/models"))
+        self.assertEqual("secret-value", calls[0][1]["x-goog-api-key"])
+
+    def test_gemini_connection_test_reports_missing_model(self):
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"models": [{"name": "models/gemini-2.5-flash"}]}
+
+        class Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return False
+
+            async def get(self, *_args, **_kwargs):
+                return Response()
+
+        profile = {
+            "id": "gemini",
+            "modelId": "gemini-3.7-flash",
+            "protocol": "gemini-native",
+            "runtime": "remote-http",
+            "endpoint": "https://relay.invalid/v1beta",
+            "api_key": "secret-value",
+        }
+        with patch("backend.prompt_agent.profile_connection.httpx.AsyncClient", return_value=Client()):
+            with self.assertRaisesRegex(ConnectionTestError, "does not list model 'gemini-3.7-flash'"):
+                asyncio.run(test_profile_connection(profile))
 
     def test_connection_cancellation_closes_http_client(self):
         closed = False

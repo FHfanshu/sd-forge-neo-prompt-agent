@@ -181,13 +181,17 @@ def _contents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         role = message.get("role")
         if role == "toolResult":
-            result.append({
-                "role": "user",
-                "parts": [{"functionResponse": {
-                    "name": str(message.get("toolName") or "tool"),
-                    "response": {"content": text_content(message.get("content"))},
-                }}],
-            })
+            parts: list[dict[str, Any]] = [{"functionResponse": {
+                "name": str(message.get("toolName") or "tool"),
+                "response": {"content": text_content(message.get("content"))},
+            }}]
+            for block in message.get("content") if isinstance(message.get("content"), list) else []:
+                if isinstance(block, dict) and block.get("type") == "image":
+                    image = image_data(block)
+                    if image:
+                        mime_type, data = image
+                        parts.append({"inlineData": {"mimeType": mime_type, "data": data}})
+            result.append({"role": "user", "parts": parts})
             continue
         if role not in {"user", "assistant", "model"}:
             continue

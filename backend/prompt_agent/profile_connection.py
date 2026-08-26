@@ -51,6 +51,8 @@ async def test_profile_connection(profile: dict[str, Any]) -> dict[str, Any]:
     headers = {"Accept": "application/json"}
     if normalized["protocol"] == OPENAI_CHAT_COMPLETIONS and api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    elif api_key:
+        headers["x-goog-api-key"] = api_key
 
     async with httpx.AsyncClient(timeout=request_timeout, trust_env=True) as client:
         for index, endpoint in enumerate(endpoints):
@@ -61,10 +63,17 @@ async def test_profile_connection(profile: dict[str, Any]) -> dict[str, Any]:
             try:
                 async with asyncio.timeout(remaining):
                     if normalized["protocol"] == GEMINI_NATIVE:
-                        url, params = _gemini_model_request(endpoint, normalized["model_id"], api_key)
-                        response = await client.get(url, headers=headers, params=params)
+                        url = _gemini_models_url(endpoint)
+                        response = await client.get(url, headers=headers)
                         response.raise_for_status()
-                        transport = "gemini-native model metadata"
+                        listed = response.json().get("models") or []
+                        names = {str(item.get("name", "")).split("/")[-1] for item in listed if isinstance(item, dict)}
+                        if normalized["model_id"] not in names:
+                            raise ConnectionTestError(
+                                "model_not_found",
+                                f"The provider catalog does not list model '{normalized['model_id']}'. Check the model id with your relay.",
+                            )
+                        transport = "gemini-native model catalog"
                     else:
                         url = _openai_models_url(endpoint)
                         response = await client.get(url, headers=headers)
@@ -83,7 +92,7 @@ async def test_profile_connection(profile: dict[str, Any]) -> dict[str, Any]:
                 errors.append(error)
 
     last_error = errors[-1] if errors else RuntimeError("no endpoint configured")
-    message = safe_provider_error(last_error)
+    message = last_error.message if isinstance(last_error, ConnectionTestError) else safe_provider_error(last_error)
     retryable = _retryable(last_error)
     raise ConnectionTestError("connection_failed", message, retryable=retryable) from last_error
 
@@ -113,20 +122,18 @@ def _openai_models_url(endpoint: str) -> str:
     return urllib.parse.urlunparse(parsed._replace(path=path))
 
 
-def _gemini_model_request(endpoint: str, model: str, api_key: str) -> tuple[str, dict[str, str]]:
+def _gemini_models_url(endpoint: str) -> str:
     value = endpoint.strip().rstrip("/")
     parsed = urllib.parse.urlparse(value)
     path = parsed.path.rstrip("/")
     marker = "/models/"
     if marker in path:
-        path = path.split(marker, 1)[0] + marker + urllib.parse.quote(model, safe="")
-    else:
-        version = path if path.endswith(("/v1", "/v1beta")) else "/v1beta"
-        if version.endswith("/v1"):
-            version = version[: -len("/v1")] + "/v1beta"
-        path = version.rstrip("/") + "/models/" + urllib.parse.quote(model, safe="")
-    url = urllib.parse.urlunparse(parsed._replace(path=path, query="", fragment=""))
-    return url, {"key": api_key} if api_key else {}
+        path = path.split(marker, 1)[0]
+    if path.endswith("/v1"):
+        path = f"{path[:-3]}v1beta"
+    if not path.endswith("/v1beta"):
+        path = f"{path}/v1beta"
+    return urllib.parse.urlunparse(parsed._replace(path=f"{path}/models", query="", fragment=""))
 
 
 def _retryable(error: BaseException) -> bool:

@@ -68,14 +68,16 @@ describe("PromptAgentController recovery", () => {
 
   it("re-enables the composer when persistence rejects after generation", async () => {
     installFetch();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     repository.putMessage.mockRejectedValue(new Error("session write failed"));
     const controller = new PromptAgentController(repository);
     await controller.mount();
 
-    await expect(controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" })).rejects.toThrow("session write failed");
+    await expect(controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" })).resolves.toMatchObject({ kind: "local" });
 
     expect(useChatStore.getState().activeRequestId).toBeNull();
     expect(useRuntimeStore.getState().workingPhase).toBe("idle");
+    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("error"));
     controller.destroy();
   });
 
@@ -185,10 +187,75 @@ describe("PromptAgentController recovery", () => {
     const controller = new PromptAgentController(offlineRepository);
 
     await expect(controller.mount()).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(warning).toHaveBeenCalledWith("Prompt Agent session sync is temporarily unavailable", expect.any(Error)));
 
     expect(useRuntimeStore.getState().startup).toBe("ready");
     expect(useRuntimeStore.getState().sessionId).toBeTruthy();
-    expect(warning).toHaveBeenCalledWith("Prompt Agent session sync is temporarily unavailable", expect.any(Error));
+    controller.destroy();
+  });
+
+  acceptanceTest("UI-FEEDBACK-001@10", "connection", "makes the local session usable while initial server sync is still pending", async () => {
+    installFetch();
+    let releaseSync!: () => void;
+    let initialSyncSignal: AbortSignal | undefined;
+    let syncCalls = 0;
+    const syncingRepository = {
+      ...repository,
+      syncWithServer: vi.fn((signal?: AbortSignal) => {
+        syncCalls += 1;
+        if (syncCalls === 1) {
+          initialSyncSignal = signal;
+          return new Promise<{ conflicts: [] }>((resolve) => {
+            releaseSync = () => resolve({ conflicts: [] });
+          });
+        }
+        return Promise.resolve({ conflicts: [] as [] });
+      }),
+    };
+    const controller = new PromptAgentController(syncingRepository);
+    const mounting = controller.mount();
+
+    await vi.waitFor(() => expect(syncingRepository.syncWithServer).toHaveBeenCalledTimes(1));
+    await expect(mounting).resolves.toBeUndefined();
+    expect(useRuntimeStore.getState().startup).toBe("ready");
+    expect(useRuntimeStore.getState().sessionId).toBeTruthy();
+    expect(useRuntimeStore.getState().sessionWorkPhase).toBe("syncing");
+
+    await controller.actions.sendMessage({ text: "Send while recovering", attachments: [], reasoning: "none" });
+    expect(initialSyncSignal?.aborted).toBe(true);
+    releaseSync();
+    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("idle"));
+    controller.destroy();
+  });
+
+  it("unlocks the next turn while terminal session sync is still pending", async () => {
+    installFetch();
+    let syncCalls = 0;
+    let releaseSync!: () => void;
+    const syncingRepository = {
+      ...repository,
+      syncWithServer: vi.fn(async () => {
+        syncCalls += 1;
+        if (syncCalls === 2) return await new Promise<{ conflicts: [] }>((resolve) => { releaseSync = () => resolve({ conflicts: [] }); });
+        return { conflicts: [] };
+      }),
+    };
+    const controller = new PromptAgentController(syncingRepository);
+    await controller.mount();
+    await vi.waitFor(() => expect(syncCalls).toBe(1));
+    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("idle"));
+
+    const first = controller.actions.sendMessage({ text: "First", attachments: [], reasoning: "none" });
+    await first;
+    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("syncing"));
+    expect(useChatStore.getState().activeRequestId).toBeNull();
+
+    await controller.actions.sendMessage({ text: "Second", attachments: [], reasoning: "none" });
+    expect(useChatStore.getState().activeRequestId).toBeNull();
+    expect(useChatStore.getState().messages.some((message) => message.content === "Second")).toBe(true);
+
+    releaseSync();
+    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("idle"));
     controller.destroy();
   });
 
@@ -240,6 +307,7 @@ describe("PromptAgentController recovery", () => {
     expect(repository.putMessage).toHaveBeenCalledTimes(1);
     releaseFirst?.();
     await submission;
+    await vi.waitFor(() => expect(repository.putMessage.mock.calls.at(-1)?.[0].status).toBe("complete"));
 
     expect(repository.putMessage.mock.calls.every(([message]) => message.sessionId === sessionId)).toBe(true);
     const statuses = repository.putMessage.mock.calls.map(([message]) => message.status);
@@ -302,7 +370,7 @@ describe("PromptAgentController recovery", () => {
     controller.destroy();
   });
 
-  acceptanceTest("IMAGE-INPUT-001@1", "visual-grounding,bilingual-caption", "passes image-grounding and bilingual caption rules into the runtime", async () => {
+  acceptanceTest("IMAGE-INPUT-001@2", "visual-grounding,bilingual-caption", "passes image-grounding and bilingual caption rules into the runtime", async () => {
     installFetch();
     const controller = new PromptAgentController(repository);
     await controller.mount();
@@ -316,6 +384,7 @@ describe("PromptAgentController recovery", () => {
       "edit_prompt",
       "read_generation_parameters",
       "apply_generation_parameters",
+      "generate_image",
       "search_resources",
       "inspect_resource",
       "search_danbooru_tags",
@@ -345,6 +414,8 @@ describe("PromptAgentController recovery", () => {
     expect(runtime.getSystemPrompt()).toContain("Follow only the relevant next-hop references");
     expect(runtime.getSystemPrompt()).toContain("Before writing or revising prompts for an Anima checkpoint, call load_skill with anima_dit");
     expect(runtime.getSystemPrompt()).toContain("Before constructing multi-character or regional prompts for Forge Couple, call load_skill with forge_couple");
+    expect(runtime.getSystemPrompt()).toContain("Danbooru canonical status is required only for an explicitly requested Danbooru catalog");
+    expect(runtime.getSystemPrompt()).toContain("autocomplete/auto-fill");
     controller.destroy();
   });
 
@@ -524,7 +595,7 @@ describe("PromptAgentController recovery", () => {
       expect.objectContaining({ role: "user", content: [expect.objectContaining({ type: "text", text: "Edited request" })] }),
     ]);
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(["Edited request", "New reply"]);
-    expect(repository.putSession).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Edited request" }));
+    await vi.waitFor(() => expect(repository.putSession).toHaveBeenCalledWith(expect.objectContaining({ title: "Edited request" })));
     controller.destroy();
   });
 

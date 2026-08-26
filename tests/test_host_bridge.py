@@ -11,7 +11,7 @@ from quality.acceptance import acceptance
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
 class HostBridgeTests(unittest.TestCase):
-    @acceptance("PROMPT-SKILL-001@2", "host-cache")
+    @acceptance("PROMPT-SKILL-001@3", "host-cache")
     def test_resource_host_loads_and_caches_one_named_skill(self):
         root = Path(__file__).resolve().parents[1]
         resource_source = root / "javascript" / "prompt_agent_02_resources.js"

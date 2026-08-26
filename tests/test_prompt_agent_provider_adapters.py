@@ -106,13 +106,23 @@ def gemini_frames(*, tool: bool = False) -> list[bytes]:
     })]
 
 
-def request(*, tools: bool = False, request_id: str = "adapter-request", tool_choice: str = ""):
+def request(*, tools: bool = False, request_id: str = "adapter-request", tool_choice: str = "", tool_result: bool = False):
+    messages = [{"role": "user", "content": [{"type": "text", "text": "hello"}, {"type": "image", "mimeType": "image/png", "data": "aW1hZ2U="}]}]
+    if tool_result:
+        messages.append({
+            "role": "toolResult",
+            "toolName": "generate_image",
+            "content": [
+                {"type": "text", "text": "{\"ok\":true}"},
+                {"type": "image", "mimeType": "image/png", "data": "aW1hZ2U="},
+            ],
+        })
     return parse_stream_request({
         "profile_id": "profile",
         "request_id": request_id,
         "context": {
             "systemPrompt": "system",
-            "messages": [{"role": "user", "content": [{"type": "text", "text": "hello"}, {"type": "image", "mimeType": "image/png", "data": "aW1hZ2U="}]}],
+            "messages": messages,
             "tools": [{"name": "lookup", "description": "Find", "parameters": {"type": "object"}}] if tools else [],
         },
         "options": {"reasoning": "medium", "maxTokens": 128, "toolChoice": tool_choice or None},
@@ -244,6 +254,28 @@ class ProviderAdapterContractTests(unittest.TestCase):
     def test_rejects_forced_tool_that_was_not_declared(self):
         with self.assertRaisesRegex(ValueError, "declared tool"):
             request(tools=True, tool_choice="missing")
+
+    def test_each_adapter_sends_tool_result_images_back_to_the_provider(self):
+        bodies = {}
+        for provider in ("openai-compatible", "gemini"):
+            async def run(provider=provider):
+                harness = UpstreamHarness(200, openai_frames())
+                with patch("backend.prompt_agent.providers.httpx.AsyncClient", new=harness.client_factory):
+                    async for _frame in stream_profile(request(tool_result=True), profile(provider)):
+                        pass
+                return json.loads(harness.requests[0].content)
+
+            bodies[provider] = asyncio.run(run())
+        openai_messages = bodies["openai-compatible"]["messages"]
+        tool_message = next(item for item in openai_messages if item["role"] == "tool")
+        self.assertEqual("{\"ok\":true}", tool_message["content"])
+        image_follow_up = openai_messages[openai_messages.index(tool_message) + 1]
+        self.assertEqual("user", image_follow_up["role"])
+        self.assertEqual("image_url", image_follow_up["content"][0]["type"])
+        gemini_contents = bodies["gemini"]["contents"]
+        tool_content = next(item for item in gemini_contents if item["parts"][0].get("functionResponse"))
+        self.assertEqual("generate_image", tool_content["parts"][0]["functionResponse"]["name"])
+        self.assertIn("inlineData", tool_content["parts"][1])
 
     def test_each_adapter_sanitizes_terminal_http_errors(self):
         for provider in ("openai-compatible", "gemini", "llama-cpp"):

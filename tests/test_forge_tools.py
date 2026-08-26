@@ -19,7 +19,7 @@ from quality.acceptance import acceptance
 
 
 class ForgeToolValidationTests(unittest.TestCase):
-    @acceptance("AGENT-TOOLS-001@4", "surface")
+    @acceptance("AGENT-TOOLS-001@5", "surface")
     def test_agent_tool_names_are_fixed_and_ordered(self):
         self.assertEqual(
             (
@@ -27,6 +27,7 @@ class ForgeToolValidationTests(unittest.TestCase):
                 "edit_prompt",
                 "read_generation_parameters",
                 "apply_generation_parameters",
+                "generate_image",
                 "search_resources",
                 "inspect_resource",
                 "search_danbooru_tags",
@@ -38,7 +39,7 @@ class ForgeToolValidationTests(unittest.TestCase):
             FORGE_TOOL_NAMES,
         )
         self.assertNotIn("ask_teacher", FORGE_TOOL_NAMES)
-        self.assertEqual(11, len(FORGE_TOOL_NAMES))
+        self.assertEqual(12, len(FORGE_TOOL_NAMES))
 
     def test_server_owned_paths_and_bridge_fields_are_rejected(self):
         with self.assertRaisesRegex(ForgeToolValidationError, "server-owned"):
@@ -60,6 +61,14 @@ class ForgeToolValidationTests(unittest.TestCase):
             validate_forge_tool_request("apply_generation_parameters", {"parameters": {}})
         with self.assertRaisesRegex(ForgeToolValidationError, "server-owned"):
             validate_forge_tool_request("apply_generation_parameters", {"context_hash": "h", "parameters": {"model": "x"}})
+
+    def test_generate_image_arguments_are_validated(self):
+        self.assertEqual({}, validate_forge_tool_request("generate_image", {}))
+        self.assertEqual({"target": "txt2img"}, validate_forge_tool_request("generate_image", {"target": "txt2img"}))
+        with self.assertRaisesRegex(ForgeToolValidationError, "unsupported fields"):
+            validate_forge_tool_request("generate_image", {"target": "txt2img", "prompt": "x"})
+        with self.assertRaisesRegex(ForgeToolValidationError, "target"):
+            validate_forge_tool_request("generate_image", {"target": "nope"})
 
     def test_prompt_patches_and_generation_values_are_revalidated(self):
         with self.assertRaisesRegex(ForgeToolValidationError, r"patches\[0\] must be an object"):
@@ -161,7 +170,7 @@ class ForgeToolApiTests(unittest.TestCase):
         self.assertEqual("validation_error", response.json()["detail"]["error"]["code"])
         self.assertNotIn("C:/private", response.text)
 
-    @acceptance("AGENT-TOOLS-001@4", "revalidation,freshness")
+    @acceptance("AGENT-TOOLS-001@5", "revalidation,freshness")
     def test_validation_endpoint_revalidates_browser_host_tools(self):
         with TemporaryDirectory() as directory:
             app = FastAPI()

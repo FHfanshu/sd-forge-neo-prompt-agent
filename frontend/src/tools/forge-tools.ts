@@ -123,11 +123,16 @@ const applyGenerationSchema = Type.Object({
   parameters: generationParameterSchema,
 }, { additionalProperties: false });
 
+const generateImageSchema = Type.Object({
+  target: targetSchema,
+}, { additionalProperties: false });
+
 export const FORGE_TOOL_SCHEMAS = {
   read_prompt: Type.Object({ target: targetSchema, field: promptFieldSchema }, { additionalProperties: false }),
   edit_prompt: promptEditSchema,
   read_generation_parameters: readGenerationSchema,
   apply_generation_parameters: applyGenerationSchema,
+  generate_image: generateImageSchema,
   search_resources: resourceListSchema,
   inspect_resource: resourceMetadataSchema,
   search_danbooru_tags: danbooruSearchSchema,
@@ -183,6 +188,7 @@ const TOOL_TIMEOUTS: Record<ForgeToolName, number> = {
   edit_prompt: 15_000,
   read_generation_parameters: 10_000,
   apply_generation_parameters: 15_000,
+  generate_image: 320_000,
   search_resources: 15_000,
   inspect_resource: 15_000,
   search_danbooru_tags: 30_000,
@@ -195,6 +201,7 @@ const TOOL_TIMEOUTS: Record<ForgeToolName, number> = {
 const WRITE_TOOLS = new Set<ForgeToolName>([
   "edit_prompt",
   "apply_generation_parameters",
+  "generate_image",
 ]);
 
 const defaultHost = (): PromptAgentHostApi | null => (
@@ -239,7 +246,8 @@ async function invokeForgeTool(
   const controller = new AbortController();
   const forwardAbort = () => controller.abort();
   signal?.addEventListener("abort", forwardAbort, { once: true });
-  const timeoutMs = Math.max(1_000, Math.min(60_000, options.timeoutMs ?? TOOL_TIMEOUTS[name]));
+  const timeoutCeiling = name === "generate_image" ? 330_000 : 60_000;
+  const timeoutMs = Math.max(1_000, Math.min(timeoutCeiling, options.timeoutMs ?? TOOL_TIMEOUTS[name]));
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   const operation = Promise.resolve().then(() => host.executeAssistantTool({ tool: name, arguments: args }, controller.signal));
@@ -283,6 +291,22 @@ function textResult(result: unknown): AgentToolResult<unknown> {
   };
 }
 
+function generationResult(result: unknown): AgentToolResult<unknown> {
+  const value = (result ?? {}) as Record<string, unknown>;
+  const data = typeof value.image_base64 === "string" ? value.image_base64 : "";
+  if (!data) return textResult(result);
+  const mimeType = typeof value.image_mime_type === "string" ? value.image_mime_type : "image/png";
+  const meta: Record<string, unknown> = { ...value };
+  delete meta.image_base64;
+  return {
+    content: [
+      { type: "image", data, mimeType },
+      { type: "text", text: JSON.stringify(meta) },
+    ],
+    details: result,
+  };
+}
+
 function createForgeTool<T extends TSchema>(
   name: ForgeToolName,
   label: string,
@@ -302,7 +326,7 @@ function createForgeTool<T extends TSchema>(
     execute: async (_toolCallId, params, signal) => {
       const args = prepareArguments ? prepareArguments(params) : params as Record<string, unknown>;
       const result = await invokeForgeTool(name, args, permission, signal, options);
-      return textResult(result);
+      return name === "generate_image" ? generationResult(result) : textResult(result);
     },
   };
 }
@@ -320,6 +344,14 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
     ),
     createForgeTool("read_generation_parameters", "Read generation parameters", "Read the visible allowlisted Forge generation controls and context hash.", FORGE_TOOL_SCHEMAS.read_generation_parameters, "read", options),
     createForgeTool("apply_generation_parameters", "Apply generation parameters", "Apply visible allowlisted Forge generation controls with a fresh context hash.", FORGE_TOOL_SCHEMAS.apply_generation_parameters, "write", options),
+    createForgeTool(
+      "generate_image",
+      "Generate image",
+      "Run Forge generation for the current prompt and return the rendered image so you can inspect it. Use after editing prompts to verify the result yourself and iterate. Sequential; one generation at a time; each round costs a full render.",
+      FORGE_TOOL_SCHEMAS.generate_image,
+      "write",
+      options,
+    ),
     createForgeTool("search_resources", "Search Forge resources", "Search styles, wildcards, LoRAs, checkpoints, or embeddings by logical ID.", FORGE_TOOL_SCHEMAS.search_resources, "read", options),
     createForgeTool("inspect_resource", "Inspect Forge resource", "Inspect one logical Forge resource without exposing filesystem paths.", FORGE_TOOL_SCHEMAS.inspect_resource, "read", options),
     createForgeTool("search_danbooru_tags", "Search Danbooru tags", "Search live Danbooru tag candidates for one or more short visual concepts.", FORGE_TOOL_SCHEMAS.search_danbooru_tags, "read", options),

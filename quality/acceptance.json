@@ -86,18 +86,20 @@
     },
     {
       "id": "IMAGE-INPUT-001",
-      "revision": 1,
+      "revision": 2,
       "area": "agent",
       "title": "Grounded image analysis and multi-image input",
       "acceptance": [
         "Before changing a prompt from attached images, the agent grounds itself in a per-image factual inventory of visible content, visual style, and composition and separates evidence from uncertainty.",
         "Requested image captions provide one detailed objective English natural-language version and one evidence-equivalent purely Chinese version, each flowing as one coherent context ordered by content, style, and composition without filler or unsupported speculation.",
-        "A supported system picker is explicitly asked for multiple images in one selection, while the standard multi-file input remains available as the compatibility fallback."
+        "A supported system picker is explicitly asked for multiple images in one selection, while the standard multi-file input remains available as the compatibility fallback.",
+        "Pasting one or more clipboard images into the message composer attaches them through the same validated image pipeline, while ordinary text paste remains native and unblocked."
       ],
       "required_scenarios": [
         "visual-grounding",
         "bilingual-caption",
-        "multi-select"
+        "multi-select",
+        "clipboard-paste"
       ],
       "paths": [
         "frontend/src/agent/controller.ts",
@@ -109,7 +111,7 @@
     },
     {
       "id": "UI-FEEDBACK-001",
-      "revision": 7,
+      "revision": 10,
       "area": "ui",
       "title": "Compact lifecycle and process feedback",
       "acceptance": [
@@ -119,24 +121,32 @@
         "The chat transcript is one continuous borderless reading surface: assistant responses, the process drawer, expanded reasoning, and tool results use spacing and typography instead of nested card borders, decorative horizontal rules, or vertical rails.",
         "A send action produces immediate pending feedback before session, attachment, controller, or profile preparation completes; duplicate clicks are ignored until that submission reaches a terminal state.",
         "The primary send control keeps its position while a request is active and accepts another composer submission as a FIFO follow-up for after the current response. Stop remains a separate secondary control, so neither a click at the send position nor Enter in the composer can accidentally stop the response.",
-        "Queued follow-ups appear immediately in one compact borderless list, can be removed before execution, advance only after a successful response, and remain visibly paused and resumable after failure or cancellation."
+        "Queued follow-ups appear immediately in one compact borderless list, can be removed before execution, advance only after a successful response, and remain visibly paused and resumable after failure or cancellation.",
+        "Streamed final-answer text uses a buffered grapheme reveal so coarse provider chunks remain visibly progressive without delaying authoritative runtime content; completion and cancellation flush the full text immediately, and reduced-motion preference disables the animated reveal.",
+        "After a terminal agent response, local persistence, history refresh, and server synchronization continue asynchronously in a serialized background queue; the composer is usable immediately, while a compact top progress bar exposes the current phase and hover text, including local-save or synchronization failure.",
+        "Initial controller recovery restores the local session and releases the connected UI before a slow server synchronization completes; the delayed synchronization remains visible in the compact top progress bar and is cancelled before a new turn."
       ],
       "required_scenarios": [
         "loading",
         "recovery",
         "process",
         "submission",
-        "queue"
+        "queue",
+        "streaming",
+        "post-turn",
+        "connection"
       ],
       "paths": [
         "backend/prompt_agent/local_runtime.py",
         "frontend/src/agent/controller.ts",
         "frontend/src/components/ProcessDrawer.svelte",
+        "frontend/src/components/Markdown.svelte",
         "frontend/src/components/Surface.svelte",
         "frontend/src/components/WorkingIndicator.svelte",
         "frontend/src/stores/runtime.ts",
         "frontend/src/styles.css",
         "frontend/tests/style-tokens.test.ts",
+        "frontend/tests/markdown.test.ts",
         "frontend/tests/surface.test.ts",
         "tests/test_local_runtime.py"
       ],
@@ -245,13 +255,14 @@
     },
     {
       "id": "AGENT-TOOLS-001",
-      "revision": 4,
+      "revision": 5,
       "area": "agent",
       "title": "Forge tool authority and freshness",
       "acceptance": [
         "The agent receives only the declared Forge tool surface.",
         "Browser tool arguments are revalidated by Python.",
         "Prompt and generation mutations require fresh hashes.",
+        "The declared Forge tool surface includes generate_image, which runs one bounded txt2img/img2img generation on demand and returns the fresh render as image content for the agent to inspect.",
         "Independent read-only tool calls emitted in one model turn execute concurrently.",
         "A tool batch containing any Forge write executes sequentially so mutations cannot race live state.",
         "Danbooru batch inspection includes bounded Wiki bodies by default; only an explicit include_wiki=false requests metadata-only results, and URL-only search output never counts as inspected background content.",
@@ -387,14 +398,15 @@
     },
     {
       "id": "PROMPT-SKILL-001",
-      "revision": 2,
+      "revision": 3,
       "area": "agent",
       "title": "On-demand specialized prompt skills",
       "acceptance": [
         "The active agent exposes one bounded load_skill tool with only the curated Danbooru, Anima DiT, and Forge Couple skill names.",
         "Only the requested skill guide is loaded into the tool result, and repeated host loads reuse the session cache.",
         "The Forge Couple skill reflects the installed 7.1.0 prompt-line, separator, region, common-prompt, and validation semantics without claiming unsupported UI control.",
-        "Abstract aesthetic labels are treated as brainstorming seeds and translated into a broad candidate inventory of concrete visible cues before a selective model-facing prompt is written."
+        "Abstract aesthetic labels are treated as brainstorming seeds and translated into a broad candidate inventory of concrete visible cues before a selective model-facing prompt is written.",
+        "Danbooru lookup is a canonicalization/reference aid rather than a universal prompt-tag allowlist: user-provided, existing Forge, autocomplete/auto-fill, and model- or extension-specific tags are preserved, and absence from the current index alone never causes refusal."
       ],
       "required_scenarios": [
         "registration",
@@ -402,7 +414,8 @@
         "catalog",
         "host-cache",
         "forge-couple",
-        "abstract-style-translation"
+        "abstract-style-translation",
+        "tag-provenance"
       ],
       "paths": [
         "prompt_agent/prompt_skills.py",

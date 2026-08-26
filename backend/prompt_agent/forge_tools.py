@@ -9,6 +9,7 @@ FORGE_TOOL_NAMES = (
     "edit_prompt",
     "read_generation_parameters",
     "apply_generation_parameters",
+    "generate_image",
     "search_resources",
     "inspect_resource",
     "search_danbooru_tags",
@@ -112,6 +113,9 @@ def validate_forge_tool_request(tool: str, payload: Any) -> dict[str, Any]:
             "denoising_strength", "batch_count", "batch_size", "enable_hr", "hr_scale", "hr_upscaler",
         })
         _validate_generation_parameters(parameters)
+    elif tool == "generate_image":
+        _allow_keys(payload, {"target"})
+        _validate_target(payload)
     elif tool == "search_danbooru_tags":
         _allow_keys(payload, {"query", "queries", "category", "limit"})
         _validate_danbooru_search(payload)

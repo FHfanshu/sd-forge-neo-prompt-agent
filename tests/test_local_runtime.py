@@ -169,7 +169,7 @@ class LocalRuntimeTests(unittest.TestCase):
         self.assertIsNone(runtime._process)
 
     @acceptance("LOCAL-RUNTIME-001@1", "loading,privacy")
-    @acceptance("UI-FEEDBACK-001@7", "recovery")
+    @acceptance("UI-FEEDBACK-001@10", "recovery")
     def test_status_reports_loading_ready_and_idle_without_local_paths(self):
         async def run():
             with TemporaryDirectory() as directory:

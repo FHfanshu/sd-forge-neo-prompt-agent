@@ -12,7 +12,7 @@ from .forge_tools import (
 from .models import public_models
 from .local_runtime import LocalLlamaRuntime, LocalRuntimeError
 from .profile_connection import ConnectionTestError, test_profile_connection
-from .profiles import ProfileAuthority, default_storage_root
+from .profiles import ProfileAuthority, SecretUnavailableError, default_storage_root
 from .providers import provider_catalog, public_profile_state, stream_profile
 from .session_sync import SessionSyncAuthority, SessionSyncError
 
@@ -114,6 +114,8 @@ def register_prompt_agent_api(
             return profiles.duplicate(profile_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail="profile not found") from error
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post(f"{API_PREFIX}/profiles/import")
     async def prompt_agent_import_profiles(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
@@ -277,6 +279,14 @@ def register_prompt_agent_api(
         except LocalRuntimeError as error:
             detail = PromptAgentError(error.code, error.message, request_id=str(payload.get("request_id") or ""))
             raise HTTPException(status_code=error.status_code, detail=detail.payload()["error"]) from error
+        except SecretUnavailableError as error:
+            detail = PromptAgentError(
+                "secret_unavailable",
+                "The stored API key cannot be decrypted on this machine. Re-enter it in the profile settings.",
+                request_id=str(payload.get("request_id") or ""),
+                retryable=True,
+            )
+            raise HTTPException(status_code=422, detail=detail.payload()["error"]) from error
         except (RuntimeError, ValueError) as error:
             detail = PromptAgentError(
                 "validation_error",

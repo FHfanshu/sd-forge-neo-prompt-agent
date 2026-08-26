@@ -10,6 +10,10 @@ from .profile_contracts import LLAMA_ONCE, migrate_legacy_profile, normalize_pro
 from .secrets import protect_text, unprotect_text
 
 
+class SecretUnavailableError(RuntimeError):
+    """Stored credentials cannot be decrypted on this machine (e.g. after OS reinstall)."""
+
+
 def default_storage_root() -> Path:
     configured = os.environ.get("SD_FORGE_NEO_PROMPT_AGENT_DATA")
     if configured:
@@ -45,7 +49,10 @@ class ProfileAuthority:
         result = dict(item)
         encrypted = self._read(self.secrets_path, {}).get(profile_id)
         if encrypted:
-            result["api_key"] = unprotect_text(encrypted)
+            try:
+                result["api_key"] = unprotect_text(encrypted)
+            except (OSError, ValueError) as error:
+                raise SecretUnavailableError(profile_id) from error
         return result
 
     def import_state(self, state: dict[str, Any]) -> dict[str, Any]:
