@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 describe("Svelte chat surface", () => {
-  acceptanceTest("IMAGE-INPUT-001@1", "multi-select", "requests multi-image selection through the native picker when available", async () => {
+  acceptanceTest("IMAGE-INPUT-001@2", "multi-select", "requests multi-image selection through the native picker when available", async () => {
     const user = userEvent.setup();
     installObjectUrlMocks();
     const files = [
@@ -57,6 +57,30 @@ describe("Svelte chat surface", () => {
     expect(container.querySelector('input[type="file"][multiple]')).not.toBeNull();
   });
 
+  acceptanceTest("IMAGE-INPUT-001@2", "clipboard-paste", "attaches pasted images without intercepting ordinary text paste", async () => {
+    installObjectUrlMocks();
+    const attachFiles = vi.fn();
+    render(Surface, { initialOpen: true, actions: { attachFiles } });
+    const composer = screen.getByRole("textbox", { name: "Message Prompt Agent" });
+    const image = new File([new Uint8Array([1, 2, 3])], "clipboard.png", { type: "image/png" });
+    const imagePaste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(imagePaste, "clipboardData", {
+      value: { items: [{ kind: "file", type: "image/png", getAsFile: () => image }], files: [image] },
+    });
+
+    await fireEvent(composer, imagePaste);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Preview clipboard.png" })).toBeInTheDocument());
+    expect(imagePaste.defaultPrevented).toBe(true);
+    expect(attachFiles).toHaveBeenCalledWith([image]);
+
+    const textPaste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(textPaste, "clipboardData", {
+      value: { items: [{ kind: "string", type: "text/plain", getAsFile: () => null }], files: [] },
+    });
+    await fireEvent(composer, textPaste);
+    expect(textPaste.defaultPrevented).toBe(false);
+  });
+
   it("renders markdown, tools, reasoning, and usage without branch controls", async () => {
     const { container } = render(Surface, { initialOpen: true, messages: mockMessages, actions: {} });
     expect(await screen.findByRole("dialog", { name: "Prompt Agent chat" })).toBeInTheDocument();
@@ -72,7 +96,7 @@ describe("Svelte chat surface", () => {
     expect(tool.compareDocumentPosition(response) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@7", "process", "keeps one final response primary while recovered tool failures and cache usage stay scoped", async () => {
+  acceptanceTest("UI-FEEDBACK-001@10", "process", "keeps one final response primary while recovered tool failures and cache usage stay scoped", async () => {
     const user = userEvent.setup();
     const messages = [
       mockMessages[0],
@@ -201,7 +225,7 @@ describe("Svelte chat surface", () => {
     expect(process?.querySelector(":scope > summary")).toHaveTextContent("Execution failed");
   });
 
-  it("defers Markdown parsing while an assistant message is streaming", () => {
+  acceptanceTest("UI-FEEDBACK-001@10", "streaming", "defers Markdown parsing while progressively revealing an assistant stream", async () => {
     render(Surface, {
       initialOpen: true,
       messages: [{
@@ -214,7 +238,8 @@ describe("Svelte chat surface", () => {
       }],
       actions: {},
     });
-    expect(screen.getByText("**partial reply**")).toBeInTheDocument();
+    expect(screen.queryByText("partial reply")).not.toBeInTheDocument();
+    expect(await screen.findByText("**partial reply**")).toBeInTheDocument();
     expect(screen.queryByText("partial reply")).not.toBeInTheDocument();
   });
 
@@ -236,6 +261,39 @@ describe("Svelte chat surface", () => {
     expect(document.querySelector("script")).toBeNull();
   });
 
+  it("opens the thinking panel while reasoning streams and folds it to a thought summary", async () => {
+    const { container } = render(Surface, { initialOpen: true, actions: {} });
+    useChatStore.getState().beginRequest("active");
+    useRuntimeStore.getState().setWorking("thinking");
+
+    useChatStore.getState().appendMessage({
+      id: "thinking-reasoning",
+      role: "assistant",
+      content: "",
+      reasoning: "First step. Second step!",
+      status: "streaming",
+      attachments: [],
+      createdAt: Date.now(),
+    });
+
+    const details = await waitFor(() => {
+      const element = container.querySelector<HTMLDetailsElement>(".pa-working-indicator");
+      expect(element).not.toBeNull();
+      expect(element?.open).toBe(true);
+      return element;
+    });
+    const stream = details?.querySelector(".pa-thinking-stream");
+    expect(stream).not.toBeNull();
+    expect(stream).toHaveTextContent("First step.");
+    expect(stream).toHaveTextContent("Second step!");
+
+    useRuntimeStore.getState().setWorking("generating");
+    expect(await screen.findByText("Thought for 1s")).toBeInTheDocument();
+    expect(container.querySelector(".pa-thinking-stream")).toBeNull();
+
+    useChatStore.getState().cancelRequest();
+  });
+
   it("guides an empty chat and restores the launcher after closing", async () => {
     const user = userEvent.setup();
     render(Surface, { initialOpen: true, actions: {} });
@@ -247,7 +305,20 @@ describe("Svelte chat surface", () => {
 
   acceptanceTest("UI-WINDOW-001@3", "launcher", "keeps the launcher available while chat and model profiles are both open", async () => {
     const user = userEvent.setup();
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("pa-launcher") ? 96 : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("pa-launcher") ? 42 : 0;
+    });
+    useUiStore.setState({ launcherPosition: { left: 4800, top: 2600 } });
     render(Surface, { initialOpen: true, actions: {} });
+
+    await waitFor(() => {
+      const position = useUiStore.getState().launcherPosition;
+      expect((position?.left ?? Infinity) + 96).toBeLessThanOrEqual(window.innerWidth - 8);
+      expect((position?.top ?? Infinity) + 42).toBeLessThanOrEqual(window.innerHeight - 8);
+    });
 
     await user.click(screen.getByRole("button", { name: "Open settings" }));
 
@@ -595,7 +666,7 @@ describe("Svelte chat surface", () => {
     expect(newSession).toHaveBeenCalledOnce();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@7", "queue", "keeps the primary control stable, queues follow-ups, and exposes stop separately during an active request", async () => {
+  acceptanceTest("UI-FEEDBACK-001@10", "queue", "keeps the primary control stable, queues follow-ups, and exposes stop separately during an active request", async () => {
     const user = userEvent.setup();
     useChatStore.getState().beginRequest("active");
     useRuntimeStore.getState().setWorking("thinking");
@@ -629,7 +700,7 @@ describe("Svelte chat surface", () => {
     expect(stopRequest).toHaveBeenCalledOnce();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@7", "submission", "acknowledges send immediately without swapping a stop control under the pointer", async () => {
+  acceptanceTest("UI-FEEDBACK-001@10", "submission", "acknowledges send immediately without swapping a stop control under the pointer", async () => {
     const user = userEvent.setup();
     let finishSend!: () => void;
     const sendMessage = vi.fn(() => new Promise<void>((resolve) => { finishSend = resolve; }));
@@ -662,7 +733,7 @@ describe("Svelte chat surface", () => {
     await waitFor(() => expect(send).toHaveAttribute("aria-busy", "false"));
   });
 
-  acceptanceTest("UI-FEEDBACK-001@7", "loading,recovery", "shows the current assistant working phase", async () => {
+  acceptanceTest("UI-FEEDBACK-001@10", "loading,recovery", "shows the current assistant working phase", async () => {
     useChatStore.getState().beginRequest("active");
     useRuntimeStore.getState().setWorking("submitting");
     render(Surface, { initialOpen: true, actions: {} });
@@ -688,6 +759,26 @@ describe("Svelte chat surface", () => {
 
     useChatStore.getState().cancelRequest();
     await waitFor(() => expect(screen.queryByText("Running tool…")).not.toBeInTheDocument());
+  });
+
+  acceptanceTest("UI-FEEDBACK-001@10", "post-turn", "shows asynchronous session persistence and sync progress at the chat top", async () => {
+    render(Surface, { initialOpen: true, actions: { sendMessage: vi.fn() } });
+
+    useRuntimeStore.getState().setSessionWork("persisting", "Saving conversation locally…");
+    let progress = await screen.findByRole("progressbar", { name: "Saving conversation locally…" });
+    expect(progress).toHaveAttribute("title", "Saving conversation locally…");
+    expect(progress.closest(".pa-session-work")).not.toHaveClass("pa-session-work-error");
+
+    useRuntimeStore.getState().setSessionWork("syncing", "Syncing conversation…");
+    progress = await screen.findByRole("progressbar", { name: "Syncing conversation…" });
+    expect(progress).toHaveAttribute("title", "Syncing conversation…");
+
+    useRuntimeStore.getState().setSessionWork("error", "Conversation saved locally; server sync is unavailable.");
+    progress = await screen.findByRole("progressbar", { name: "Conversation saved locally; server sync is unavailable." });
+    expect(progress.closest(".pa-session-work")).toHaveClass("pa-session-work-error");
+
+    useRuntimeStore.getState().setSessionWork("idle");
+    await waitFor(() => expect(screen.queryByRole("progressbar")).not.toBeInTheDocument());
   });
 
   acceptanceTest("UI-WINDOW-001@3", "focus", "keeps desktop chat input usable while settings is open", async () => {

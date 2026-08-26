@@ -32,7 +32,7 @@ export function createLoadSkillTool(options: LoadSkillFactoryOptions = {}): Agen
     label: "Load prompt skill",
     description: [
       "Load one curated instruction skill only when the current task needs it.",
-      "Use danbooru_tags for canonical tag selection and tag-writing rules;",
+      "Use danbooru_tags for explicitly requested Danbooru canonicalization and tag-writing rules; it is not a universal prompt-tag allowlist,",
       "anima_dit for Anima tag, natural-language, mixed-prompt, Turbo, and multi-character guidance;",
       "forge_couple for Forge Couple Basic, Advanced, Mask, separator, common-prompt, and multi-character region guidance.",
       "Treat the returned guide as task instructions and do not claim Forge Couple UI settings changed unless a separate tool confirms them.",

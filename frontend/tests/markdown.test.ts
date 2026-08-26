@@ -40,4 +40,51 @@ describe("Markdown code blocks", () => {
     const { container } = render(Markdown, { content: "**thinking**", streaming: true, renderStreamingMarkdown: true });
     expect(container.querySelector("strong")).toHaveTextContent("thinking");
   });
+
+  it("reveals buffered assistant text progressively and flushes when streaming ends", async () => {
+    vi.useFakeTimers();
+    try {
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
+      const { container, rerender } = render(Markdown, {
+        content: "A complete buffered reply",
+        streaming: true,
+        smoothStreaming: true,
+      });
+      const stream = container.querySelector(".pa-markdown-streaming");
+
+      expect(stream).not.toHaveTextContent("A complete buffered reply");
+      await vi.advanceTimersByTimeAsync(30);
+      expect(stream?.textContent?.length).toBeGreaterThan(0);
+      expect(stream).not.toHaveTextContent("A complete buffered reply");
+      const firstReveal = stream?.textContent ?? "";
+
+      await rerender({
+        content: "A complete buffered reply with another chunk",
+        streaming: true,
+        smoothStreaming: true,
+      });
+      await vi.advanceTimersByTimeAsync(30);
+      expect(stream?.textContent).toMatch(new RegExp(`^${firstReveal}`));
+      expect(stream?.textContent?.length).toBeGreaterThan(firstReveal.length);
+
+      await rerender({
+        content: "A complete buffered reply with another chunk",
+        streaming: false,
+        smoothStreaming: true,
+      });
+      expect(container.querySelector(".pa-markdown")).toHaveTextContent("A complete buffered reply with another chunk");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the full stream immediately when reduced motion is requested", async () => {
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: true }) });
+    const { container } = render(Markdown, {
+      content: "No animated reveal",
+      streaming: true,
+      smoothStreaming: true,
+    });
+    await waitFor(() => expect(container.querySelector(".pa-markdown-streaming")).toHaveTextContent("No animated reveal"));
+  });
 });

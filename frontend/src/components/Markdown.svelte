@@ -1,13 +1,45 @@
 <script lang="ts">
   import DOMPurify from "dompurify";
   import { marked } from "marked";
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import { useI18nStore } from "../stores/i18n";
 
-  let { content, streaming = false, renderStreamingMarkdown = false }: { content: string; streaming?: boolean; renderStreamingMarkdown?: boolean } = $props();
+  let { content, streaming = false, renderStreamingMarkdown = false, smoothStreaming = false }: { content: string; streaming?: boolean; renderStreamingMarkdown?: boolean; smoothStreaming?: boolean } = $props();
   let markdownElement = $state<HTMLDivElement>();
+  let displayedContent = $state("");
+  let reducedMotion = $state(false);
+  let revealTimer: number | undefined;
   const resetTimers = new Map<HTMLButtonElement, number>();
   const html = $derived(DOMPurify.sanitize(marked.parse(content || " ", { gfm: true }) as string));
+
+  function graphemes(value: string): string[] {
+    if (typeof Intl.Segmenter === "function") {
+      return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value), (part) => part.segment);
+    }
+    return Array.from(value);
+  }
+
+  function stopReveal(): void {
+    if (revealTimer === undefined) return;
+    window.clearInterval(revealTimer);
+    revealTimer = undefined;
+  }
+
+  function advanceReveal(): void {
+    if (!content.startsWith(displayedContent)) displayedContent = "";
+    const pending = graphemes(content.slice(displayedContent.length));
+    if (!pending.length) {
+      stopReveal();
+      return;
+    }
+    const amount = Math.max(1, Math.min(12, Math.ceil(pending.length / 30)));
+    displayedContent += pending.slice(0, amount).join("");
+  }
+
+  function startReveal(): void {
+    if (revealTimer !== undefined) return;
+    revealTimer = window.setInterval(advanceReveal, 24);
+  }
 
   function t(key: string, fallback: string): string {
     const value = $useI18nStore.t(key);
@@ -80,14 +112,37 @@
     void tick().then(enhanceCodeBlocks);
   });
 
+  $effect(() => {
+    const nextContent = content;
+    const shouldReveal = streaming && smoothStreaming && !reducedMotion;
+    const currentContent = untrack(() => displayedContent);
+    if (!shouldReveal) {
+      stopReveal();
+      displayedContent = nextContent;
+      return;
+    }
+    if (!nextContent.startsWith(currentContent)) displayedContent = "";
+    if (nextContent !== currentContent) startReveal();
+  });
+
+  onMount(() => {
+    const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!preference) return;
+    const updateMotionPreference = () => reducedMotion = preference.matches;
+    updateMotionPreference();
+    preference.addEventListener?.("change", updateMotionPreference);
+    return () => preference.removeEventListener?.("change", updateMotionPreference);
+  });
+
   onDestroy(() => {
+    stopReveal();
     for (const timer of resetTimers.values()) window.clearTimeout(timer);
     resetTimers.clear();
   });
 </script>
 
 {#if streaming && !renderStreamingMarkdown}
-  <div class="pa-markdown pa-markdown-streaming">{content}</div>
+  <div class="pa-markdown pa-markdown-streaming">{smoothStreaming ? displayedContent : content}</div>
 {:else if streaming}
   <div class="pa-markdown pa-markdown-streaming">{@html html}</div>
 {:else}

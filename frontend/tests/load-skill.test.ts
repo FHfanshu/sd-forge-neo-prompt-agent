@@ -25,7 +25,7 @@ function skillHost(executeAssistantTool: PromptAgentHostApi["executeAssistantToo
 }
 
 describe("on-demand prompt skills", () => {
-  acceptanceTest("PROMPT-SKILL-001@2", "registration,load", "registers one bounded load_skill tool and returns only the requested guide", async () => {
+  acceptanceTest("PROMPT-SKILL-001@3", "registration,load", "registers one bounded load_skill tool and returns only the requested guide", async () => {
     const execute = vi.fn(async () => ({
       ok: true,
       name: "forge_couple",

@@ -1,6 +1,6 @@
 # Danbooru Tags Agent Reference
 
-Purpose: produce, normalize, review, or explain Danbooru-compatible image tags. This is a compact operational index, not a replacement for a tag's own live wiki page.
+Purpose: produce, normalize, review, or explain Danbooru-compatible image tags when that taxonomy is requested. This is a compact operational index, not a universal allowlist for prompt tags and not a replacement for a tag's own live wiki page.
 
 Sources retrieved 2026-07-12:
 
@@ -12,17 +12,19 @@ Sources retrieved 2026-07-12:
 
 Use this reference only when the user explicitly asks for Danbooru, Gelbooru, booru tags, tag normalization, tag review, tag-style prompts, or tag-wiki guidance. Do not force tag syntax into an ordinary natural-language prompt unless requested. Natural-language prompts do not need a Danbooru lookup; keep them direct and visually clear.
 
-Tag requests have a mandatory preflight gate: before writing a final tag prompt or editing the WebUI, extract 2-12 short English visual concepts from the user's request and make one `search_danbooru_tags` call with `queries`. This applies to Chinese requests and unfamiliar terminology. Use the resulting candidates to form the prompt; do not bypass the search because a term seems familiar.
+Danbooru canonical status and prompt compatibility are different things. User-provided tags, tags already present in Forge, tags copied from Forge autocomplete or older auto-fill, and model-, extension-, LoRA-, or wildcard-specific prompt tokens are usable input when they are clear and intentional. Preserve their spelling and meaning unless the user asks for normalization. A term missing from the current Danbooru index is not thereby invalid, and it must not by itself cause a refusal or a claim that the term is a “non-standard tag”. If the distinction matters, say that it was not found in the current Danbooru index and offer canonicalization; do not silently delete it.
+
+There is a mandatory preflight gate only for strict Danbooru cataloging, upload-ready output, or explicit Danbooru normalization: extract 2-12 short English visual concepts from the user's request and make one `search_danbooru_tags` call with `queries`. For ordinary image-generation prompts and prompt edits, lookup is optional and is used for ambiguity or canonicalization, not as an allowlist. Do not let a missing or failed lookup block a clear user-requested tag.
 
 For tag output:
 
 1. Describe visible facts only. Do not tag facts known from canon, filenames, metadata, or prior context unless they are visible or the user explicitly asks for catalog metadata.
-2. Prefer established canonical tags. Do not invent plausible tags; flag an uncertain term for live wiki/tag search instead.
+2. When creating or canonicalizing a new Danbooru tag, prefer an established canonical tag and do not invent a plausible Danbooru name. This rule does not override the provenance rule above: retain a clear user or existing-prompt tag even when it is not indexed by Danbooru.
 3. Output lowercase, space-separated terms in a comma-separated list for Anima prompts. Never copy Danbooru's underscore database keys to the prompt: output `blue hair`, not `blue_hair`; output `black rock shooter (character)`, not `black_rock_shooter_(character)`.
 4. The lookup tools return `name` and `prompt_tag` in prompt-ready space-separated form. `canonical_name` contains the underscore database key solely for a follow-up lookup; never reproduce it in prompt text.
 5. Use singular object nouns when creating or normalizing a general tag: `wispberry`, not `wispberries`.
 6. Do not use subjective tags such as `sexy`, `cute`, or `hot`. They express opinion rather than a stable visual fact.
-7. Do not duplicate tags or add synonymous near-duplicates. Prefer the most specific verified tag; retain broader tags only when they independently convey useful information.
+7. For strict cataloging, do not duplicate tags or add synonymous near-duplicates; prefer the most specific verified tag and retain broader tags only when they independently convey useful information. For ordinary prompt editing, do not deduplicate, rewrite, or replace user-provided tags unless asked.
 8. Separate an uncertain identification from visual description. A character or copyright that cannot be identified should not prevent tagging visible clothing, pose, objects, composition, and setting.
 
 ## Tagging Order
@@ -131,15 +133,15 @@ Use this index to decide where a disputed term belongs, then consult the linked 
 
 ## Escalation
 
-Use `search_danbooru_tags` before asserting a tag. It accepts up to 12 concepts in `queries`, combines autocomplete, prefix, and multiword wildcard recall, then returns candidates grouped per query. Use `related_danbooru_tags` to expand one verified seed. Use `inspect_danbooru_tags` to validate up to 12 selected tags in parallel; Wiki bodies are included by default.
+For strict Danbooru canonicalization, use `search_danbooru_tags` to resolve or assert a tag. It accepts up to 12 concepts in `queries`, combines autocomplete, prefix, and multiword wildcard recall, then returns candidates grouped per query. Use `related_danbooru_tags` to expand one verified seed. Use `inspect_danbooru_tags` to validate up to 12 selected tags in parallel; Wiki bodies are included by default. These tools verify Danbooru taxonomy; they do not decide whether a clear tag-like token is usable in an Anima, Forge, LoRA, wildcard, or extension prompt.
 
 For taxonomy, aesthetics, or Tag Group research, use `search_danbooru_wikis` to find canonical Wiki titles, then `inspect_danbooru_wikis` to read selected pages. Each inspected page returns bounded DText plus deduplicated Wiki and Tag Group references. Follow only relevant references in another inspection round. Stop when the evidence answers the task or the remaining branches are repeated, irrelevant, or too broad. A search result, URL, or uninspected reference is not evidence, and a `tag_group:*` page title is not itself a generation tag.
 
-Search before asserting a tag when any of these are true:
+Search before asserting a Danbooru-canonical form when any of these are true:
 
 - The concept could map to several near-synonyms or a qualifier.
 - The object, clothing construction, pose, action, character, artist, or copyright is unfamiliar.
 - A tag is likely aliased, deprecated, implication-heavy, or unusually sensitive.
 - The user asks for an exhaustive upload-ready tag set rather than a generation-oriented list.
 
-When live lookup is unavailable, state the uncertainty briefly and return only high-confidence visible tags. Never fabricate a canonical tag name to make the list look complete.
+When live lookup is unavailable during a strict cataloging task, state the uncertainty briefly and return only high-confidence visible tags; never fabricate a canonical tag name to make the list look complete. During ordinary prompt generation or editing, keep clear user-supplied and existing tags, and do not describe them as invalid merely because Danbooru lookup is unavailable.
