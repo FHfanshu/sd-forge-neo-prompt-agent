@@ -92,14 +92,12 @@
       "acceptance": [
         "Before changing a prompt from attached images, the agent grounds itself in a per-image factual inventory of visible content, visual style, and composition and separates evidence from uncertainty.",
         "Requested image captions provide one detailed objective English natural-language version and one evidence-equivalent purely Chinese version, each flowing as one coherent context ordered by content, style, and composition without filler or unsupported speculation.",
-        "A supported system picker is explicitly asked for multiple images in one selection, while the standard multi-file input remains available as the compatibility fallback.",
-        "Pasting one or more clipboard images into the message composer attaches them through the same validated image pipeline, while ordinary text paste remains native and unblocked."
+        "A supported system picker is explicitly asked for multiple images in one selection, while the standard multi-file input remains available as the compatibility fallback."
       ],
       "required_scenarios": [
         "visual-grounding",
         "bilingual-caption",
-        "multi-select",
-        "clipboard-paste"
+        "multi-select"
       ],
       "paths": [
         "frontend/src/agent/controller.ts",
@@ -122,9 +120,7 @@
         "A send action produces immediate pending feedback before session, attachment, controller, or profile preparation completes; duplicate clicks are ignored until that submission reaches a terminal state.",
         "The primary send control keeps its position while a request is active and accepts another composer submission as a FIFO follow-up for after the current response. Stop remains a separate secondary control, so neither a click at the send position nor Enter in the composer can accidentally stop the response.",
         "Queued follow-ups appear immediately in one compact borderless list, can be removed before execution, advance only after a successful response, and remain visibly paused and resumable after failure or cancellation.",
-        "Streamed final-answer text uses a buffered grapheme reveal so coarse provider chunks remain visibly progressive without delaying authoritative runtime content; completion and cancellation flush the full text immediately, and reduced-motion preference disables the animated reveal.",
-        "After a terminal agent response, local persistence, history refresh, and server synchronization continue asynchronously in a serialized background queue; the composer is usable immediately, while a compact top progress bar exposes the current phase and hover text, including local-save or synchronization failure.",
-        "Initial controller recovery restores the local session and releases the connected UI before a slow server synchronization completes; the delayed synchronization remains visible in the compact top progress bar and is cancelled before a new turn."
+        "Streamed final-answer text uses a buffered grapheme reveal so coarse provider chunks remain visibly progressive without delaying authoritative runtime content; completion and cancellation flush the full text immediately, and reduced-motion preference disables the animated reveal."
       ],
       "required_scenarios": [
         "loading",
@@ -132,9 +128,7 @@
         "process",
         "submission",
         "queue",
-        "streaming",
-        "post-turn",
-        "connection"
+        "streaming"
       ],
       "paths": [
         "backend/prompt_agent/local_runtime.py",

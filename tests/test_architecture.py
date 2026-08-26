@@ -28,6 +28,7 @@ HISTORICAL_FILES = {
     pathlib.Path("docs/archive/KOHAKU_LOOM_MIGRATION.md"),
     pathlib.Path("docs/archive/audit-archive-2026-07-19-full.md"),
     pathlib.Path("docs/archive/audit-archive-2026-07-19.md"),
+    pathlib.Path("docs/archive/audit-archive-2026-07-19-to-30.md"),
     pathlib.Path("docs/archive/current-architecture-audit.md"),
     pathlib.Path("docs/archive/kt-runtime-migration.md"),
 }

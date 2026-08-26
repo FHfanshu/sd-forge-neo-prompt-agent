@@ -40,8 +40,8 @@ export const FORGE_AGENT_SYSTEM_PROMPT = [
   "When a tool returns an error, treat it as feedback instead of ending the task: correct the arguments or refresh stale Forge state with the matching read tool, then retry when safe. Never repeat an identical failed write blindly; if the error is not recoverable, explain the blocker. Continue until the user's requested rewrite or change is completed.",
   "Character trigger words and templates are stored in Forge styles. When the user asks who or what a named entity is, or asks for background information, first call search_resources with kind=style and the entity query; inspect the best matching style with inspect_resource before answering. Only if no style matches may you fall back to Danbooru tag/wiki tools. search_danbooru_tags returns candidate tags and source URLs only: before explaining a selected tag's meaning, background, or usage, call inspect_danbooru_tags on its canonical name and use the Wiki body included by default. Never treat URL-only search output as inspected content. Never answer that question from memory or invent an identity, and state whether the answer came from a local Forge style or Danbooru. Prefer search_danbooru_tags for unfamiliar visual tag concepts. Never request paths or provider credentials.",
   "For Danbooru taxonomy, aesthetic, or Tag Group research, use search_danbooru_wikis to find canonical Wiki titles, then inspect_danbooru_wikis to read the selected pages. Inspection returns bounded Wiki bodies plus linked Wiki, tag, and Tag Group titles. Follow only the relevant next-hop references with another inspect_danbooru_wikis call, and continue deliberately until the evidence answers the task or the remaining references are irrelevant, repeated, or too broad. Never claim to have read a referenced page until it has been inspected, never confuse a Tag Group title with a usable image tag, and do not crawl unrelated branches merely because links exist.",
-  "Reply style: be terse. The user already sees every tool call, diff, and prompt change in the UI, so never restate or summarize what you changed; at most add one short sentence of non-obvious context, or say nothing beyond the answer itself. Answer in the user's language. Do not use headings, numbered summaries, bold labels, emoji, exclamation marks, or promotional tone. No change reports, no 'key changes' lists, no restating the request back.",
-  "You may iterate on your own generations. After editing prompts you may call generate_image to render the current Forge prompt, and the tool returns the rendered image so you can inspect it yourself: compare the render against the user's goal and the visual inventory, then refine the prompt and regenerate. Iterate only while each round meaningfully improves the result, keep rounds bounded, and stop with a one-line verdict when the user's goal is met.",
+  "Reply style: be terse. The user already sees every tool call, diff, and prompt change in the UI, so never restate or summarize what you changed. Do not narrate routine tool calls; only speak up between tool steps when the plan is non-obvious, when you hit a failure or surprise, or when the direction changes - one short plain sentence. Answer in the user's language. Do not use headings, numbered summaries, bold labels, emoji, exclamation marks, or promotional tone. No change reports, no 'key changes' lists, no restating the request back.",
+  "You may iterate on your own generations. After editing prompts you may call generate_image to render the current Forge prompt, and the tool returns the rendered image so you can inspect it yourself: compare the render against the user's goal and the visual inventory, then refine the prompt and regenerate. Iterate only while each round meaningfully improves the result, keep rounds bounded, and stop with a one-line verdict when the user's goal is met. The user can disable agent-triggered generation; if generate_image is denied, do not retry: ask the user to run the generation or re-enable the switch in settings, and continue with the prompt work.",
 ].join(" ");
 type SessionRepository = Pick<PromptAgentSessionRepository,
   "putSession" | "getSession" | "listSessions" | "putMessage" | "getMessages" | "deleteMessages" |
@@ -73,7 +73,7 @@ export class PromptAgentController {
 
   constructor(
     private readonly sessions: SessionRepository = new PromptAgentSessionRepository(),
-    private readonly options: { allowForgeWrites?: () => boolean } = {},
+    private readonly options: { allowForgeWrites?: () => boolean; allowGeneration?: () => boolean } = {},
   ) {
     this.actions = {
       sendMessage: (input) => this.sendMessage(input),
@@ -344,6 +344,7 @@ export class PromptAgentController {
     const toolRegistry = createForgeToolRegistry({
       host: () => getHostApi(typeof window === "undefined" ? undefined : promptAgentNamespace(window)),
       allowWrites: this.options.allowForgeWrites ?? (() => true),
+      allowGeneration: this.options.allowGeneration ?? (() => true),
     });
     const model = provider.toPiModel({
       id: profile.modelId,

@@ -45,6 +45,7 @@ const localFallbackMessages: Record<LocaleCode, Record<string, string>> = {
     "profiles.routes.title": "Routing", "profiles.routes.hint": "Choose which enabled profile handles each assistant role.", "profiles.active_profile": "Active profile", "profiles.route.active.hint": "Used for the main chat route", "profiles.route.naming.hint": "Creates titles with a llama-once profile", "profiles.role.naming.short": "N",
     "profiles.api_key.stored": "Stored securely", "profiles.api_key.placeholder": "Paste an API key", "profiles.model_path.empty": "Model path not configured", "profiles.resize": "Resize profile window",
     "profiles.delete.confirm_action": "Delete profile", "profiles.restore.confirm_action": "Restore defaults", "common.cancel": "Cancel",
+    "profiles.agent_generation.on": "Agent image generation: on", "profiles.agent_generation.off": "Agent image generation: off",
     "profiles.interface.hint": "Tune the floating windows without changing chat content.", "profiles.interface.layouts": "Window layouts", "profiles.interface.layouts_hint": "Reset both chat and profile window positions and sizes to their defaults.", "profiles.interface.reset": "Reset window layouts", "profiles.interface.mobile": "Mobile resize hint", "profiles.interface.mobile_hint": "Drag the corner to resize on mobile", "profiles.interface.dismiss_hint": "Dismiss", "profiles.interface.hint_seen": "Dismissed",
   },
   "zh-CN": {
@@ -52,6 +53,7 @@ const localFallbackMessages: Record<LocaleCode, Record<string, string>> = {
     "profiles.routes.title": "路由分配", "profiles.routes.hint": "为每个助手角色选择启用的模型配置。", "profiles.active_profile": "主模型", "profiles.route.active.hint": "用于主要对话路由", "profiles.route.naming.hint": "使用 llama-once 模型生成标题", "profiles.role.naming.short": "命",
     "profiles.api_key.stored": "已安全保存", "profiles.api_key.placeholder": "粘贴 API Key", "profiles.model_path.empty": "尚未配置模型路径", "profiles.resize": "调整模型配置窗口大小",
     "profiles.delete.confirm_action": "删除配置", "profiles.restore.confirm_action": "恢复默认配置", "common.cancel": "取消",
+    "profiles.agent_generation.on": "Agent 自动出图：开", "profiles.agent_generation.off": "Agent 自动出图：关",
     "profiles.interface.hint": "调整浮动窗口，不会改变对话内容。", "profiles.interface.layouts": "窗口布局", "profiles.interface.layouts_hint": "将聊天窗口和模型配置窗口的位置与大小恢复为默认值。", "profiles.interface.reset": "重置窗口布局", "profiles.interface.mobile": "移动端调整提示", "profiles.interface.mobile_hint": "拖动窗口角落调整移动端大小", "profiles.interface.dismiss_hint": "关闭提示", "profiles.interface.hint_seen": "已关闭",
   },
 };

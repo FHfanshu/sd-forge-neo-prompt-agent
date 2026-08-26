@@ -30,6 +30,13 @@ const DEFAULT_PROFILE_LAYOUTS: Record<LayoutViewport, WindowLayout> = {
 const LAYOUT_STORAGE_KEY = PROMPT_AGENT_STORAGE_KEYS.uiLayouts;
 const PROFILE_LAYOUT_STORAGE_KEY = PROMPT_AGENT_STORAGE_KEYS.profileLayouts;
 const LAUNCHER_POSITION_STORAGE_KEY = PROMPT_AGENT_STORAGE_KEYS.launcherPosition;
+const AGENT_GENERATION_STORAGE_KEY = PROMPT_AGENT_STORAGE_KEYS.agentGeneration;
+
+function readStoredAgentGeneration(): boolean {
+  const storage = getStorage();
+  if (!storage) return true;
+  return readMigratedStorageValue(storage, AGENT_GENERATION_STORAGE_KEY, "") !== "false";
+}
 
 function readStoredLayouts(): Record<LayoutViewport, WindowLayout> {
   const storage = getStorage();
@@ -134,12 +141,23 @@ export function persistLauncherPosition(position: LauncherPosition | null): void
   }
 }
 
+export function persistAgentGeneration(value: boolean): void {
+  const storage = getStorage();
+  if (!storage) return;
+  try {
+    writePromptAgentStorageValue(storage, AGENT_GENERATION_STORAGE_KEY, "", value ? "true" : "false");
+  } catch {
+    // Storage can be unavailable in embedded or private browsing contexts.
+  }
+}
+
 export interface UiStore {
   shellOpen: boolean;
   profileSettingsOpen: boolean;
   activePanel: "chat" | "profiles";
   frontWindow: "chat" | "profiles";
   historyOpen: boolean;
+  agentGeneration: boolean;
   layouts: Record<LayoutViewport, WindowLayout>;
   profileLayouts: Record<LayoutViewport, WindowLayout>;
   launcherPosition: LauncherPosition | null;
@@ -149,6 +167,7 @@ export interface UiStore {
   setActivePanel(panel: UiStore["activePanel"]): void;
   bringToFront(windowName: UiStore["frontWindow"]): void;
   setHistoryOpen(open: boolean): void;
+  setAgentGeneration(value: boolean): void;
   setLayout(viewport: LayoutViewport, layout: WindowLayout): void;
   setProfileLayout(viewport: LayoutViewport, layout: WindowLayout): void;
   setLauncherPosition(position: LauncherPosition): void;
@@ -163,6 +182,7 @@ export const useUiStore = createStore<UiStore>((set) => ({
   activePanel: "chat",
   frontWindow: "chat",
   historyOpen: false,
+  agentGeneration: readStoredAgentGeneration(),
   layouts: readStoredLayouts(),
   profileLayouts: readStoredProfileLayouts(),
   launcherPosition: readStoredLauncherPosition(),
@@ -181,6 +201,10 @@ export const useUiStore = createStore<UiStore>((set) => ({
   },
   setHistoryOpen(historyOpen) {
     set({ historyOpen });
+  },
+  setAgentGeneration(agentGeneration) {
+    persistAgentGeneration(agentGeneration);
+    set({ agentGeneration });
   },
   setLayout(viewport, layout) {
     set((state) => {

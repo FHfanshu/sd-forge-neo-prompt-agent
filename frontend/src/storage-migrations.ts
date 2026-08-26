@@ -3,6 +3,7 @@ export const PROMPT_AGENT_STORAGE_KEYS = {
   uiLayouts: "prompt-agent:ui-layouts:v1",
   profileLayouts: "prompt-agent:profile-layouts:v2",
   launcherPosition: "prompt-agent:launcher-position:v1",
+  agentGeneration: "prompt-agent:agent-generation:v1",
   modelPickerFavorites: "prompt-agent.model-picker.favorites",
   modelPickerRecents: "prompt-agent.model-picker.recents",
 } as const;

@@ -13,9 +13,8 @@ afterEach(() => {
 
 describe("Prompt Agent localStorage migrations", () => {
   it("migrates every persisted key from the old key once", () => {
-    for (const name of Object.keys(PROMPT_AGENT_STORAGE_KEYS) as Array<keyof typeof PROMPT_AGENT_STORAGE_KEYS>) {
-      const canonicalKey = PROMPT_AGENT_STORAGE_KEYS[name];
-      const legacyKey = LEGACY_STORAGE_KEYS[name];
+    for (const [name, legacyKey] of Object.entries(LEGACY_STORAGE_KEYS)) {
+      const canonicalKey = PROMPT_AGENT_STORAGE_KEYS[name as keyof typeof PROMPT_AGENT_STORAGE_KEYS];
       const value = `migration-${name}`;
       localStorage.setItem(legacyKey, value);
 

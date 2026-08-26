@@ -177,6 +177,7 @@ export interface ForgeToolFactoryOptions {
   host?: () => PromptAgentHostApi | null;
   timeoutMs?: number;
   allowWrites?: () => boolean;
+  allowGeneration?: () => boolean;
 }
 
 export interface ForgeAgentTool<TSchemaValue extends TSchema = TSchema> extends AgentTool<TSchemaValue, unknown> {
@@ -241,6 +242,9 @@ async function invokeForgeTool(
   }
   if (permission === "write" && options.allowWrites && !options.allowWrites()) {
     throw new ForgeToolError("permission_denied", "This Forge change requires write permission.", false);
+  }
+  if (name === "generate_image" && options.allowGeneration && !options.allowGeneration()) {
+    throw new ForgeToolError("permission_denied", "The user disabled agent-triggered image generation. Ask the user to generate the image or to re-enable the switch in settings.", false);
   }
 
   const controller = new AbortController();

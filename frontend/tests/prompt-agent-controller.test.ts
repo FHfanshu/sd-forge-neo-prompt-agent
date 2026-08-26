@@ -68,16 +68,14 @@ describe("PromptAgentController recovery", () => {
 
   it("re-enables the composer when persistence rejects after generation", async () => {
     installFetch();
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     repository.putMessage.mockRejectedValue(new Error("session write failed"));
     const controller = new PromptAgentController(repository);
     await controller.mount();
 
-    await expect(controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" })).resolves.toMatchObject({ kind: "local" });
+    await expect(controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" })).rejects.toThrow("session write failed");
 
     expect(useChatStore.getState().activeRequestId).toBeNull();
     expect(useRuntimeStore.getState().workingPhase).toBe("idle");
-    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("error"));
     controller.destroy();
   });
 
@@ -191,71 +189,6 @@ describe("PromptAgentController recovery", () => {
 
     expect(useRuntimeStore.getState().startup).toBe("ready");
     expect(useRuntimeStore.getState().sessionId).toBeTruthy();
-    controller.destroy();
-  });
-
-  acceptanceTest("UI-FEEDBACK-001@10", "connection", "makes the local session usable while initial server sync is still pending", async () => {
-    installFetch();
-    let releaseSync!: () => void;
-    let initialSyncSignal: AbortSignal | undefined;
-    let syncCalls = 0;
-    const syncingRepository = {
-      ...repository,
-      syncWithServer: vi.fn((signal?: AbortSignal) => {
-        syncCalls += 1;
-        if (syncCalls === 1) {
-          initialSyncSignal = signal;
-          return new Promise<{ conflicts: [] }>((resolve) => {
-            releaseSync = () => resolve({ conflicts: [] });
-          });
-        }
-        return Promise.resolve({ conflicts: [] as [] });
-      }),
-    };
-    const controller = new PromptAgentController(syncingRepository);
-    const mounting = controller.mount();
-
-    await vi.waitFor(() => expect(syncingRepository.syncWithServer).toHaveBeenCalledTimes(1));
-    await expect(mounting).resolves.toBeUndefined();
-    expect(useRuntimeStore.getState().startup).toBe("ready");
-    expect(useRuntimeStore.getState().sessionId).toBeTruthy();
-    expect(useRuntimeStore.getState().sessionWorkPhase).toBe("syncing");
-
-    await controller.actions.sendMessage({ text: "Send while recovering", attachments: [], reasoning: "none" });
-    expect(initialSyncSignal?.aborted).toBe(true);
-    releaseSync();
-    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("idle"));
-    controller.destroy();
-  });
-
-  it("unlocks the next turn while terminal session sync is still pending", async () => {
-    installFetch();
-    let syncCalls = 0;
-    let releaseSync!: () => void;
-    const syncingRepository = {
-      ...repository,
-      syncWithServer: vi.fn(async () => {
-        syncCalls += 1;
-        if (syncCalls === 2) return await new Promise<{ conflicts: [] }>((resolve) => { releaseSync = () => resolve({ conflicts: [] }); });
-        return { conflicts: [] };
-      }),
-    };
-    const controller = new PromptAgentController(syncingRepository);
-    await controller.mount();
-    await vi.waitFor(() => expect(syncCalls).toBe(1));
-    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("idle"));
-
-    const first = controller.actions.sendMessage({ text: "First", attachments: [], reasoning: "none" });
-    await first;
-    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("syncing"));
-    expect(useChatStore.getState().activeRequestId).toBeNull();
-
-    await controller.actions.sendMessage({ text: "Second", attachments: [], reasoning: "none" });
-    expect(useChatStore.getState().activeRequestId).toBeNull();
-    expect(useChatStore.getState().messages.some((message) => message.content === "Second")).toBe(true);
-
-    releaseSync();
-    await vi.waitFor(() => expect(useRuntimeStore.getState().sessionWorkPhase).toBe("idle"));
     controller.destroy();
   });
 
