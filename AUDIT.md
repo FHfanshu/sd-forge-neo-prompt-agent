@@ -442,4 +442,16 @@ Entries from 2026-07-19 through 2026-07-30 moved to
 - Added `tests/test_pnginfo.py`.
 - Verification: `python -m unittest tests.test_pnginfo` passed (4 tests).
 
+## 2026-09-11 Restricted image-metadata endpoint
+- Goal: give the frontend a way to read PNGInfo from the original attachment
+  bytes before the WebP transcode discards them (PRD IMG-01), reusing the
+  existing attachment size limits and image MIME validation.
+- Added `POST /prompt-agent/api/images/metadata` in
+  `backend/prompt_agent/app.py`: rejects a missing `data_url` and non-image
+  payloads with 422 `invalid_image`, decodes through the shared
+  `_decode_image_data` limits (24 MiB / 16 MP), and returns
+  `extract_image_metadata(binary)`.
+- Added route tests to `tests/test_prompt_agent_api.py`.
+- Verification: both image-metadata route tests passed.
+
 

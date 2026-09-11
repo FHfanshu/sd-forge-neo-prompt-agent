@@ -15,6 +15,8 @@ from .profile_connection import ConnectionTestError, test_profile_connection
 from .profiles import ProfileAuthority, SecretUnavailableError, default_storage_root
 from .providers import provider_catalog, public_profile_state, stream_profile
 from .session_sync import SessionSyncAuthority, SessionSyncError
+from prompt_agent.image_payloads import _decode_image_data
+from prompt_agent.pnginfo import extract_image_metadata
 
 
 API_PREFIX = "/prompt-agent/api"
@@ -170,6 +172,23 @@ def register_prompt_agent_api(
                     },
                 },
             ) from error
+
+    @app.post(f"{API_PREFIX}/images/metadata")
+    async def prompt_agent_image_metadata(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        data_url = payload.get("data_url")
+        if not isinstance(data_url, str) or not data_url:
+            raise HTTPException(
+                status_code=422,
+                detail={"ok": False, "error": {"code": "invalid_image", "message": "data_url is required", "retryable": False}},
+            )
+        try:
+            _mime, binary, _raw = _decode_image_data(data_url)
+        except (ValueError, RuntimeError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail={"ok": False, "error": {"code": "invalid_image", "message": str(error), "retryable": False}},
+            ) from error
+        return {"ok": True, "metadata": extract_image_metadata(binary)}
 
     @app.post(f"{API_PREFIX}/profiles/{{profile_id}}/connection-test")
     async def prompt_agent_profile_connection_test(profile_id: str) -> dict[str, Any]:

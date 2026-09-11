@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ctypes
+import io
 import json
 import os
 import unittest
@@ -12,6 +14,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx
+from PIL import Image, PngImagePlugin
 
 from backend.prompt_agent import API_PREFIX, register_prompt_agent_api
 from backend.prompt_agent.profiles import ProfileAuthority, default_storage_root
@@ -38,6 +41,35 @@ class PromptAgentApiTests(unittest.TestCase):
         self.assertEqual(payload["features"]["agent_loop"], True)
         self.assertEqual(payload["features"]["provider_proxy"], True)
         self.assertEqual(payload["features"]["session_sync"], True)
+
+    def test_image_metadata_route_reads_pnginfo_before_transcode(self):
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        image = Image.new("RGB", (32, 24), (1, 2, 3))
+        info = PngImagePlugin.PngInfo()
+        info.add_text("parameters", "cat\nNegative prompt: bad\nSteps: 10, Sampler: Euler, Seed: 42, Size: 32x24")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG", pnginfo=info)
+        data_url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+        response = TestClient(app).post(f"{API_PREFIX}/images/metadata", json={"data_url": data_url})
+
+        self.assertEqual(response.status_code, 200)
+        metadata = response.json()["metadata"]
+        self.assertEqual(metadata["parser_format"], "a1111")
+        self.assertEqual(metadata["data"]["positive_prompt"], "cat")
+        self.assertEqual(metadata["data"]["generation_parameters"]["seed"], 42)
+
+    def test_image_metadata_route_rejects_invalid_payload(self):
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+
+        self.assertEqual(client.post(f"{API_PREFIX}/images/metadata", json={}).status_code, 422)
+        self.assertEqual(
+            client.post(f"{API_PREFIX}/images/metadata", json={"data_url": "data:text/plain;base64,Zm9v"}).status_code,
+            422,
+        )
 
     @acceptance("SECURITY-PRIVACY-001@1", "projection")
     def test_profiles_never_return_secret_or_local_paths(self):
