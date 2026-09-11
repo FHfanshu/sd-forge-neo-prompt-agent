@@ -37,14 +37,16 @@ describe("on-demand prompt skills", () => {
     const tool = createLoadSkillTool({ host: () => host });
 
     expect(registry.list().map((item) => item.name)).toContain("load_skill");
-    expect(PROMPT_SKILL_NAMES).toEqual(["danbooru_tags", "anima_dit", "forge_couple"]);
+    expect(PROMPT_SKILL_NAMES).toEqual(["danbooru_tags", "anima_dit", "forge_couple", "krea2"]);
     expect(Compile(LOAD_SKILL_SCHEMA).Check({ name: "forge_couple" })).toBe(true);
+    expect(Compile(LOAD_SKILL_SCHEMA).Check({ name: "krea2" })).toBe(true);
     expect(Compile(LOAD_SKILL_SCHEMA).Check({ name: "../../secrets" })).toBe(false);
 
     const result = await tool.execute("skill-1", { name: "forge_couple" });
 
     expect(execute).toHaveBeenCalledWith({ tool: "load_skill", arguments: { name: "forge_couple" } }, undefined);
-    expect(result.details).toMatchObject({ ok: true, name: "forge_couple" });
+    expect(result.details).toEqual({ ok: true, name: "forge_couple", title: "Forge Couple prompt guide" });
+    expect(result.details).not.toHaveProperty("guide");
     expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("newline-separated") });
   });
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BrainCircuit, ChevronRight, CircleStop, RefreshCw, Send, ServerCog, Sparkles, Wrench } from "lucide-svelte";
+  import { BrainCircuit, CircleStop, RefreshCw, Send, ServerCog, Sparkles, Wrench } from "lucide-svelte";
   import type { WorkingPhase } from "../stores/runtime";
   import { useI18nStore } from "../stores/i18n";
 
@@ -47,7 +47,7 @@
       : "");
 </script>
 
-<details class:pa-working-has-reasoning={Boolean(reasoningExcerpt)} class="pa-working-indicator pa-working-{phase}" role="status" aria-live="polite">
-  <summary><span class="pa-working-icon" aria-hidden="true">{#if phase === "model-loading"}<ServerCog size={14} />{:else if phase === "submitting"}<Send size={14} />{:else if phase === "cancelling"}<CircleStop size={14} />{:else if phase === "retrying"}<RefreshCw size={14} />{:else if phase === "tool"}<Wrench size={14} />{:else if phase === "generating"}<Sparkles size={14} />{:else}<BrainCircuit size={14} />{/if}</span><strong><span>{label}</span>{#if phase === "tool" && tool} <code>{tool}</code>{/if}</strong><span class="pa-working-thread" aria-hidden="true"><i></i></span><ChevronRight class="pa-working-chevron" size={14} aria-hidden="true" /></summary>
+<div class:pa-working-has-reasoning={Boolean(reasoningExcerpt)} class="pa-working-indicator pa-working-{phase}" role="status" aria-live="polite">
+  <div class="pa-working-summary"><span class="pa-working-icon" aria-hidden="true">{#if phase === "model-loading"}<ServerCog size={14} />{:else if phase === "submitting"}<Send size={14} />{:else if phase === "cancelling"}<CircleStop size={14} />{:else if phase === "retrying"}<RefreshCw size={14} />{:else if phase === "tool"}<Wrench size={14} />{:else if phase === "generating"}<Sparkles size={14} />{:else}<BrainCircuit size={14} />{/if}</span><strong><span>{label}</span>{#if phase === "tool" && tool} <code>{tool}</code>{/if}</strong><span class="pa-working-thread" aria-hidden="true"><i></i></span></div>
   {#if detail}<small class="pa-working-detail" title={detail}>{detail}</small>{/if}
-</details>
+</div>

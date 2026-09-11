@@ -1,6 +1,7 @@
 import { Agent, type AgentMessage, type AgentOptions, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Message, Model } from "@earendil-works/pi-ai";
 import { parseHybridPrompt } from "../prompts/prompt-parser";
+import { pruneContextForModel } from "./context-pruning";
 import type { RuntimeListener } from "./runtime-events";
 import {
   initialAgentRuntimeState,
@@ -79,9 +80,7 @@ function normalizeControlMessages(messages: AgentMessage[]): AgentMessage[] {
 }
 
 function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
-  return normalizeControlMessages(messages).filter((message): message is Message => (
-    message.role === "user" || message.role === "assistant" || message.role === "toolResult"
-  ));
+  return pruneContextForModel(normalizeControlMessages(messages));
 }
 
 type PromptEditPatch = {

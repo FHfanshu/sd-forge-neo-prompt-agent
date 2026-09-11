@@ -763,7 +763,7 @@
     function readGenerationParametersTool(target) {
         const snapshot = generationSnapshot(target || "active");
         assistantState.generationReads[snapshot.target] = Object.assign({}, snapshot, { at: Date.now() });
-        return Object.assign({ ok: true }, snapshot);
+        return Object.assign({ ok: true }, snapshot, { forge: promptAgent.forgeSkillHint() });
     }
 
     function writeGenerationControl(control, value) {

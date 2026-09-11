@@ -345,7 +345,8 @@ describe("PromptAgentController recovery", () => {
     expect(runtime.getSystemPrompt()).toContain("search_danbooru_wikis");
     expect(runtime.getSystemPrompt()).toContain("inspect_danbooru_wikis");
     expect(runtime.getSystemPrompt()).toContain("Follow only the relevant next-hop references");
-    expect(runtime.getSystemPrompt()).toContain("Before writing or revising prompts for an Anima checkpoint, call load_skill with anima_dit");
+    expect(runtime.getSystemPrompt()).toContain("read_generation_parameters reports the active Forge preset, checkpoint, and a recommended_skill");
+    expect(runtime.getSystemPrompt()).toContain("whenever it recommends a skill, call load_skill with that name before writing or revising prompts");
     expect(runtime.getSystemPrompt()).toContain("Before constructing multi-character or regional prompts for Forge Couple, call load_skill with forge_couple");
     expect(runtime.getSystemPrompt()).toContain("Danbooru canonical status is required only for an explicitly requested Danbooru catalog");
     expect(runtime.getSystemPrompt()).toContain("autocomplete/auto-fill");

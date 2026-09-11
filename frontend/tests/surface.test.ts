@@ -65,14 +65,14 @@ describe("Svelte chat surface", () => {
     expect(screen.getAllByText("read_prompt").length).toBeGreaterThan(0);
     expect(screen.getByText(/642 in/)).toBeInTheDocument();
     expect(screen.getByText(/320 cache/)).toBeInTheDocument();
-    expect(screen.getByText("Reasoning trace").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("Reasoning trace").closest("[data-prompt-agent-process='true']")).not.toHaveAttribute("open");
     expect(screen.queryByLabelText("Assistant response branches")).not.toBeInTheDocument();
     const tool = container.querySelector("[data-prompt-agent-tool-result='true']")!;
     const response = screen.getByText("middle third is carrying too many competing details");
     expect(tool.compareDocumentPosition(response) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@10", "process", "keeps one final response primary while recovered tool failures and cache usage stay scoped", async () => {
+  acceptanceTest("UI-FEEDBACK-001@12", "process", "keeps one chronological process timeline while recovered tool failures and cache usage stay scoped", async () => {
     const user = userEvent.setup();
     const messages = [
       mockMessages[0],
@@ -85,7 +85,7 @@ describe("Svelte chat surface", () => {
     const process = container.querySelector<HTMLDetailsElement>("[data-prompt-agent-process='true']");
     expect(process).not.toBeNull();
     expect(process?.open).toBe(false);
-    expect(process?.querySelector(":scope > summary")).toHaveTextContent("1284 in · 236 out · 640 cache");
+    expect(process?.querySelector(":scope > summary")).toHaveTextContent("642 in · 118 out · 320 cache");
     expect(container.querySelectorAll(".pa-message-assistant")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Copy" })).toHaveLength(2);
     expect(screen.getByText("middle third is carrying too many competing details")).toBeInTheDocument();
@@ -98,10 +98,14 @@ describe("Svelte chat surface", () => {
     await user.click(toolResult!.querySelector("summary")!);
     expect(toolResult?.open).toBe(true);
 
-    const reasoning = container.querySelector<HTMLDetailsElement>(".pa-process-reasoning");
+    const events = Array.from(process!.querySelectorAll<HTMLElement>("[data-prompt-agent-process-event]"));
+    expect(events.map((event) => event.dataset.promptAgentProcessEvent)).toEqual(["reasoning", "intermediate", "tool", "reasoning"]);
+    expect(events[0]).toHaveTextContent("First pass");
+    expect(events[2]).toHaveTextContent("read_prompt");
+    expect(events[3]).toHaveTextContent("I compared the subject hierarchy");
+    const reasoning = container.querySelector<HTMLElement>(".pa-process-reasoning");
     expect(reasoning).not.toBeNull();
-    expect(reasoning?.open).toBe(false);
-    await user.click(reasoning!.querySelector("summary")!);
+    expect(reasoning?.tagName).toBe("SECTION");
     expect(reasoning).toHaveTextContent("First pass");
 
     await user.click(screen.getByRole("button", { name: "Collapse response" }));
@@ -201,7 +205,7 @@ describe("Svelte chat surface", () => {
     expect(process?.querySelector(":scope > summary")).toHaveTextContent("Execution failed");
   });
 
-  acceptanceTest("UI-FEEDBACK-001@10", "streaming", "defers Markdown parsing while progressively revealing an assistant stream", async () => {
+  acceptanceTest("UI-FEEDBACK-001@12", "streaming", "defers Markdown parsing while progressively revealing an assistant stream", async () => {
     render(Surface, {
       initialOpen: true,
       messages: [{
@@ -596,7 +600,7 @@ describe("Svelte chat surface", () => {
     expect(newSession).toHaveBeenCalledOnce();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@10", "queue", "keeps the primary control stable, queues follow-ups, and exposes stop separately during an active request", async () => {
+  acceptanceTest("UI-FEEDBACK-001@12", "queue", "keeps the primary control stable, queues follow-ups, and exposes stop separately during an active request", async () => {
     const user = userEvent.setup();
     useChatStore.getState().beginRequest("active");
     useRuntimeStore.getState().setWorking("thinking");
@@ -630,7 +634,7 @@ describe("Svelte chat surface", () => {
     expect(stopRequest).toHaveBeenCalledOnce();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@10", "submission", "acknowledges send immediately without swapping a stop control under the pointer", async () => {
+  acceptanceTest("UI-FEEDBACK-001@12", "submission", "acknowledges send immediately without swapping a stop control under the pointer", async () => {
     const user = userEvent.setup();
     let finishSend!: () => void;
     const sendMessage = vi.fn(() => new Promise<void>((resolve) => { finishSend = resolve; }));
@@ -663,10 +667,10 @@ describe("Svelte chat surface", () => {
     await waitFor(() => expect(send).toHaveAttribute("aria-busy", "false"));
   });
 
-  acceptanceTest("UI-FEEDBACK-001@10", "loading,recovery", "shows the current assistant working phase", async () => {
+  acceptanceTest("UI-FEEDBACK-001@12", "loading,recovery", "uses one automatically expanded process drawer for current assistant work", async () => {
     useChatStore.getState().beginRequest("active");
     useRuntimeStore.getState().setWorking("submitting");
-    render(Surface, { initialOpen: true, actions: {} });
+    const { container } = render(Surface, { initialOpen: true, actions: {} });
 
     expect(screen.getByText("Sending request…")).toBeInTheDocument();
     expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
@@ -680,8 +684,12 @@ describe("Svelte chat surface", () => {
     expect(await screen.findByText("Generating response…")).toBeInTheDocument();
     expect(screen.queryByText("Generating", { exact: true })).not.toBeInTheDocument();
     expect(screen.getByText("Reasoning: draft rationale")).toBeInTheDocument();
+    const activeProcess = container.querySelector<HTMLDetailsElement>("[data-prompt-agent-process='true']");
+    expect(activeProcess?.open).toBe(true);
+    expect(screen.queryByRole("button", { name: "Collapse response" })).not.toBeInTheDocument();
+    expect(container.querySelector(".pa-working-indicator")?.tagName).toBe("DIV");
     useRuntimeStore.getState().setWorking("tool", "edit_prompt");
-    expect((await screen.findByText("Running tool…")).closest("details")).not.toHaveAttribute("open");
+    expect((await screen.findByText("Running tool…")).closest(".pa-working-indicator")).not.toBeNull();
     expect(screen.getByText("Tool: edit_prompt")).toBeInTheDocument();
     useRuntimeStore.getState().setWorking("retrying", "Tool feedback received");
     expect(await screen.findByText("Retrying with tool feedback…")).toBeInTheDocument();
@@ -689,6 +697,8 @@ describe("Svelte chat surface", () => {
 
     useChatStore.getState().cancelRequest();
     await waitFor(() => expect(screen.queryByText("Running tool…")).not.toBeInTheDocument());
+    expect(activeProcess?.open).toBe(false);
+    expect(screen.getByRole("button", { name: "Collapse response" })).toBeInTheDocument();
   });
 
   acceptanceTest("UI-WINDOW-001@3", "focus", "keeps desktop chat input usable while settings is open", async () => {
@@ -771,6 +781,31 @@ describe("Svelte chat surface", () => {
     expect(composer?.querySelector(".pa-send-button")).toBeInTheDocument();
     expect(composer?.querySelector(".pa-composer-bottom")?.closest("form")).toBe(composer);
     expect(composer?.querySelector(".pa-send-button")?.closest("form")).toBe(composer);
+  });
+
+  acceptanceTest("UI-FEEDBACK-001@12", "context-usage", "shows the latest request input against the active model context window", () => {
+    const profiles = useProfileStore.getState().profiles;
+    const activeId = useProfileStore.getState().activeProfileId;
+    useProfileStore.getState().setProfiles(profiles.map((profile) => profile.id === activeId
+      ? { ...profile, modelInfo: { ...profile.modelInfo, contextLimit: 131_072 } }
+      : profile));
+    render(Surface, {
+      initialOpen: true,
+      messages: [{
+        id: "usage",
+        role: "assistant",
+        content: "Done",
+        status: "complete",
+        usage: { inputTokens: 32_768 },
+        attachments: [],
+        createdAt: Date.now(),
+      }],
+      actions: {},
+    });
+
+    const meter = screen.getByRole("meter", { name: /32,768 \/ 131,072 tokens \(25%\)/ });
+    expect(meter).toHaveTextContent("25");
+    expect(meter).toHaveAttribute("aria-valuenow", "32768");
   });
 
   it("switches the active model from the composer", async () => {

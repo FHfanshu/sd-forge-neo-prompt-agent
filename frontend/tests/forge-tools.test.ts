@@ -96,6 +96,7 @@ describe("Forge Agent Tools", () => {
     const readResult = await read.execute("read-1", { field: "positive" }, new AbortController().signal);
     await edit.execute("edit-1", { field: "positive", base_hash: "hash-1", patches: [{ operation: "append", text: "light" }] }, new AbortController().signal);
 
+    expect(JSON.parse((readResult.content[0] as { text: string }).text)).toMatchObject({ ok: true, prompt_hash: "hash-1" });
     expect(readResult.details).toMatchObject({ ok: true, prompt_hash: "hash-1" });
     expect(fake.calls).toHaveLength(2);
     expect(fake.calls[1]).toMatchObject({ tool: "edit_prompt", arguments: { base_hash: "hash-1", field: "positive" } });
@@ -142,11 +143,27 @@ describe("Forge Agent Tools", () => {
     const result = await tool.execute("gen-1", {}, new AbortController().signal);
 
     expect(fake.calls[0]).toMatchObject({ tool: "generate_image", arguments: {} });
-    expect(result.details).toEqual({ ok: true, target: "txt2img", duration_ms: 4200, image_mime_type: "image/png", image_base64: "aW1hZ2U=" });
+    expect(result.details).toEqual({ ok: true, target: "txt2img", duration_ms: 4200, image_mime_type: "image/png" });
     const blocks = result.content as Array<{ type: string; data?: string; mimeType?: string; text?: string }>;
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toEqual({ type: "image", data: "aW1hZ2U=", mimeType: "image/png" });
     expect(JSON.parse(blocks[1].text!)).toEqual({ ok: true, target: "txt2img", duration_ms: 4200, image_mime_type: "image/png" });
+  });
+
+  it("sends compact search candidates to the model while keeping the full host result in details", async () => {
+    const items = Array.from({ length: 12 }, (_, index) => ({
+      name: `tag ${index}`,
+      canonical_name: `tag_${index}`,
+      wiki_url: `https://danbooru.donmai.us/wiki_pages/tag_${index}`,
+      tag_url: `https://danbooru.donmai.us/tags?search%5Bname%5D=tag_${index}`,
+    }));
+    const fake = host({ ok: true, items });
+    const tool = createForgeAgentTools({ host: () => fake.api }).find((item) => item.name === "search_danbooru_tags")!;
+    const result = await tool.execute("search-1", { queries: ["tag"] }, new AbortController().signal);
+    const content = JSON.parse((result.content[0] as { text: string }).text) as { items: Array<Record<string, unknown>> };
+    expect(content.items).toHaveLength(8);
+    expect(content.items[0]).not.toHaveProperty("wiki_url");
+    expect((result.details as { items: unknown[] }).items).toHaveLength(12);
   });
 
   it("does not block a later submission after a failed tool", async () => {

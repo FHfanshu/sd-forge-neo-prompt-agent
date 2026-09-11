@@ -65,4 +65,22 @@
     }
 
     tools.generateImageTool = generateImageTool;
+
+    function forgeSkillHint() {
+        function controlValue(selector) {
+            const root = document.querySelector(selector);
+            const control = root && (root.matches("input, select, textarea") ? root : root.querySelector("input, select, textarea"));
+            return control ? String(control.value ?? "").trim() : "";
+        }
+        const preset = controlValue("#forge_ui_preset");
+        const checkpoint = controlValue("#setting_sd_model_checkpoint");
+        const hay = (preset + " " + checkpoint).toLowerCase();
+        return {
+            ui_preset: preset || null,
+            checkpoint: checkpoint || null,
+            recommended_skill: hay.includes("anima") ? "anima_dit" : hay.includes("krea") ? "krea2" : null,
+        };
+    }
+
+    tools.forgeSkillHint = forgeSkillHint;
 })();

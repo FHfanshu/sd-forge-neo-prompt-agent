@@ -19,7 +19,7 @@ from quality.acceptance import acceptance
 
 
 class ForgeToolValidationTests(unittest.TestCase):
-    @acceptance("AGENT-TOOLS-001@5", "surface")
+    @acceptance("AGENT-TOOLS-001@6", "surface")
     def test_agent_tool_names_are_fixed_and_ordered(self):
         self.assertEqual(
             (
@@ -170,7 +170,7 @@ class ForgeToolApiTests(unittest.TestCase):
         self.assertEqual("validation_error", response.json()["detail"]["error"]["code"])
         self.assertNotIn("C:/private", response.text)
 
-    @acceptance("AGENT-TOOLS-001@5", "revalidation,freshness")
+    @acceptance("AGENT-TOOLS-001@6", "revalidation,freshness")
     def test_validation_endpoint_revalidates_browser_host_tools(self):
         with TemporaryDirectory() as directory:
             app = FastAPI()

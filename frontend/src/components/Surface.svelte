@@ -34,6 +34,7 @@
   import { useUiStore } from "../stores/ui";
   import { clampWindowLayout, minimumForViewport, pointerPosition, pointerWindow, readViewportRect, resolveViewportAfterKeyboard, viewportKind, type FloatingPosition, type LayoutViewport } from "../window-interactions";
   import Markdown from "./Markdown.svelte";
+  import ContextMeter from "./ContextMeter.svelte";
   import ModelPicker from "./ModelPicker.svelte";
   import ProfileSettings from "./ProfileSettings.svelte";
   import ProcessDrawer from "./ProcessDrawer.svelte";
@@ -105,6 +106,8 @@
   const windowMinimum = $derived(minimumForViewport(kind));
   const currentLayout = $derived(clampWindowLayout($useUiStore.layouts[kind], viewport, windowMinimum));
   const activeProfile = $derived($useProfileStore.profiles.find((profile) => profile.id === $useProfileStore.activeProfileId && profile.enabled));
+  const contextLimit = $derived(activeProfile?.modelInfo.contextLimit || activeProfile?.nCtx || 131072);
+  const contextTokens = $derived([...visibleMessages].reverse().find((message) => message.role === "assistant" && (message.usage?.inputTokens ?? 0) > 0)?.usage?.inputTokens ?? 0);
   const workingPhase = $derived($useRuntimeStore.workingPhase);
   const requestActive = $derived(Boolean($useChatStore.activeRequestId));
   const queuedFollowUps = $derived($useRuntimeStore.queuedFollowUps);
@@ -115,34 +118,27 @@
   const hasVisibleTerminalError = $derived(visibleMessages.some((message) => message.role === "assistant" && message.status === "error"));
   const visibleAlert = $derived(hasVisibleTerminalError ? null : notice || $useRuntimeStore.error);
   const renderMessages = $derived.by(() => {
-    const groups: Array<{ message: ChatMessage; tools: ChatMessage[]; intermediateMessages: ChatMessage[] }> = [];
+    const groups: Array<{ message: ChatMessage; processMessages: ChatMessage[] }> = [];
     const pendingTools: ChatMessage[] = [];
-    let response: { message: ChatMessage; tools: ChatMessage[]; intermediateMessages: ChatMessage[] } | null = null;
+    let processMessages: ChatMessage[] = [];
+
+    function flushProcess(): void {
+      const finalMessage = [...processMessages].reverse().find((message) => message.role === "assistant");
+      if (finalMessage) groups.push({ message: finalMessage, processMessages: [...processMessages] });
+      else pendingTools.push(...processMessages.filter((message) => message.role === "tool"));
+      processMessages = [];
+    }
 
     for (const message of visibleMessages) {
-      if (message.role === "tool") {
-        pendingTools.push(message);
+      if (message.role === "tool" || message.role === "assistant") {
+        processMessages.push(message);
         continue;
       }
-      if (message.role === "assistant") {
-        if (response) {
-          response.intermediateMessages.push(response.message);
-          response.message = message;
-          response.tools.push(...pendingTools.splice(0));
-        } else {
-          response = { message, tools: pendingTools.splice(0), intermediateMessages: [] };
-        }
-        continue;
-      }
-      if (response) groups.push(response);
-      response = null;
-      groups.push({ message, tools: [], intermediateMessages: [] });
+      flushProcess();
+      groups.push({ message, processMessages: [] });
     }
 
-    if (response) {
-      response.tools.push(...pendingTools.splice(0));
-      groups.push(response);
-    }
+    flushProcess();
 
     return { groups, pendingTools };
   });
@@ -167,6 +163,12 @@
   function reasoningPreview(value: string): string {
     const compact = value.replace(/\s+/g, " ").trim();
     return compact.length > 160 ? `${compact.slice(0, 157)}…` : compact;
+  }
+
+  function groupHasProcess(processMessages: ChatMessage[], finalMessage: ChatMessage): boolean {
+    return processMessages.some((message) => message.role === "tool"
+      || Boolean(message.reasoning)
+      || (message.role === "assistant" && message.id !== finalMessage.id && Boolean(message.content.trim())));
   }
 
   function toggleMessage(messageId: string): void {
@@ -749,11 +751,11 @@
                   {roleLabel(message)}
                 </span><span class="pa-message-meta">
                   {#if message.status === "cancelled"}<span class="pa-status-marker pa-status-cancelled"><XCircle size={12} /> {t("chat.status.cancelled", "Cancelled")}</span>{:else if message.status === "error"}<span class="pa-status-marker pa-status-error">{t("chat.status.error", "Error")}</span>{/if}
-                  {#if message.usage && (message.role !== "assistant" || (!group.tools.length && !group.intermediateMessages.some((item) => Boolean(item.content.trim() || item.reasoning)) && !message.reasoning))}<span class="pa-usage"><Clipboard size={11} /> {[message.usage.inputTokens !== undefined ? `${message.usage.inputTokens} in` : "", message.usage.outputTokens !== undefined ? `${message.usage.outputTokens} out` : "", message.usage.cacheReadTokens !== undefined ? `${message.usage.cacheReadTokens} cache` : "", message.usage.latencyMs !== undefined ? `${(message.usage.latencyMs / 1000).toFixed(1)}s` : ""].filter(Boolean).join(" · ")}</span>{/if}
-                  {#if message.role !== "tool"}<button type="button" class="pa-message-collapse" onclick={() => void copyMessage(message)} aria-label={copiedId === message.id ? t("chat.copied", "Copied") : t("chat.copy", "Copy")}>{#if copiedId === message.id}<Check size={13} />{:else}<Copy size={13} />{/if}</button>{/if}{#if message.role === "assistant"}<button type="button" class="pa-message-collapse" onclick={() => toggleMessage(message.id)} aria-label={collapsedMessageIds.has(message.id) ? t("chat.expand", "Expand response") : t("chat.collapse", "Collapse response")}>{#if collapsedMessageIds.has(message.id)}<ChevronRight size={14} />{:else}<ChevronDown size={14} />{/if}</button>{/if}
+                  {#if message.usage && (message.role !== "assistant" || !groupHasProcess(group.processMessages, message))}<span class="pa-usage"><Clipboard size={11} /> {[message.usage.inputTokens !== undefined ? `${message.usage.inputTokens} in` : "", message.usage.outputTokens !== undefined ? `${message.usage.outputTokens} out` : "", message.usage.cacheReadTokens !== undefined ? `${message.usage.cacheReadTokens} cache` : "", message.usage.latencyMs !== undefined ? `${(message.usage.latencyMs / 1000).toFixed(1)}s` : ""].filter(Boolean).join(" · ")}</span>{/if}
+                  {#if message.role !== "tool"}<button type="button" class="pa-message-collapse" onclick={() => void copyMessage(message)} aria-label={copiedId === message.id ? t("chat.copied", "Copied") : t("chat.copy", "Copy")}>{#if copiedId === message.id}<Check size={13} />{:else}<Copy size={13} />{/if}</button>{/if}{#if message.role === "assistant" && message.status !== "streaming"}<button type="button" class="pa-message-collapse" onclick={() => toggleMessage(message.id)} aria-label={collapsedMessageIds.has(message.id) ? t("chat.expand", "Expand response") : t("chat.collapse", "Collapse response")}>{#if collapsedMessageIds.has(message.id)}<ChevronRight size={14} />{:else}<ChevronDown size={14} />{/if}</button>{/if}
                 </span></div>
                   {#if collapsedMessageIds.has(message.id)}<button type="button" class="pa-message-collapsed-preview" onclick={() => toggleMessage(message.id)}>{reasoningPreview(message.content)}</button>{:else}
-                    {#if message.role === "assistant"}<ProcessDrawer finalMessage={message} intermediateMessages={group.intermediateMessages} tools={group.tools} onundo={undoToolMutation} />{/if}
+                    {#if message.role === "assistant"}<ProcessDrawer finalMessage={message} processMessages={group.processMessages} active={message.status === "streaming" && (submissionInFlight || requestActive)} workingPhase={visibleWorkingPhase} workingTool={$useRuntimeStore.workingTool} workingDetail={$useRuntimeStore.workingDetail} workingReasoning={workingReasoning} onundo={undoToolMutation} />{/if}
                     <Markdown content={message.content} streaming={message.status === "streaming"} smoothStreaming={message.role === "assistant"} />
                   {/if}
                 {#if message.attachments.length && !collapsedMessageIds.has(message.id)}<div class="pa-message-attachments" aria-label={tf("assistant.reference_images", "{count} reference images", { count: message.attachments.length })}>{#each message.attachments as attachment, index (attachment.id)}<button type="button" class="pa-message-attachment" onclick={() => lightbox = { attachments: message.attachments, index }} aria-label={tf("assistant.preview_named", "Preview {name}", { name: attachment.name })}><img src={attachmentPreviewUrl(attachment)} alt={attachment.name} width="58" height="48" loading="lazy" /></button>{/each}</div>{/if}
@@ -764,7 +766,7 @@
           {:else}
              <div class="pa-empty-state"><Sparkles size={20} aria-hidden="true" /><strong>{t("assistant.empty.title", "Start with the current prompt")}</strong><p>{t("assistant.empty.hint", "Ask Prompt Agent to review composition, rewrite a prompt, inspect installed resources, or attach reference images.")}</p><div><button type="button" onclick={() => useSuggestion(t("assistant.quick.review_prompt", "Read the current prompt and suggest the highest-impact improvement."))}>{t("assistant.quick.review", "Review current prompt")}</button><button type="button" onclick={() => void chooseAttachments()}>{t("assistant.quick.reference", "Analyze reference images")}</button></div></div>
           {/if}
-          {#if (submissionInFlight || requestActive) && visibleWorkingPhase !== "idle"}<WorkingIndicator phase={visibleWorkingPhase} tool={$useRuntimeStore.workingTool} statusDetail={$useRuntimeStore.workingDetail} reasoning={workingReasoning} />{/if}
+          {#if (submissionInFlight || requestActive) && visibleWorkingPhase !== "idle" && !visibleMessages.some((message) => message.role === "assistant" && message.status === "streaming")}<WorkingIndicator phase={visibleWorkingPhase} tool={$useRuntimeStore.workingTool} statusDetail={$useRuntimeStore.workingDetail} reasoning={workingReasoning} />{/if}
         </div>
 
         <form class:pa-composer-drop-active={dropActive} class="pa-composer" onsubmit={(event) => { event.preventDefault(); void submit(); }} ondragover={(event) => { event.preventDefault(); dropActive = true; }} ondragleave={() => dropActive = false} ondrop={(event) => { event.preventDefault(); dropActive = false; void addFiles(Array.from(event.dataTransfer?.files ?? [])); }}>
@@ -773,7 +775,7 @@
           {#if attachments.length}<div class="pa-filmstrip" aria-label={t("assistant.attached_images", "Attached reference images")}>{#each attachments as attachment, index (attachment.id)}<div class="pa-filmstrip-item"><button type="button" class="pa-filmstrip-preview" onclick={() => lightbox = { attachments, index }} oncontextmenu={(event) => { event.preventDefault(); attachmentMenuId = attachment.id; }} aria-label={tf("assistant.preview_named", "Preview {name}", { name: attachment.name })}><img src={attachmentPreviewUrl(attachment)} alt={attachment.name} width="58" height="54" /><span class="pa-filmstrip-name">{attachment.name}</span></button><button type="button" class="pa-filmstrip-remove" onclick={() => void removeAttachment(attachment.id)} aria-label={tf("assistant.remove_named", "Remove {name}", { name: attachment.name })}><X size={12} /></button><button type="button" class="pa-filmstrip-more" onclick={() => attachmentMenuId = attachmentMenuId === attachment.id ? null : attachment.id} aria-label={tf("assistant.edit_named", "Edit {name}", { name: attachment.name })}>•••</button>{#if attachmentMenuId === attachment.id}<div class="pa-attachment-menu" role="menu"><button type="button" role="menuitem" onclick={() => { replacementId = attachment.id; replacementInput?.click(); attachmentMenuId = null; }}><Pencil size={13} /> {t("common.replace", "Replace")}</button><button type="button" role="menuitem" onclick={() => { void removeAttachment(attachment.id); attachmentMenuId = null; }}><Trash2 size={13} /> {t("common.remove", "Remove")}</button></div>{/if}</div>{/each}<button type="button" class="pa-filmstrip-add" onclick={() => void chooseAttachments()} aria-label={t("assistant.attach_another", "Attach another image")}><Plus size={17} /></button></div>{/if}
             <textarea name="prompt-agent-message" autocomplete="off" bind:this={composerInput} bind:value={draft} rows="1" placeholder={requestActive ? t("assistant.input.follow_up", "Add a follow-up for after this response…") : t("assistant.input.placeholder", "Ask about or change the current prompt…")} aria-label={t("assistant.input.label", "Message Prompt Agent")} onfocus={() => { composerFocused = true; $useUiStore.bringToFront("chat"); }} onblur={() => composerFocused = false} oninput={(event) => resizeComposer(event.currentTarget)} onkeydown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) { event.preventDefault(); void submit(); } }}></textarea>
           <div class="pa-composer-bottom"><div class="pa-composer-tools"><button type="button" class="pa-composer-icon" onclick={() => void chooseAttachments()} aria-label={t("assistant.attach", "Attach reference images")}><ImagePlus size={16} /></button></div>
-              <div class="pa-composer-tools"><div class="pa-composer-picker-row" aria-label={t("assistant.model_controls", "Model controls")}><ModelPicker /><ReasoningPicker /></div>{#if requestActive}<button type="button" class="pa-stop-button" onclick={stop} disabled={$useRuntimeStore.workingPhase === "cancelling"} aria-label={t("assistant.stop", "Stop response")}><CircleStop size={17} /></button>{/if}<button type="submit" class="pa-send-button" onpointerdown={keepComposerFocus} disabled={(requestActive || queuedFollowUps.length ? queueSubmissionInFlight : submissionInFlight) || (!draft.trim() && !attachments.length)} aria-busy={submissionPending} aria-label={requestActive || queuedFollowUps.length ? t("assistant.queue.send", "Queue follow-up") : t("assistant.send", "Send message")}>{#if submissionPending}<RefreshCw class="pa-send-pending-icon" size={17} />{:else if requestActive || queuedFollowUps.length}<Clock3 size={17} />{:else}<Send size={17} />{/if}</button></div>
+              <div class="pa-composer-tools"><ContextMeter tokens={contextTokens} limit={contextLimit} label={t("assistant.context_usage", "Context")} /><div class="pa-composer-picker-row" aria-label={t("assistant.model_controls", "Model controls")}><ModelPicker /><ReasoningPicker /></div>{#if requestActive}<button type="button" class="pa-stop-button" onclick={stop} disabled={$useRuntimeStore.workingPhase === "cancelling"} aria-label={t("assistant.stop", "Stop response")}><CircleStop size={17} /></button>{/if}<button type="submit" class="pa-send-button" onpointerdown={keepComposerFocus} disabled={(requestActive || queuedFollowUps.length ? queueSubmissionInFlight : submissionInFlight) || (!draft.trim() && !attachments.length)} aria-busy={submissionPending} aria-label={requestActive || queuedFollowUps.length ? t("assistant.queue.send", "Queue follow-up") : t("assistant.send", "Send message")}>{#if submissionPending}<RefreshCw class="pa-send-pending-icon" size={17} />{:else if requestActive || queuedFollowUps.length}<Clock3 size={17} />{:else}<Send size={17} />{/if}</button></div>
            </div>
           <input bind:this={fileInput} type="file" accept="image/*" multiple hidden onchange={(event) => { void addFiles(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} />
           <input bind:this={replacementInput} type="file" accept="image/*" hidden onchange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void replaceAttachment(file); event.currentTarget.value = ""; }} />

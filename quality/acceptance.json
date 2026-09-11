@@ -109,18 +109,19 @@
     },
     {
       "id": "UI-FEEDBACK-001",
-      "revision": 10,
+      "revision": 12,
       "area": "ui",
       "title": "Compact lifecycle and process feedback",
       "acceptance": [
         "On-demand local model startup shows a distinct loading phase and elapsed time.",
         "Completion, failure, and cancellation clear the loading state without leaving the composer disabled.",
-        "Each user turn presents one final assistant response while reasoning, intermediate responses, tools, aggregate input/output/cache-read usage, and tool failures remain available in one default-collapsed process drawer; only a terminal turn failure marks the whole drawer as failed, while a recovered tool failure remains scoped to that tool.",
+        "Each user turn presents one final assistant response and one process drawer whose reasoning, intermediate responses, and tools remain in original runtime message order. While work is active, that drawer opens automatically, contains the current working status, and is the only top-level disclosure control; after completion it returns to a collapsed summary. Tool disclosures expand only their own details, terminal turn failure marks the whole drawer as failed, and recovered tool failure remains scoped to that tool.",
         "The chat transcript is one continuous borderless reading surface: assistant responses, the process drawer, expanded reasoning, and tool results use spacing and typography instead of nested card borders, decorative horizontal rules, or vertical rails.",
         "A send action produces immediate pending feedback before session, attachment, controller, or profile preparation completes; duplicate clicks are ignored until that submission reaches a terminal state.",
         "The primary send control keeps its position while a request is active and accepts another composer submission as a FIFO follow-up for after the current response. Stop remains a separate secondary control, so neither a click at the send position nor Enter in the composer can accidentally stop the response.",
         "Queued follow-ups appear immediately in one compact borderless list, can be removed before execution, advance only after a successful response, and remain visibly paused and resumable after failure or cancellation.",
-        "Streamed final-answer text uses a buffered grapheme reveal so coarse provider chunks remain visibly progressive without delaying authoritative runtime content; completion and cancellation flush the full text immediately, and reduced-motion preference disables the animated reveal."
+        "Streamed final-answer text uses a buffered grapheme reveal so coarse provider chunks remain visibly progressive without delaying authoritative runtime content; completion and cancellation flush the full text immediately, and reduced-motion preference disables the animated reveal.",
+        "The composer shows a compact context meter using the latest provider request input against the active model context limit. Per-turn process usage also reports the latest request rather than summing internal agent iterations and presenting that sum as current context."
       ],
       "required_scenarios": [
         "loading",
@@ -128,12 +129,14 @@
         "process",
         "submission",
         "queue",
-        "streaming"
+        "streaming",
+        "context-usage"
       ],
       "paths": [
         "backend/prompt_agent/local_runtime.py",
         "frontend/src/agent/controller.ts",
         "frontend/src/components/ProcessDrawer.svelte",
+        "frontend/src/components/ContextMeter.svelte",
         "frontend/src/components/Markdown.svelte",
         "frontend/src/components/Surface.svelte",
         "frontend/src/components/WorkingIndicator.svelte",
@@ -144,7 +147,7 @@
         "frontend/tests/surface.test.ts",
         "tests/test_local_runtime.py"
       ],
-      "assertion_policy": "Assert immediate user-visible submission feedback, stable control semantics, terminal recovery, and later usability; do not depend on polling counts, exact timing, or private promise ordering."
+      "assertion_policy": "Assert immediate user-visible submission feedback, stable control semantics, latest-request context usage, terminal recovery, and later usability; do not depend on polling counts, exact timing, or private promise ordering."
     },
     {
       "id": "SESSION-LIFECYCLE-001",
@@ -249,7 +252,7 @@
     },
     {
       "id": "AGENT-TOOLS-001",
-      "revision": 5,
+      "revision": 6,
       "area": "agent",
       "title": "Forge tool authority and freshness",
       "acceptance": [
@@ -260,7 +263,8 @@
         "Independent read-only tool calls emitted in one model turn execute concurrently.",
         "A tool batch containing any Forge write executes sequentially so mutations cannot race live state.",
         "Danbooru batch inspection includes bounded Wiki bodies by default; only an explicit include_wiki=false requests metadata-only results, and URL-only search output never counts as inspected background content.",
-        "Danbooru Wiki tools search arbitrary Wiki and Tag Group titles and inspect selected pages with bounded bodies plus deduplicated bounded next-hop references, enabling deliberate multi-round exploration without an unbounded crawler."
+        "Danbooru Wiki tools search arbitrary Wiki and Tag Group titles and inspect selected pages with bounded bodies plus deduplicated bounded next-hop references, enabling deliberate multi-round exploration without an unbounded crawler.",
+        "Provider-facing context is projected without mutating durable or UI history: completed turns retain user intent and final answers while old tool chatter, reasoning, duplicated details, and old image payloads are omitted; the active turn preserves protocol pairs, recent results, errors, skill guidance, and confirmed writes."
       ],
       "required_scenarios": [
         "surface",
@@ -269,7 +273,8 @@
         "parallel-reads",
         "serialized-writes",
         "danbooru-wiki-default",
-        "wiki-navigation"
+        "wiki-navigation",
+        "context-pruning"
       ],
       "paths": [
         "backend/prompt_agent/forge_tools.py",
@@ -277,16 +282,18 @@
         "scripts/prompt_agent.py",
         "frontend/src/tools/**",
         "frontend/src/agent/agent-runtime.ts",
+        "frontend/src/agent/context-pruning.ts",
         "frontend/src/agent/controller.ts",
         "javascript/prompt_agent*.js",
         "frontend/tests/agent-runtime.test.ts",
+        "frontend/tests/context-pruning.test.ts",
         "frontend/tests/forge-tools.test.ts",
         "tests/test_forge_tools.py",
         "tests/test_host_bridge.py",
         "tests/test_resources.py",
         "tests/test_frontend_resources.js"
       ],
-      "assertion_policy": "Assert exact tool names, read/write execution semantics, default Wiki-body retrieval across host and backend boundaries, canonical Wiki search, bounded parsed references, and that verified background requires body content; internal registry implementation is not contractual."
+      "assertion_policy": "Assert exact tool names, read/write execution semantics, context projection without durable-history mutation, protected active-turn evidence, default Wiki-body retrieval across host and backend boundaries, canonical Wiki search, bounded parsed references, and that verified background requires body content; internal registry implementation is not contractual."
     },
     {
       "id": "PROVIDER-TOOLS-001",

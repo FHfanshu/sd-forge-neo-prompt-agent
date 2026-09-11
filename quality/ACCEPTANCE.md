@@ -28,7 +28,7 @@ The generated requirement table is verified by `tools/test_gate.py preflight`.
 | Requirement | Rev | Area | Title | Required scenarios |
 | --- | ---: | --- | --- | --- |
 | AGENT-LOOKUP-001 | 2 | agent | Verified named-entity background lookup | style-first, fallback, unverified-hidden |
-| AGENT-TOOLS-001 | 5 | agent | Forge tool authority and freshness | surface, revalidation, freshness, parallel-reads, serialized-writes, danbooru-wiki-default, wiki-navigation |
+| AGENT-TOOLS-001 | 6 | agent | Forge tool authority and freshness | surface, revalidation, freshness, parallel-reads, serialized-writes, danbooru-wiki-default, wiki-navigation, context-pruning |
 | DATA-INTEGRITY-001 | 1 | data | Stale writes and replay are prevented | freshness, stale-recovery, no-replay |
 | IMAGE-INPUT-001 | 2 | agent | Grounded image analysis and multi-image input | visual-grounding, bilingual-caption, multi-select |
 | LOCAL-RUNTIME-001 | 1 | lifecycle | On-demand llama.cpp lifecycle | loading, abort, privacy |
@@ -43,6 +43,6 @@ The generated requirement table is verified by `tools/test_gate.py preflight`.
 | SESSION-REFRESH-001 | 1 | session | Refresh interruption without replay | interruption, no-replay, recovery |
 | SESSION-SYNC-001 | 1 | session | Cross-browser durable session synchronization | cross-device, offline-cache, conflict, validation |
 | UI-BOOT-001 | 1 | ui | Forge-controlled UI boot | boot-gate, late-host |
-| UI-FEEDBACK-001 | 10 | ui | Compact lifecycle and process feedback | loading, recovery, process, submission, queue, streaming |
+| UI-FEEDBACK-001 | 12 | ui | Compact lifecycle and process feedback | loading, recovery, process, submission, queue, streaming, context-usage |
 | UI-WINDOW-001 | 3 | ui | Responsive floating windows and focus | phone, tablet, focus, launcher |
 <!-- acceptance-table:end -->

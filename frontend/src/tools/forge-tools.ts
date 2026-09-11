@@ -288,9 +288,46 @@ async function invokeForgeTool(
   }
 }
 
-function textResult(result: unknown): AgentToolResult<unknown> {
+function compactSearchItems(result: Record<string, unknown>): Record<string, unknown> {
+  const compactItems = (items: unknown): unknown => Array.isArray(items)
+    ? items.slice(0, 8).map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const next = { ...(item as Record<string, unknown>) };
+      delete next.wiki_url;
+      delete next.tag_url;
+      delete next.url;
+      return next;
+    })
+    : items;
+  const compact = { ...result };
+  if (Array.isArray(compact.items)) compact.items = compactItems(compact.items);
+  if (Array.isArray(compact.results)) {
+    compact.results = compact.results.map((group) => {
+      if (!group || typeof group !== "object" || Array.isArray(group)) return group;
+      const next = { ...(group as Record<string, unknown>) };
+      if (Array.isArray(next.items)) next.items = compactItems(next.items);
+      return next;
+    });
+  }
+  return compact;
+}
+
+function modelFacingResult(name: ForgeToolName, result: unknown): unknown {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const compact = { ...(result as Record<string, unknown>) };
+  delete compact.image_base64;
+  if (name === "edit_prompt") {
+    delete compact.before_prompt;
+    delete compact.after_prompt;
+    delete compact.prompt;
+  }
+  if (name === "search_danbooru_tags" || name === "search_danbooru_wikis") return compactSearchItems(compact);
+  return compact;
+}
+
+function textResult(result: unknown, modelResult: unknown = result): AgentToolResult<unknown> {
   return {
-    content: [{ type: "text", text: JSON.stringify(result) }],
+    content: [{ type: "text", text: JSON.stringify(modelResult) }],
     details: result,
   };
 }
@@ -307,7 +344,7 @@ function generationResult(result: unknown): AgentToolResult<unknown> {
       { type: "image", data, mimeType },
       { type: "text", text: JSON.stringify(meta) },
     ],
-    details: result,
+    details: meta,
   };
 }
 
@@ -330,7 +367,7 @@ function createForgeTool<T extends TSchema>(
     execute: async (_toolCallId, params, signal) => {
       const args = prepareArguments ? prepareArguments(params) : params as Record<string, unknown>;
       const result = await invokeForgeTool(name, args, permission, signal, options);
-      return name === "generate_image" ? generationResult(result) : textResult(result);
+      return name === "generate_image" ? generationResult(result) : textResult(result, modelFacingResult(name, result));
     },
   };
 }

@@ -140,6 +140,35 @@ Keep shared composition/style in the global line. Keep each character's identity
 """
 
 
+KREA2_GUIDE = """# Krea 2 prompt guide
+
+Source: Krea 2 upstream prompting guidelines (prompting.md)
+Reviewed: 2026-08-26
+
+Use this guide only for Krea 2 image checkpoints (including the turbo variant).
+
+## Prompt grammar
+- Krea 2 is trained on natural language. Write flowing descriptive English sentences, not Danbooru-style tag lists. Do not convert the user's request into tags unless the user explicitly asks for tags.
+- Long, detailed prompts yield the best results, but the model also produces high-quality images from a single short sentence. Do not pad; add detail only when it states something visible.
+- No quality-tag prefix is needed. Do not add `masterpiece`, `best quality`, or score tags; they are not part of this model's grammar.
+- For text rendering, put the exact words to be rendered in double quotes inside the prompt.
+
+## Sentence structure
+- Official examples follow this order: subject and action first, then appearance and clothing details, then environment and props, then medium and rendering style, lighting, palette, composition or camera framing, and finally texture or grain qualities.
+- Keep the prompt as one coherent passage; comma-separated descriptor phrases after the main sentence are fine, as in the official examples.
+- State concrete visible facts (materials, light direction, palette, camera angle, depth of field) rather than abstract aesthetic labels. A learned style name may appear, but visible language must carry the result.
+
+## Turbo variant
+- The turbo checkpoint is distilled for fast iteration and generates up to about 2k resolution.
+- It runs at CFG 1. At CFG 1 the negative prompt has no effect; do not generate or rely on a negative prompt.
+- Preserve the user's own wording when it is already natural language; edit by refining sentences, not by restructuring into tags.
+
+## Limitations
+- Long rendered text remains unreliable; keep quoted strings short.
+- Do not promise exact tag-level attribute control; Krea 2 follows holistic descriptions instead.
+"""
+
+
 _DANBOORU_TAGS_GUIDE_PATH = Path(__file__).resolve().parents[1] / "docs" / "DANBOORU_TAGS_AGENT.md"
 
 
@@ -170,6 +199,13 @@ PROMPT_SKILLS = {
         "reviewed": "2026-07-27",
         "version": "7.1.0",
     },
+    "krea2": {
+        "name": "krea2",
+        "title": "Krea 2 prompt guide",
+        "guide": KREA2_GUIDE,
+        "source": "Krea 2 upstream prompting guidelines (prompting.md)",
+        "reviewed": "2026-08-26",
+    },
 }
 
 
@@ -192,4 +228,8 @@ def load_prompt_skill(name: str) -> dict[str, Any]:
 
 def automatic_prompt_skill(forge_preset: str = "", checkpoint: str = "") -> str:
     text = f"{forge_preset} {checkpoint}".casefold()
-    return "anima_dit" if "anima" in text else ""
+    if "anima" in text:
+        return "anima_dit"
+    if "krea" in text:
+        return "krea2"
+    return ""

@@ -331,9 +331,8 @@
   .pa-process-error .pa-process-title { color: var(--error-text-color, #b42318); }
   .pa-process-usage { flex: 0 0 auto; font-size: .62rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .pa-process-content { display: grid; gap: .38rem; margin: .18rem 0 .35rem 1.15rem; padding: 0; }
-  .pa-process-intermediate > span, .pa-process-reasoning > summary { color: var(--pa-ink-soft); font-size: .64rem; font-weight: 700; }
+  .pa-process-intermediate > span, .pa-process-reasoning > span { color: var(--pa-ink-soft); font-size: .64rem; font-weight: 700; }
   .pa-process-intermediate .pa-markdown, .pa-process-reasoning .pa-markdown { margin-top: .28rem; color: var(--pa-ink-soft); font-size: .7rem; line-height: 1.5; }
-  .pa-process-reasoning > summary { cursor: pointer; }
 
   /* Markdown. */
   .pa-markdown { color: var(--pa-ink); font-size: .9rem; line-height: 1.65; overflow-wrap: anywhere; }
@@ -411,14 +410,11 @@
 
   /* Working indicator. */
   .pa-working-indicator { align-self: flex-start; max-width: 100%; color: var(--pa-ink-soft); font-size: .72rem; }
-  .pa-working-indicator > summary { display: flex; min-height: 1.7rem; align-items: center; gap: .4rem; cursor: pointer; list-style: none; }
-  .pa-working-indicator > summary::-webkit-details-marker { display: none; }
+  .pa-working-summary { display: flex; min-height: 1.7rem; align-items: center; gap: .4rem; }
   .pa-working-icon { display: grid; flex: 0 0 auto; place-items: center; color: var(--pa-focus); }
   .pa-working-indicator strong { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
   .pa-working-indicator code { color: inherit; font-family: var(--font-mono, ui-monospace, monospace); }
   .pa-working-detail { display: block; margin: .2rem 0 .25rem 1.55rem; color: var(--pa-ink-soft); font-family: var(--font-mono, ui-monospace, monospace); }
-  .pa-working-chevron { transition: transform .16s ease; }
-  .pa-working-indicator[open] .pa-working-chevron { transform: rotate(90deg); }
   .pa-working-thread { flex: 0 0 auto; width: 2.25rem; height: 2px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--pa-focus) 20%, transparent); }
   .pa-working-thread i { display: block; width: .85rem; height: 100%; border-radius: inherit; background: var(--pa-focus); animation: pa-working-thread 1.15s ease-in-out infinite; }
   @keyframes pa-working-thread { 0% { opacity: .3; transform: translateX(-110%); } 50% { opacity: 1; } 100% { opacity: .3; transform: translateX(310%); } }

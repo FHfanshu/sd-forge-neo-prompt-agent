@@ -269,3 +269,70 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   the 1000-line limit; July entries moved to
   docs/archive/audit-archive-2026-07-19-to-30.md, added to HISTORICAL_FILES in
   tests/test_architecture.py.
+
+## 2026-08-26 Krea 2 skill with automatic agent skill selection
+- Root cause: none (new capability). The agent had per-model load_skill
+  instructions only for Anima, and no Krea 2 guidance; model-specific skill
+  selection relied on static prompt text instead of the live Forge state.
+- Added a krea2 prompt skill (natural-language prompting, text rendering,
+  Turbo guidance) to prompt_skills.py and the load_skill tool schema, and made
+  the browser host report the active Forge UI preset, checkpoint, and a
+  recommended_skill (anima_dit or krea2) inside read_generation_parameters
+  results via a new forgeSkillHint helper in prompt_agent_03_generate_image.js.
+  The system prompt now tells the agent to load the recommended skill before
+  prompt work and re-check it when the checkpoint changes, replacing the
+  per-model sentences. prompt_agent.js stayed under the 1000-line limit by
+  hosting the helper in the _03 generation-tools script with late binding.
+- Verification: python tools/test_gate.py affected - exit 0. python
+  tools/test_gate.py full - exit 0, 111 Python tests OK, 13 host contracts,
+  svelte-check 0/0, vitest 196/196 (25 files), vite build within budget
+  (813061 raw / 237246 gzip), Playwright 7/7, node --check all host scripts.
+
+## 2026-09-04 Chronological single-entry agent process timeline
+- Root cause: the chat surface grouped assistant messages and tool results into
+  separate arrays, and ProcessDrawer rendered all intermediate text, then all
+  reasoning, then all tools. This discarded the runtime message order. During
+  active work the response collapse, process drawer, and expandable working
+  indicator also exposed competing disclosure controls.
+- Changed frontend/src/components/Surface.svelte to retain each turn's original
+  assistant/tool message sequence, hide response-level collapse while streaming,
+  and place the live phase inside the active process drawer. Changed
+  ProcessDrawer.svelte to render that sequence directly, auto-open only during
+  active work, and return to a collapsed completed summary. Changed
+  WorkingIndicator.svelte and styles.css so live status is visible without its
+  own disclosure arrow. Regenerated javascript/prompt_agent_90_ui.js.
+- Bumped UI-FEEDBACK-001 to revision 11 in quality/acceptance.json and
+  quality/ACCEPTANCE.md, refreshed mapped tests, and added regression assertions
+  for reasoning/intermediate/tool/reasoning DOM order, single-entry active work,
+  automatic open/close behavior, and tool-only nested disclosure.
+- Verification: pinned Svelte check passed with 0 errors and 0 warnings; focused
+  surface tests passed 41/41; `tools/test_gate.py affected` passed 46 Python,
+  124 frontend, and 7 browser tests; `tools/test_gate.py full` passed 112 Python,
+  13 browser-host contract, 196 frontend, and 7 Playwright tests. Production
+  build and bundle budget passed at 814155 raw / 237602 gzip bytes, and all
+  generated/browser JavaScript syntax checks passed. The first sandboxed
+  affected-gate attempt could not fetch the pinned pnpm package (EACCES); the
+  approved rerun used the required pinned toolchain and passed.
+
+## 2026-09-04 Provider-facing context pruning and composer usage meter
+- Root cause: completed-turn tool chatter, search URLs, skill/prompt payloads,
+  and generate_image base64 were re-sent every request, while the composer
+  usage ring summed per-request inputs instead of the latest assistant
+  `usage.inputTokens`. Control follow-ups projected as `user` after a
+  `toolResult` would also look like a new turn and drop the current results.
+- Added `frontend/src/agent/context-pruning.ts` as a provider-facing copy:
+  completed turns keep user intent plus final assistant text; the active turn
+  keeps the last 6 tool results plus errors and `load_skill`/`edit_prompt`/
+  `apply_generation_parameters`. Compacted `search_danbooru_tags` /
+  `search_danbooru_wikis` to 8 candidates without URLs, dropped model-facing
+  `image_base64`/`prompt`/`document`/`changes`, and stripped UI `details` from
+  the provider copy. `lastUserTurnIndex()` walks back past control follow-ups.
+  Composer `ContextMeter` now uses latest `usage.inputTokens` vs
+  `contextLimit || nCtx || 131072`. Session history is still stored unpruned.
+- Verification: `tools/test_gate.py affected` passed 46 Python, 130 frontend
+  (10 files), and 7 Playwright tests. `tools/test_gate.py full` passed 112
+  Python, 13 browser-host contract, svelte-check 0/0, vitest 203/203 (26
+  files), Playwright 7/7. Production build and bundle budget passed at 818704
+  raw / 239126 gzip bytes, and all generated/browser JavaScript syntax checks
+  passed.
+

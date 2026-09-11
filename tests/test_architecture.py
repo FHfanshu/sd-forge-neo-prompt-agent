@@ -15,6 +15,7 @@ SKIP_PARTS = {
     "__pycache__",
     "bin",
     "coverage",
+    "data",
     "node_modules",
     "test-results",
 }

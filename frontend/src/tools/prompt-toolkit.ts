@@ -32,7 +32,13 @@ export const PROMPT_TOOLKIT_SCHEMA = Type.Object({
 type PromptToolkitParameters = Static<typeof PROMPT_TOOLKIT_SCHEMA>;
 
 function textResult(details: unknown): AgentToolResult<unknown> {
-  return { content: [{ type: "text", text: JSON.stringify(details) }], details };
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { content: [{ type: "text", text: JSON.stringify(details) }], details };
+  }
+  const compact = { ...(details as Record<string, unknown>) };
+  delete compact.document;
+  delete compact.changes;
+  return { content: [{ type: "text", text: JSON.stringify(compact) }], details: compact };
 }
 
 export function createPromptToolkitTool(): AgentTool<typeof PROMPT_TOOLKIT_SCHEMA, unknown> & { permission: "read" } {

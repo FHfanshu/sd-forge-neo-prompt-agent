@@ -79,6 +79,9 @@ describe("hybrid prompt toolkit", () => {
     const tool = createPromptToolkitTool();
     const result = await tool.execute("tool-1", { action: "deduplicate", prompt: "1girl, 1girl", pool: "tags" }, new AbortController().signal);
     expect(result.details).toMatchObject({ ok: true, output: "1girl", changed: true });
+    expect(result.details).not.toHaveProperty("document");
+    expect(result.details).not.toHaveProperty("changes");
+    expect(JSON.parse((result.content[0] as { text: string }).text)).not.toHaveProperty("document");
     const controller = new AbortController();
     controller.abort();
     await expect(tool.execute("tool-2", { action: "analyze", prompt: "1girl" }, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
