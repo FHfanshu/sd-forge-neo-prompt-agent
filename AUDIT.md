@@ -766,6 +766,24 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   migration test guards upgrade safety for stored local profiles. Historical
   archive docs under `docs/archive/` still describe the old runtime by design.
 
+## 2026-09-11 Stabilize attachment preview release test
+- Problem: CI's frontend job (`pnpm run test:coverage`) intermittently failed
+  `surface.test.ts > releases previews after removal, replacement, and unmount`
+  with `TestingLibraryElementError` for the `Remove remove.png` / `Edit
+  replace.png` buttons, and the same failure blocked the preceding commit. The
+  test queried the attachment chip with `getByRole` immediately after
+  `user.upload`, but attaching a file reads its PNG info asynchronously, so the
+  chip is not in the DOM until that read resolves; under coverage/CI load the
+  synchronous query ran too early.
+- Change: `frontend/tests/surface.test.ts` waits with `findByRole` for the
+  Remove/Edit controls and the Replace menu item before interacting. No product
+  code changed.
+- Verification: `pnpm run test:coverage` (the CI command) exit 0; the focused
+  test passed five consecutive coverage runs; the full delivery gate was exit 0
+  before this test-only change.
+- Residual risk: attachment chip rendering stays asynchronous by design; the
+  test now tolerates it instead of assuming an immediate render.
+
 
 
 

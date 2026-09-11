@@ -564,12 +564,12 @@ describe("Svelte chat surface", () => {
     const replacementInput = container.querySelector<HTMLInputElement>('input[type="file"]:not([multiple])')!;
 
     await user.upload(fileInput, new File([new Uint8Array([1])], "remove.png", { type: "image/png" }));
-    await user.click(screen.getByRole("button", { name: "Remove remove.png" }));
+    await user.click(await screen.findByRole("button", { name: "Remove remove.png" }));
     expect(revoke).toHaveBeenNthCalledWith(1, "blob:surface-1");
 
     await user.upload(fileInput, new File([new Uint8Array([2])], "replace.png", { type: "image/png" }));
-    await user.click(screen.getByRole("button", { name: "Edit replace.png" }));
-    await user.click(screen.getByRole("menuitem", { name: "Replace" }));
+    await user.click(await screen.findByRole("button", { name: "Edit replace.png" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Replace" }));
     await user.upload(replacementInput, new File([new Uint8Array([3])], "replacement.png", { type: "image/png" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Preview replacement.png" })).toBeInTheDocument());
     expect(revoke).toHaveBeenNthCalledWith(2, "blob:surface-2");
