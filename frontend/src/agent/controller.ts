@@ -54,6 +54,8 @@ interface PendingFollowUp {
 }
 
 const MAX_FOLLOW_UPS = 8;
+const RUNTIME_PERSIST_DEBOUNCE_MS = 400;
+const ABORT_WATCHDOG_MS = 6_000;
 
 export class PromptAgentController {
   readonly actions: PromptAgentActionHandlers;
@@ -68,6 +70,11 @@ export class PromptAgentController {
   private drainingFollowUps = false;
   private lastRequestSucceeded = false;
   private persistenceQueue: Promise<void> = Promise.resolve();
+  private pendingPersist: { state: AgentRuntimeState; sessionId: string } | null = null;
+  private persistDraining = false;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private requestGeneration = 0;
+  private abortWatchdog: ReturnType<typeof setTimeout> | null = null;
   private syncPromise: Promise<void> | null = null;
   private mounted = false;
   private destroyed = false;
@@ -122,10 +129,14 @@ export class PromptAgentController {
     if (this.destroyed) return;
     this.destroyed = true;
     this.stopRequested = true;
+    this.requestGeneration += 1;
+    this.clearAbortWatchdog();
     this.unsubscribeRuntime?.();
     this.unsubscribeRuntime = null;
     this.runtime?.destroy();
     this.runtime = null;
+    this.cancelPersistTimer();
+    this.pendingPersist = null;
     this.clearFollowUps();
     useChatStore.getState().setActiveRequest(null);
     useRuntimeStore.getState().setWorking("idle");
@@ -187,6 +198,7 @@ export class PromptAgentController {
     this.lastRequestSucceeded = false;
     this.stopRequested = false;
     const requestId = crypto.randomUUID();
+    const generation = ++this.requestGeneration;
     this.requestId = requestId;
     useChatStore.getState().setActiveRequest(requestId);
     try {
@@ -208,20 +220,24 @@ export class PromptAgentController {
         requireNaturalLanguagePrompt,
         requireBackgroundLookup: userRequestedBackgroundLookup(input.text),
       });
+      // A watchdog may have abandoned this run and rebuilt the runtime; do not write its state over the new one.
+      if (generation !== this.requestGeneration) return { kind: "local", id: requestId };
       this.lastRequestSucceeded = this.runtime.getState().status === "completed";
       await this.queueRuntimePersistence(this.runtime.getState(), this.currentSession.id);
       await this.touchSession(input.text, editedFirstUser);
       void this.loadHistory().catch(() => undefined);
       return { kind: "local", id: requestId };
     } finally {
-      this.stopRequested = false;
-      this.requestId = null;
-      this.currentAttachments = [];
-      useChatStore.getState().setActiveRequest(null);
-      useRuntimeStore.getState().setWorking("idle");
-      await this.persistenceQueue.catch(() => undefined);
-      void this.syncSessionsBestEffort().catch(() => undefined);
-      if (this.lastRequestSucceeded && this.pendingFollowUps.length) queueMicrotask(() => void this.drainFollowUps());
+      this.clearAbortWatchdog(generation);
+      if (generation === this.requestGeneration) {
+        this.stopRequested = false;
+        this.requestId = null;
+        this.currentAttachments = [];
+        useChatStore.getState().setActiveRequest(null);
+        useRuntimeStore.getState().setWorking("idle");
+        void this.syncSessionsBestEffort().catch(() => undefined);
+        if (this.lastRequestSucceeded && this.pendingFollowUps.length) queueMicrotask(() => void this.drainFollowUps());
+      }
     }
   }
 
@@ -300,9 +316,52 @@ export class PromptAgentController {
 
   private stopRequest(): void {
     if (!this.runtime || !this.requestId) return;
-    useRuntimeStore.getState().setWorking("cancelling");
     this.stopRequested = true;
-    this.runtime.abort();
+    const requestId = this.requestId;
+    const status = this.runtime.getState().status;
+    if (status === "submitting" || status === "streaming" || status === "tool-calling" || status === "retrying" || status === "aborting") {
+      useRuntimeStore.getState().setWorking("cancelling");
+      this.runtime.abort();
+      this.startAbortWatchdog(requestId);
+      return;
+    }
+    // Nothing is streaming to abort (still preparing, or only post-turn work remains).
+    // Do not leave the composer stranded on "cancelling"; the send path settles shortly.
+    useRuntimeStore.getState().setWorking("idle");
+  }
+
+  private startAbortWatchdog(requestId: string): void {
+    this.clearAbortWatchdog();
+    this.abortWatchdog = setTimeout(() => {
+      this.abortWatchdog = null;
+      this.abandonStuckRun(requestId);
+    }, ABORT_WATCHDOG_MS);
+  }
+
+  private clearAbortWatchdog(generation?: number): void {
+    if (generation !== undefined && generation !== this.requestGeneration) return;
+    if (this.abortWatchdog !== null) {
+      clearTimeout(this.abortWatchdog);
+      this.abortWatchdog = null;
+    }
+  }
+
+  /**
+   * Single-session guarantee: if a stop request never settles (for example a Forge tool that
+   * ignores the abort signal), release the composer and rebuild the runtime so the user is
+   * never trapped on "cancelling".
+   */
+  private abandonStuckRun(requestId: string): void {
+    if (this.requestId !== requestId) return;
+    console.warn("Prompt Agent abandoned a stop request that never settled; resetting the session runtime.");
+    this.requestGeneration += 1;
+    this.requestId = null;
+    this.stopRequested = false;
+    this.currentAttachments = [];
+    useChatStore.getState().setActiveRequest(null);
+    useRuntimeStore.getState().setWorking("idle");
+    const session = this.currentSession;
+    if (session) void this.openSession(session).catch(() => undefined);
   }
 
   private async openSession(session: PromptAgentSession): Promise<void> {
@@ -375,9 +434,52 @@ export class PromptAgentController {
   }
 
   private queueRuntimePersistence(state: AgentRuntimeState, sessionId: string): Promise<void> {
-    const queued = this.persistenceQueue.catch(() => undefined).then(() => this.persistRuntimeState(state, sessionId));
-    this.persistenceQueue = queued;
-    return queued;
+    this.pendingPersist = { state, sessionId };
+    if (state.status === "completed" || state.status === "failed") {
+      this.cancelPersistTimer();
+      this.flushRuntimePersistence();
+    } else if (!this.persistDraining) {
+      this.schedulePersistFlush();
+    }
+    return this.persistenceQueue;
+  }
+
+  // Streaming emits a new runtime state per token. Rewriting the whole session for
+  // every token buries the persistence queue on large sessions; coalesce to the
+  // latest state and debounce intermediate writes, but always flush terminal ones.
+  private schedulePersistFlush(): void {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.flushRuntimePersistence();
+    }, RUNTIME_PERSIST_DEBOUNCE_MS);
+  }
+
+  private cancelPersistTimer(): void {
+    if (!this.persistTimer) return;
+    clearTimeout(this.persistTimer);
+    this.persistTimer = null;
+  }
+
+  private flushRuntimePersistence(): void {
+    if (this.persistDraining || !this.pendingPersist) return;
+    this.persistDraining = true;
+    const run = this.drainRuntimePersistence();
+    this.persistenceQueue = run;
+    void run.catch(() => undefined);
+  }
+
+  private async drainRuntimePersistence(): Promise<void> {
+    try {
+      while (this.pendingPersist) {
+        const next = this.pendingPersist;
+        this.pendingPersist = null;
+        await this.persistRuntimeState(next.state, next.sessionId);
+      }
+    } finally {
+      this.persistDraining = false;
+      if (this.pendingPersist) this.flushRuntimePersistence();
+    }
   }
 
   private async persistRuntimeState(state: AgentRuntimeState, sessionId: string): Promise<void> {
@@ -425,7 +527,8 @@ export class PromptAgentController {
   }
 
   private syncSessionsBestEffort(): Promise<void> {
-    const syncWithServer = this.sessions.syncWithServer;
+    // Keep the repository as the receiver: session sync reads/writes preferences on `this`.
+    const syncWithServer = this.sessions.syncWithServer?.bind(this.sessions);
     if (!syncWithServer) return Promise.resolve();
     if (this.syncPromise) return this.syncPromise;
     const run = this.performSessionSync(syncWithServer).finally(() => {

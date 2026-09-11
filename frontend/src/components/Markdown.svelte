@@ -106,9 +106,9 @@
   }
 
   $effect(() => {
-    html;
     $useI18nStore.locale;
     if (streaming || !markdownElement) return;
+    html;
     void tick().then(enhanceCodeBlocks);
   });
 

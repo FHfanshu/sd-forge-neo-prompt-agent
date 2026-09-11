@@ -5,6 +5,7 @@
   import { useChatStore } from "../../stores/chat";
   import { useI18nStore } from "../../stores/i18n";
   import { useUiStore } from "../../stores/ui";
+  import ContextMeter from "../ContextMeter.svelte";
   import ChatHistoryPanel from "./ChatHistoryPanel.svelte";
 
   let {
@@ -12,6 +13,8 @@
     runtimeUnavailable,
     dragAction,
     dragParams,
+    contextTokens = 0,
+    contextLimit = 131072,
     ontogglehistory,
     onselecthistory,
     onnewsession,
@@ -22,6 +25,8 @@
     runtimeUnavailable: boolean;
     dragAction?: Action<HTMLElement, any>;
     dragParams?: any;
+    contextTokens: number;
+    contextLimit: number;
     ontogglehistory: () => void;
     onselecthistory: (row: HistoryRow) => void;
     onnewsession: () => void;
@@ -44,6 +49,7 @@
 <header class="pa-window-header" use:useDrag>
   <div class="pa-chat-title"><strong>{t("assistant.title", "Prompt Agent")}</strong></div>
   <div class="pa-header-controls">
+    <ContextMeter tokens={contextTokens} limit={contextLimit} label={t("assistant.context_usage", "Context")} />
     <div class="pa-history-anchor">
       <button
         type="button"

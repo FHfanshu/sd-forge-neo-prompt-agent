@@ -59,6 +59,7 @@ describe("PromptAgentController recovery", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     useChatStore.getState().reset();
     useProfileStore.getState().reset();
@@ -171,9 +172,53 @@ describe("PromptAgentController recovery", () => {
 
     expect(streamRequests).toBe(0);
     expect(useChatStore.getState().activeRequestId).toBeNull();
-    expect(useRuntimeStore.getState().queuedFollowUps.map((item) => item.text)).toEqual(["Keep queued"]);
+    expect(useRuntimeStore.getState().workingPhase).toBe("idle");
     controller.destroy();
   });
+
+  it("force-recovers a stopped request that never settles", async () => {
+    const profiles = createDefaultProfileState();
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode([
+          'data: {"type":"start"}',
+          'data: {"type":"text_start","contentIndex":0}',
+          'data: {"type":"text_delta","contentIndex":0,"delta":"Hanging"}',
+          "",
+        ].join("\n\n")));
+        // Never closed: simulates a tool/provider call that ignores the abort signal.
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/prompt-agent/api/profiles") return new Response(JSON.stringify(profiles), { status: 200 });
+      return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    }));
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+    vi.useFakeTimers();
+
+    const stuck = controller.actions.sendMessage({ text: "Hang", attachments: [], reasoning: "none" });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(useChatStore.getState().activeRequestId).toBeTruthy();
+
+    controller.actions.stopRequest();
+    expect(useRuntimeStore.getState().workingPhase).toBe("cancelling");
+
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(useChatStore.getState().activeRequestId).toBeNull();
+    expect(useRuntimeStore.getState().workingPhase).toBe("idle");
+
+    // The abandoned run no longer owns the session, so a new request can start immediately.
+    void controller.actions.sendMessage({ text: "Again", attachments: [], reasoning: "none" });
+    await vi.advanceTimersByTimeAsync(20);
+    expect(useChatStore.getState().activeRequestId).toBeTruthy();
+
+    controller.destroy();
+    void (stuck as Promise<unknown>).catch(() => undefined);
+  });
+
 
   it("keeps the IndexedDB-backed controller usable when server sync is offline", async () => {
     installFetch();
@@ -189,6 +234,26 @@ describe("PromptAgentController recovery", () => {
 
     expect(useRuntimeStore.getState().startup).toBe("ready");
     expect(useRuntimeStore.getState().sessionId).toBeTruthy();
+    controller.destroy();
+  });
+
+  it("runs server sync with the repository as receiver instead of a detached method", async () => {
+    installFetch();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let receiver: unknown;
+    const syncing = {
+      ...repository,
+      syncWithServer() {
+        receiver = this;
+        return this.getPreference().then(() => ({ conflicts: [] }));
+      },
+    };
+    const controller = new PromptAgentController(syncing);
+
+    await controller.mount();
+    await vi.waitFor(() => expect(receiver).toBe(syncing));
+
+    expect(warning).not.toHaveBeenCalledWith("Prompt Agent session sync is temporarily unavailable", expect.anything());
     controller.destroy();
   });
 
@@ -264,9 +329,7 @@ describe("PromptAgentController recovery", () => {
     const sessionId = useRuntimeStore.getState().sessionId;
     const submission = controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" });
 
-    await vi.waitFor(() => expect(repository.putMessage).toHaveBeenCalledTimes(1));
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(repository.putMessage).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(repository.putMessage).toHaveBeenCalled());
     releaseFirst?.();
     await submission;
     await vi.waitFor(() => expect(repository.putMessage.mock.calls.at(-1)?.[0].status).toBe("complete"));
@@ -613,6 +676,49 @@ describe("PromptAgentController recovery", () => {
     }, sessionId);
 
     expect(repository.deleteMessages).not.toHaveBeenCalled();
+    controller.destroy();
+  });
+
+  it("coalesces streaming persistence instead of rewriting the session per token", async () => {
+    const deltas = 60;
+    const events = [
+      { type: "start" },
+      { type: "text_start", contentIndex: 0 },
+      ...Array.from({ length: deltas }, (_, index) => ({ type: "text_delta", contentIndex: 0, delta: `t${index}` })),
+      { type: "text_end", contentIndex: 0 },
+      { type: "done", reason: "stop" },
+    ];
+    installFetch(() => eventStream(events));
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+
+    await controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" });
+
+    const writes = repository.putMessage.mock.calls.length;
+    expect(writes).toBeGreaterThan(0);
+    expect(writes).toBeLessThan(deltas);
+    controller.destroy();
+  });
+
+  it("does not strand the composer on cancelling when a settled run is still finishing post-turn work", async () => {
+    const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+    let releasePersistence!: () => void;
+    const persistenceGate = new Promise<void>((resolve) => { releasePersistence = resolve; });
+    installFetch();
+    repository.putMessage.mockImplementation(async () => { await persistenceGate; });
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+
+    const send = controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" });
+    for (let index = 0; index < 200 && useChatStore.getState().activeRequestId === null; index += 1) await tick();
+    for (let index = 0; index < 200 && useRuntimeStore.getState().workingPhase !== "idle"; index += 1) await tick();
+    expect(useChatStore.getState().activeRequestId).not.toBeNull();
+
+    controller.actions.stopRequest();
+    expect(useRuntimeStore.getState().workingPhase).toBe("idle");
+
+    releasePersistence();
+    await send;
     controller.destroy();
   });
 

@@ -1,5 +1,113 @@
 # Active Audit Log
 
+## 2026-09-11 Session Sync Lost `this` Binding (Always-Failing Cross-Device Sync)
+- Reported symptom: a multi-hour stretch of apparent non-stop agent activity after
+  returning to the WebUI tab; asked to find where the frontend listens for
+  visibility/focus and re-initiates generation, then stop the repeat.
+- Finding (the asked-for answer): no `visibilitychange` / `document.hidden` /
+  `visibilityState` / `pageshow` / `pagehide` handler exists in this extension or
+  in Forge Neo's built JS; the only focus handlers (`Surface.svelte`,
+  `ProfileSettings.svelte`) recompute viewport geometry only. No client or backend
+  path re-initiates a model request on focus/visibility. All client loops are
+  bounded (`generate_image` polls cap at 5 min; proxy retries exclude HTTP 400 and
+  are attempt-bounded) and the backend `stream_profile` is a single `async for`
+  over `httpx` with a mandatory positive timeout.
+- Concrete defect found while auditing: session sync always failed.
+  `PromptAgentController.syncSessionsBestEffort` detached the repository method
+  (`const syncWithServer = this.sessions.syncWithServer;`) and called it with
+  `this === undefined`, so `synchronizePromptAgentSessions` ran on `undefined` and
+  `store.getPreference(...)` threw `TypeError: Cannot read properties of undefined
+  (reading 'getPreference')`; the browser logged `Prompt Agent session sync is
+  temporarily unavailable` on every mount.
+- Fix: bind the receiver (`this.sessions.syncWithServer?.bind(this.sessions)`),
+  `frontend/src/agent/controller.ts`.
+- Regression test: `frontend/tests/prompt-agent-controller.test.ts` "runs server
+  sync with the repository as receiver instead of a detached method" (fails before,
+  passes after). Existing sync tests could not catch it because the shared
+  repository mock uses arrow-function `vi.fn` methods that never need a receiver.
+- Verification: `python tools/test_gate.py fast` exit 0 (Svelte/type check 0 errors;
+  139 frontend tests including 24 controller; 43 affected Python tests).
+  `node --check javascript/prompt_agent*.js` all OK; bundle rebuilt.
+- Residual/unproven: the multi-hour run is not explained by any loop in this code
+  (no file/API writes during the window; the last server-persisted request ended in
+  a provider HTTP 400). Most plausible remaining mechanism is a single provider
+  request hanging with no client-side timeout; no timeout guard was added because it
+  was not reproduced.
+
+## 2026-09-11 Defer Markdown Parsing During Streaming
+- Reported symptom: severe UI slowness while the agent streams a response.
+- Evidence: a Chrome performance trace (`Trace-20260911T184932.json.gz`) attributed
+  ~5.4% of the renderer main-thread JS samples to
+  `javascript/prompt_agent_90_ui.js`; the hottest self function was
+  `DOMPurify.parseFromString` reached from a Svelte `$derived` flush in the
+  Markdown component.
+- Root cause: `frontend/src/components/Markdown.svelte` read `html` before the
+  `if (streaming || !markdownElement) return;` guard, forcing the lazy
+  `$derived(DOMPurify.sanitize(marked.parse(content)))` to recompute on every
+  streamed `content` update even though the streaming branch renders raw text —
+  a repeated `marked.parse` + `DOMPurify.sanitize` per token.
+- Fix: moved the `html;` read after the guard so the derivation stays lazy while
+  streaming and runs once the final content is rendered. Svelte re-collects
+  effect dependencies each run, so `streaming` flipping false re-runs the effect
+  and the code-block enhancement still executes.
+- Regression test: `frontend/tests/markdown-streaming.test.ts` spies on
+  `DOMPurify.sanitize` and asserts 0 calls during streamed updates and 1 call at
+  completion. Verified failing before the fix (sanitize called 3x) and passing
+  after.
+- Rebuilt `javascript/prompt_agent_90_ui.js` from frontend source.
+- Verification: `node --check javascript/prompt_agent_90_ui.js` exit 0;
+  `python tools/test_gate.py fast` exit 0 (138 frontend tests, Svelte/type check,
+  affected Python tests).
+- Scope: this fixes only the prompt-agent share of the trace. The same trace also
+  attributes roughly 15% to Gradio assets (`Index-DkaKPSWq.js`,
+  `Blocks-B7cNA3Pj.js`) and ~6.6% to the third-party `sd-webui-prompt-all-in-one`
+  bundle, plus a ~440MB heap / 277ms MajorGC — all outside this repository.
+- Residual risk: `ProcessDrawer` reasoning renders with
+  `renderStreamingMarkdown={true}`, so its Markdown is still parsed per token
+  while the drawer is open; left unchanged because that is an explicit feature.
+
+## 2026-09-11 Runtime Persistence Coalescing and Context Meter Redesign
+- Reported symptoms: the composer stayed on "Sending request" after the agent
+  finished, and Stop showed "Cancelling" then froze.
+- Root cause: the runtime subscriber called `queueRuntimePersistence` on every
+  streaming emit (one per token), and `persistRuntimeState` rewrites the whole
+  session with `Promise.all(records.map(putMessage))` while `repository.putMessage`
+  opens and awaits a separate IndexedDB transaction per message. On a long session
+  this produced hundreds of full-session rewrite batches per turn; `sendMessage`
+  awaited the whole backlog in its teardown, so the composer stayed disabled long
+  after completion. Stop could not recover because the runtime was already idle
+  (`runtime.abort()` no-ops when not streaming), leaving the UI stuck on
+  "cancelling".
+- Changed `frontend/src/agent/controller.ts`: coalesce runtime persistence to the
+  latest state and debounce intermediate writes (`RUNTIME_PERSIST_DEBOUNCE_MS` =
+  400ms) via a drain loop, while terminal `completed`/`failed` states flush
+  immediately; the debounce timer is cleared on destroy. The terminal write is
+  still awaited inline in `sendMessage`.
+- Single-session guarantee: `sendMessage` no longer awaits the whole persistence
+  backlog in its teardown, so the composer always releases once the terminal batch
+  is durable. Added an abort watchdog (`ABORT_WATCHDOG_MS` = 6s) armed when
+  `stopRequest` aborts an active run: if the run never settles (for example a
+  Forge tool that ignores the abort signal), it bumps a request generation, clears
+  the active request to idle, and rebuilds the runtime from durable history so the
+  user is never trapped on "cancelling". The abandoned send's teardown is
+  generation-guarded so it cannot clobber a newer request.
+- Changed `stopRequest` to always arm `stopRequested` (so a send still in
+  preparation cancels) and to abort + show "cancelling" only when a run is active;
+  otherwise it clears to idle so the composer cannot strand.
+- Redesigned `frontend/src/components/ContextMeter.svelte` from a cramped
+  conic-gradient badge (8px label in a 23px cut-out) to a crisper SVG donut
+  (30px, 3px stroke, rounded progress arc, track, 9.5px tabular numeral, warning
+  >=70% and critical >=90%). `role="meter"`, aria values, `title`,
+  `data-prompt-agent-context-meter`, and the props API are preserved.
+- Tests: added a streaming-persistence coalescing case, a post-turn
+  stop-does-not-strand case, and a fake-timer force-recovery case for a stopped
+  request that ignores the abort signal to
+  `frontend/tests/prompt-agent-controller.test.ts`, and updated the runtime-write
+  serialization case to the coalesced semantics (23/23).
+- Verification: full gate exit 0 (68.6s): Python 2.6s, Svelte 0/0, frontend tests
+  27.6s, build/budget, 7 mock-host browser acceptance, browser syntax. Bundle
+  `javascript/prompt_agent_90_ui.js` rebuilt.
+
 ## 2026-09-11 Provider Tool-Result Image Ordering and Orphan Tool Calls
 - Root cause of two consecutive provider HTTP 400s: the OpenAI-compatible and
   Gemini adapters appended a `role:"user"` image message immediately after each

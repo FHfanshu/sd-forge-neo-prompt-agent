@@ -7,7 +7,6 @@
   import { useChatStore } from "../../stores/chat";
   import { useI18nStore } from "../../stores/i18n";
   import { useRuntimeStore } from "../../stores/runtime";
-  import ContextMeter from "../ContextMeter.svelte";
   import ModelPicker from "../ModelPicker.svelte";
   import ReasoningPicker from "../ReasoningPicker.svelte";
 
@@ -20,8 +19,6 @@
     queueSubmissionInFlight = false,
     submissionInFlight = false,
     requestActive = false,
-    contextTokens = 0,
-    contextLimit = 131072,
     onsubmit,
     onaddfiles,
     oncanceledit,
@@ -44,8 +41,6 @@
     queueSubmissionInFlight: boolean;
     submissionInFlight: boolean;
     requestActive: boolean;
-    contextTokens: number;
-    contextLimit: number;
     onsubmit: () => void;
     onaddfiles: (files: File[]) => void;
     oncanceledit: () => void;
@@ -210,7 +205,6 @@
       <button type="button" class="pa-composer-icon" onclick={onchooseattachments} aria-label={t("assistant.attach", "Attach reference images")}><ImagePlus size={16} /></button>
     </div>
     <div class="pa-composer-tools">
-      <ContextMeter tokens={contextTokens} limit={contextLimit} label={t("assistant.context_usage", "Context")} />
       <div class="pa-composer-picker-row" aria-label={t("assistant.model_controls", "Model controls")}>
         <ModelPicker />
         <ReasoningPicker />

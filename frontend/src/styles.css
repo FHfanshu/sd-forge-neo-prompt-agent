@@ -179,6 +179,7 @@
   .pa-chat-title strong { font-size: var(--pa-type-title); font-weight: 700; }
   .pa-eyebrow { color: var(--pa-ink-soft); font-size: .66rem; font-weight: 600; }
   .pa-header-controls { display: flex; align-items: center; gap: 0; }
+  .pa-header-controls [data-prompt-agent-context-meter] { margin-right: 2px; }
   .pa-header-icon, .pa-composer-icon, .pa-filmstrip-more, .pa-filmstrip-remove, .pa-lightbox-close, .pa-lightbox-nav {
     display: grid;
     place-items: center;

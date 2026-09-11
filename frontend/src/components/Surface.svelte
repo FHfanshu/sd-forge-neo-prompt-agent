@@ -691,6 +691,8 @@
         {runtimeUnavailable}
         dragAction={pointerWindow}
         dragParams={{ mode: "drag", layout: () => currentLayout, update: updateLayout, minimum: windowMinimum, interacting: (active: boolean) => interacting = active }}
+        {contextTokens}
+        {contextLimit}
         ontogglehistory={toggleHistory}
         onselecthistory={(row) => { void action("selectHistory")(row); }}
         onnewsession={() => void newSession()}
@@ -739,8 +741,6 @@
           {queueSubmissionInFlight}
           {submissionInFlight}
           {requestActive}
-          {contextTokens}
-          {contextLimit}
           onsubmit={() => void submit()}
           onaddfiles={(files) => void addFiles(files)}
           oncanceledit={cancelEdit}
