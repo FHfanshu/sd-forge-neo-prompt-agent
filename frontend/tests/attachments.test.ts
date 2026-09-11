@@ -22,6 +22,22 @@ function installObjectUrlMocks(): { create: ReturnType<typeof vi.fn>; revoke: Re
   });
   vi.stubGlobal("URL", MockUrl);
   vi.stubGlobal("createImageBitmap", vi.fn(() => Promise.reject(new Error("decode unavailable"))));
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({
+      ok: true,
+      metadata: {
+        metadata_status: "available",
+        parser_format: "a1111",
+        width: 64,
+        height: 48,
+        infotext: "cat",
+        data: {},
+        missing_fields: [],
+        warnings: [],
+      },
+    }),
+  })));
   return { create, revoke };
 }
 
@@ -41,6 +57,7 @@ describe("reference image preparation", () => {
     expect(isLocalImageAttachment(attachment)).toBe(true);
     if (!isLocalImageAttachment(attachment)) throw new Error("Expected a local attachment");
     expect(attachment.blob).toBeInstanceOf(Blob);
+    expect(attachment.metadata?.metadata_status).toBe("available");
     expect(attachmentPreviewUrl(attachment)).toBe("blob:attachment-preview");
     expect(create).toHaveBeenCalledOnce();
     expect(read).not.toHaveBeenCalled();

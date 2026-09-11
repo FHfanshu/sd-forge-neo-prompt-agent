@@ -1,4 +1,5 @@
 import type { ChatAttachment, WireAttachment } from "./contracts";
+import { readOriginalImageMetadata, type ImageMetadata } from "./image-metadata";
 
 export const MAX_ATTACHMENTS = 8;
 export const MAX_SOURCE_IMAGE_BYTES = 24 * 1024 * 1024;
@@ -34,6 +35,7 @@ export interface LocalImageAttachment {
   size: number;
   blob: Blob;
   previewUrl: string;
+  metadata?: ImageMetadata | null;
 }
 
 export type PreparedImageAttachment = LocalImageAttachment | ChatAttachment;
@@ -114,7 +116,7 @@ export function totalAttachmentBytes(attachments: PreparedImageAttachment[]): nu
 export async function createImageAttachment(file: File, attachmentId: string): Promise<PreparedImageAttachment> {
   if (!file.type.startsWith("image/")) throw new Error("Only image files can be attached.");
   if (file.size > MAX_SOURCE_IMAGE_BYTES) throw new AttachmentError("source_too_large", { name: file.name, limitBytes: MAX_SOURCE_IMAGE_BYTES });
-  const blob = await optimizedBlob(file);
+  const [metadata, blob] = await Promise.all([readOriginalImageMetadata(file), optimizedBlob(file)]);
   if (blob.size > MAX_ATTACHMENT_BYTES) throw new AttachmentError("optimized_too_large", { name: file.name, limitBytes: MAX_ATTACHMENT_BYTES });
   const common = {
     id: attachmentId,
@@ -126,7 +128,7 @@ export async function createImageAttachment(file: File, attachmentId: string): P
     const previewUrl = URL.createObjectURL(blob);
     previewReferences.set(previewUrl, 1);
     releasedPreviews.delete(previewUrl);
-    return { ...common, blob, previewUrl };
+    return { ...common, blob, previewUrl, metadata };
   }
   return {
     ...common,

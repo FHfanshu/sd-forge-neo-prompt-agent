@@ -454,4 +454,20 @@ Entries from 2026-07-19 through 2026-07-30 moved to
 - Added route tests to `tests/test_prompt_agent_api.py`.
 - Verification: both image-metadata route tests passed.
 
+## 2026-09-11 Capture attachment PNGInfo before transcode
+- Goal: image attachments were re-encoded to WebP before any metadata read, so
+  PNGInfo was lost before the model copy (PRD IMG-01).
+- Added `frontend/src/image-metadata.ts`: turns a Blob into a data URL without
+  FileReader and POSTs it to the restricted `/prompt-agent/api/images/metadata`
+  endpoint, returning the parsed metadata or null on any failure.
+- Changed `frontend/src/attachments.ts`: `createImageAttachment` now reads the
+  original file's metadata in parallel with the visual optimization and stores
+  it on `LocalImageAttachment.metadata`; the visual copy itself is unchanged.
+- Added `frontend/tests/image-metadata.test.ts`, extended the attachment test,
+  and added a guarded `Blob.prototype.arrayBuffer` polyfill to
+  `frontend/tests/setup.ts` for jsdom.
+- Verification: `python tools/test_gate.py affected` passed (exit 0, 16.8s);
+  svelte-check reported 0 errors / 0 warnings; rebuilt
+  `javascript/prompt_agent_90_ui.js` from the frontend sources.
+
 
