@@ -136,7 +136,7 @@ class PromptSkillTests(unittest.TestCase):
 
 
 class DanbooruLookupTests(unittest.TestCase):
-    @acceptance("AGENT-TOOLS-001@6", "wiki-navigation")
+    @acceptance("AGENT-TOOLS-001@7", "wiki-navigation")
     def test_wiki_search_and_group_inspection_expose_bounded_next_hops(self):
         search_payload = [
             {"type": "tag", "label": "frutiger aero", "value": "frutiger_aero", "category": 0},
@@ -203,7 +203,7 @@ class DanbooruLookupTests(unittest.TestCase):
         self.assertEqual("exact", result["results"][0]["items"][0]["match"])
         self.assertNotIn("items", result)
 
-    @acceptance("AGENT-TOOLS-001@6", "danbooru-wiki-default")
+    @acceptance("AGENT-TOOLS-001@7", "danbooru-wiki-default")
     def test_batch_inspection_and_related_tags_are_bounded(self):
         tag_payload = [{"id": 1, "name": "blue_hair", "category": 0, "post_count": 42, "is_deprecated": False}]
         wiki_payload = [{"title": "blue_hair", "body": "Blue hair definition", "updated_at": "2026-07-12"}]

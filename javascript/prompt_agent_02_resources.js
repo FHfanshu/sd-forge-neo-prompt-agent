@@ -16,6 +16,7 @@
     const RESOURCE_TOOLS = new Set([
         "search_resources",
         "inspect_resource",
+        "list_recent_generations",
         "load_skill",
         "search_danbooru_tags",
         "inspect_danbooru_tags",
@@ -54,6 +55,25 @@
         return await response.json();
     }
 
+    async function resourcePost(path, body, signal) {
+        const response = await fetch(path, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body || {}),
+            signal: signal
+        });
+        if (!response.ok) {
+            let detail = await response.text();
+            try {
+                const parsed = JSON.parse(detail);
+                detail = parsed.detail || detail;
+            } catch (_error) { }
+            return { ok: false, error: String(detail || `HTTP ${response.status}`) };
+        }
+        return await response.json();
+    }
+
     async function searchResourcesTool(args, signal) {
         return await resourceGet("/prompt-agent/api/resources/search", {
             kind: args.kind,
@@ -70,6 +90,15 @@
             query: args.query || "",
             limit: args.limit || 20,
             cursor: args.cursor || ""
+        }, signal);
+    }
+
+    async function listRecentGenerationsTool(args, signal) {
+        const target = args.target && args.target !== "active" ? args.target : undefined;
+        return await resourcePost("/prompt-agent/api/images/recent", {
+            target: target,
+            limit: args.limit || 8,
+            include_grids: args.include_grids === true
         }, signal);
     }
 
@@ -263,6 +292,7 @@
         const args = tool.arguments || {};
         if (name === "search_resources") return await searchResourcesTool(args, signal);
         if (name === "inspect_resource") return await inspectResourceTool(args, signal);
+        if (name === "list_recent_generations") return await listRecentGenerationsTool(args, signal);
         if (name === "load_skill") return await loadPromptSkillTool(args, signal);
         if (name === "search_danbooru_tags") return await searchDanbooruTagsTool(args, signal);
         if (name === "inspect_danbooru_tags") return await inspectDanbooruTagsTool(args, signal);
@@ -276,8 +306,10 @@
         RESOURCE_TOOLS,
         queryUrl,
         resourceGet,
+        resourcePost,
         searchResourcesTool,
         inspectResourceTool,
+        listRecentGenerationsTool,
         loadPromptSkillTool,
         searchDanbooruTagsTool,
         inspectDanbooruTagsTool,

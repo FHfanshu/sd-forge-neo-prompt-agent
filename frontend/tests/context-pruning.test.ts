@@ -37,7 +37,7 @@ function result(timestamp: number, id: string, name: string, isError = false): T
 }
 
 describe("provider-facing context pruning", () => {
-  acceptanceTest("AGENT-TOOLS-001@6", "context-pruning", "keeps durable messages untouched while completed turns retain only intent and final answers", () => {
+  acceptanceTest("AGENT-TOOLS-001@7", "context-pruning", "keeps durable messages untouched while completed turns retain only intent and final answers", () => {
     const messages: AgentMessage[] = [
       user(1, "first", true),
       assistant(2, [{ type: "thinking", thinking: "private" }, { type: "toolCall", id: "old", name: "read_prompt", arguments: {} }], "toolUse"),

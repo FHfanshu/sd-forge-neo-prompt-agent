@@ -31,6 +31,7 @@ test("resource and skill tools are registered for agent execution", () => {
     assert.deepEqual([...tools.RESOURCE_TOOLS], [
         "search_resources",
         "inspect_resource",
+        "list_recent_generations",
         "load_skill",
         "search_danbooru_tags",
         "inspect_danbooru_tags",
@@ -39,9 +40,29 @@ test("resource and skill tools are registered for agent execution", () => {
         "inspect_danbooru_wikis"
     ]);
     assert.ok(tools.RESOURCE_TOOLS.has("load_skill"));
+    assert.ok(tools.RESOURCE_TOOLS.has("list_recent_generations"));
     assert.ok(tools.RESOURCE_TOOLS.has("search_danbooru_tags"));
     assert.ok(tools.RESOURCE_TOOLS.has("inspect_danbooru_tags"));
     assert.ok(tools.RESOURCE_TOOLS.has("related_danbooru_tags"));
+});
+
+test("recent-generation listing posts bounded filters and omits active target", async () => {
+    const originalFetch = global.fetch;
+    const requests = [];
+    global.fetch = async (url, options) => {
+        requests.push({ url: url, options: options });
+        return { ok: true, json: async () => ({ ok: true, items: [] }) };
+    };
+    try {
+        await tools.listRecentGenerationsTool({ target: "active", limit: 3, include_grids: true });
+        await tools.listRecentGenerationsTool({ target: "img2img" });
+    } finally {
+        global.fetch = originalFetch;
+    }
+    assert.equal(requests[0].url, "/prompt-agent/api/images/recent");
+    assert.equal(requests[0].options.method, "POST");
+    assert.deepEqual(JSON.parse(requests[0].options.body), { limit: 3, include_grids: true });
+    assert.deepEqual(JSON.parse(requests[1].options.body), { target: "img2img", limit: 8, include_grids: false });
 });
 
 test("batch Danbooru search forwards all queries", async () => {

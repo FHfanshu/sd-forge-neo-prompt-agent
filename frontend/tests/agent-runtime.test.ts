@@ -113,7 +113,7 @@ describe("PiPromptAgentRuntime", () => {
     runtime.destroy();
   });
 
-  acceptanceTest("AGENT-TOOLS-001@6", "parallel-reads,serialized-writes", "runs independent read batches concurrently while serializing any batch that contains a write", async () => {
+  acceptanceTest("AGENT-TOOLS-001@7", "parallel-reads,serialized-writes", "runs independent read batches concurrently while serializing any batch that contains a write", async () => {
     async function peakConcurrency(modes: Array<"parallel" | "sequential">): Promise<number> {
       let turn = 0;
       let active = 0;

@@ -10,6 +10,7 @@ FORGE_TOOL_NAMES = (
     "read_generation_parameters",
     "apply_generation_parameters",
     "generate_image",
+    "list_recent_generations",
     "search_resources",
     "inspect_resource",
     "search_danbooru_tags",
@@ -116,6 +117,12 @@ def validate_forge_tool_request(tool: str, payload: Any) -> dict[str, Any]:
     elif tool == "generate_image":
         _allow_keys(payload, {"target"})
         _validate_target(payload)
+    elif tool == "list_recent_generations":
+        _allow_keys(payload, {"target", "limit", "include_grids"})
+        _validate_target(payload)
+        _bounded_integer(payload.get("limit", 8), "limit", 1, 20)
+        if "include_grids" in payload and not isinstance(payload.get("include_grids"), bool):
+            raise ForgeToolValidationError("include_grids must be a boolean")
     elif tool == "search_danbooru_tags":
         _allow_keys(payload, {"query", "queries", "category", "limit"})
         _validate_danbooru_search(payload)

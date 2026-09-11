@@ -505,6 +505,24 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   (1024x1024, target `txt2img`, `metadata_status` available, `is_grid` false),
   confirming the hook records saved images with no runtime errors.
 
+## 2026-09-11 Read-only list_recent_generations tool
+- Goal: let the agent reference earlier renders by stable id before inspecting
+  their metadata or pixels (PRD step 4).
+- Declared `list_recent_generations` across the tool surface: a TypeBox schema
+  and tool entry in `frontend/src/tools/forge-tools.ts`, argument validation in
+  `backend/prompt_agent/forge_tools.py`, and a host executor in
+  `javascript/prompt_agent_02_resources.js` that POSTs bounded filters to
+  `/prompt-agent/api/images/recent` (dropping an `active` target, which cannot
+  filter the index).
+- Extended acceptance `AGENT-TOOLS-001` (revision 7) and updated the stale
+  mapped tests to the new revision.
+- Updated tests: `tests/test_forge_tools.py`, `tests/test_frontend_resources.js`,
+  `frontend/tests/forge-tools.test.ts`, `frontend/tests/prompt-agent-controller.test.ts`;
+  rebuilt `javascript/prompt_agent_90_ui.js` from the frontend sources.
+- Verification: `python tools/test_gate.py affected` exit 0 (52.9s); frontend
+  127 tests and 7 e2e tests passed; svelte-check reported no errors;
+  `node --check javascript/prompt_agent_02_resources.js` passed.
+
 
 
 

@@ -127,12 +127,19 @@ const generateImageSchema = Type.Object({
   target: targetSchema,
 }, { additionalProperties: false });
 
+const listRecentGenerationsSchema = Type.Object({
+  target: targetSchema,
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
+  include_grids: Type.Optional(Type.Boolean()),
+}, { additionalProperties: false });
+
 export const FORGE_TOOL_SCHEMAS = {
   read_prompt: Type.Object({ target: targetSchema, field: promptFieldSchema }, { additionalProperties: false }),
   edit_prompt: promptEditSchema,
   read_generation_parameters: readGenerationSchema,
   apply_generation_parameters: applyGenerationSchema,
   generate_image: generateImageSchema,
+  list_recent_generations: listRecentGenerationsSchema,
   search_resources: resourceListSchema,
   inspect_resource: resourceMetadataSchema,
   search_danbooru_tags: danbooruSearchSchema,
@@ -190,6 +197,7 @@ const TOOL_TIMEOUTS: Record<ForgeToolName, number> = {
   read_generation_parameters: 10_000,
   apply_generation_parameters: 15_000,
   generate_image: 320_000,
+  list_recent_generations: 10_000,
   search_resources: 15_000,
   inspect_resource: 15_000,
   search_danbooru_tags: 30_000,
@@ -391,6 +399,14 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
       "Run Forge generation for the current prompt and return the rendered image so you can inspect it. Use after editing prompts to verify the result yourself and iterate. Sequential; one generation at a time; each round costs a full render.",
       FORGE_TOOL_SCHEMAS.generate_image,
       "write",
+      options,
+    ),
+    createForgeTool(
+      "list_recent_generations",
+      "List recent generations",
+      "List bounded summaries of recently completed Forge generations on this host, newest first, with stable image ids, target, size, and whether PNGInfo metadata is available. Read-only; use it to reference an existing render before inspecting its metadata or pixels. Filenames and filesystem paths are never returned.",
+      FORGE_TOOL_SCHEMAS.list_recent_generations,
+      "read",
       options,
     ),
     createForgeTool("search_resources", "Search Forge resources", "Search styles, wildcards, LoRAs, checkpoints, or embeddings by logical ID.", FORGE_TOOL_SCHEMAS.search_resources, "read", options),

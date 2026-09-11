@@ -252,7 +252,7 @@
     },
     {
       "id": "AGENT-TOOLS-001",
-      "revision": 6,
+      "revision": 7,
       "area": "agent",
       "title": "Forge tool authority and freshness",
       "acceptance": [
@@ -260,6 +260,7 @@
         "Browser tool arguments are revalidated by Python.",
         "Prompt and generation mutations require fresh hashes.",
         "The declared Forge tool surface includes generate_image, which runs one bounded txt2img/img2img generation on demand and returns the fresh render as image content for the agent to inspect.",
+        "The declared Forge tool surface includes read-only list_recent_generations, which returns bounded summaries of recently completed host generations (ids, target, size, metadata availability) without exposing filenames, filesystem paths, or image bytes.",
         "Independent read-only tool calls emitted in one model turn execute concurrently.",
         "A tool batch containing any Forge write executes sequentially so mutations cannot race live state.",
         "Danbooru batch inspection includes bounded Wiki bodies by default; only an explicit include_wiki=false requests metadata-only results, and URL-only search output never counts as inspected background content.",
