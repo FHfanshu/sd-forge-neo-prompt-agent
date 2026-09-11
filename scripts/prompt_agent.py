@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import weakref
 
 import gradio as gr
 
@@ -27,6 +28,54 @@ if not logging.getLogger().handlers:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 _LOGGER.info("Prompt Agent Python extension loaded")
+
+_batch_image_counts: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def _generation_target(processing) -> str:
+    name = type(processing).__name__.lower() if processing is not None else ""
+    if "txt2img" in name:
+        return "txt2img"
+    if "img2img" in name:
+        return "img2img"
+    return "unknown"
+
+
+def _record_saved_image(params) -> None:
+    """Index a completed image from Forge's on_image_saved hook."""
+    try:
+        from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
+
+        processing = getattr(params, "p", None)
+        pnginfo = getattr(params, "pnginfo", None)
+        infotext = pnginfo.get("parameters") if isinstance(pnginfo, dict) else None
+        image = getattr(params, "image", None)
+        width, height = image.size if image is not None else (0, 0)
+        expected = 0
+        count = 0
+        if processing is not None:
+            try:
+                batch_size = max(1, int(getattr(processing, "batch_size", 1) or 1))
+                iterations = max(1, int(getattr(processing, "n_iter", 1) or 1))
+                expected = batch_size * iterations
+                count = _batch_image_counts.get(processing, 0)
+                _batch_image_counts[processing] = count + 1
+            except TypeError:
+                expected = 0
+        # ponytail: Forge's ImageSaveParams has no grid flag, so a grid is
+        # inferred as the image saved past batch_size * n_iter in a batch.
+        is_grid = bool(expected) and count >= expected
+        DEFAULT_IMAGE_INDEX.record_saved(
+            batch_key=processing,
+            target=_generation_target(processing),
+            filename=str(getattr(params, "filename", "") or ""),
+            width=width,
+            height=height,
+            infotext=infotext if isinstance(infotext, str) else None,
+            is_grid=is_grid,
+        )
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("failed to index a saved image")
 
 
 def _assistant_api(_: gr.Blocks, app):
@@ -181,3 +230,6 @@ def _assistant_api(_: gr.Blocks, app):
         }
 
 script_callbacks.on_app_started(_assistant_api, name="prompt-agent-api")
+
+if hasattr(script_callbacks, "on_image_saved"):
+    script_callbacks.on_image_saved(_record_saved_image, name="prompt-agent-image-index")

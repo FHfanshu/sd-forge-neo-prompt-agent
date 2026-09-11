@@ -470,4 +470,19 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   svelte-check reported 0 errors / 0 warnings; rebuilt
   `javascript/prompt_agent_90_ui.js` from the frontend sources.
 
+## 2026-09-11 Recent-generation image index
+- Goal: the extension kept no stable record of completed generations, so a
+  recent-image tool had no identity or ordering to build on (PRD step 3).
+- Added `prompt_agent/image_index.py`: `ImageIndex` keeps the last 200 completed
+  batches, assigns `gen-N-i` image ids, groups images by the Forge processing
+  object, infers the grid as the image past `batch_size * n_iter`, and exposes
+  `find`, `coverage`, `list_recent`, and a `DEFAULT_IMAGE_INDEX` singleton; it
+  stores summaries only and never copies outputs.
+- Registered Forge's `on_image_saved` hook in `scripts/prompt_agent.py` to
+  record each saved image's filename, size, and infotext-derived metadata status.
+- Added `tests/test_image_index.py`.
+- Verification: `python -m unittest tests.test_image_index` passed (3 tests);
+  `scripts/prompt_agent.py` compiles.
+
+
 
