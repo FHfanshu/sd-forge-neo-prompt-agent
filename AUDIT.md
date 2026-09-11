@@ -431,4 +431,15 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   svelte-check reported 0 errors / 0 warnings; rebuilt
   `javascript/prompt_agent_90_ui.js` from the frontend sources.
 
+## 2026-09-11 PNGInfo extraction for the image foundation
+- Goal: PNGInfo must be read from original image bytes before any WebP/JPEG
+  transcode (PRD IMG-01); no Python metadata parser existed.
+- Added `prompt_agent/pnginfo.py` with `extract_image_metadata(binary)` and
+  `parse_a1111_parameters(text)`: reads the PNG `parameters`/EXIF infotext,
+  parses A1111/Forge positive and negative prompts and generation parameters,
+  keeps seeds beyond the JS safe-integer range as decimal strings, and returns
+  absent / unsupported / error statuses without fabricating defaults.
+- Added `tests/test_pnginfo.py`.
+- Verification: `python -m unittest tests.test_pnginfo` passed (4 tests).
+
 
