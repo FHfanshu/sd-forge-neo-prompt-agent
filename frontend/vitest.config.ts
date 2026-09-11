@@ -18,6 +18,7 @@ export default defineConfig({
     css: true,
     globals: true,
     restoreMocks: true,
+    pool: "threads",
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary", "html", "lcov"],

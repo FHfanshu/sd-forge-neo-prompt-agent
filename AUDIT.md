@@ -349,4 +349,23 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   added a `profile-adapter` regression test covering the preset.
 - Verification: `python tools/test_gate.py affected` passed (exit 0).
 
+## 2026-09-11 Faster delivery gate (pruned tree scan, threaded vitest, pinned-node reuse)
+- The full gate only looked stalled: Vitest's TTY reporter increments the passed
+  count as files drain, so the last few files sit at `[queued]` while it finishes.
+  Timing every stage showed the real cost elsewhere. `source_files()` used
+  `ROOT.rglob("*")` and filtered afterwards, enumerating `frontend/node_modules`
+  once per architecture test (~27s for three tests alone), and each frontend/JS
+  step paid a fresh `npx --yes --package node@22.17.0 ...` startup (~1.4s, 13x).
+- `tools/test_gate.py`: resolve pinned Node 22.17.0 once and reuse it; check all
+  `javascript/prompt_agent*.js` in a single process via `vm.Script` instead of one
+  `npx node --check` per file; print per-stage seconds and a sorted summary.
+- `tests/test_architecture.py`: `source_files()` now uses `os.walk` with directory
+  pruning (never descends into `node_modules`, `.git`, `data`, ...) and caches the
+  result, so the three tests share one scan.
+- `frontend/vitest.config.ts`: `pool: "threads"` (identical isolation semantics;
+  child-process fork startup dominated the suite).
+- Verification: `python tools/test_gate.py full` passed (exit 0). Total stage time
+  fell 126.7s -> 65.1s: Python tests 29.9s -> 2.5s, frontend tests 59.9s -> 26.2s,
+  generated-script syntax ~10s of npx spawns -> 0.1s.
+
 

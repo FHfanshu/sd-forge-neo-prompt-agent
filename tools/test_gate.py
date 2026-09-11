@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -35,6 +36,8 @@ MANAGED_TEST_FILES = {
     "frontend/tests/surface.test.ts",
     "frontend/tests/e2e/mock-host.spec.ts",
 }
+
+_STAGE_TIMINGS: list[tuple[str, float]] = []
 
 
 @dataclass(frozen=True)
@@ -324,9 +327,31 @@ def frontend_command(*args: str) -> list[str]:
     ]
 
 
+_pinned_node: str | None = None
+
+
+def pinned_node() -> str:
+    """Resolve pinned Node 22.17.0 once so repeat calls skip npx startup."""
+    global _pinned_node
+    if _pinned_node is None:
+        if shutil.which("node") and os.environ.get("CI"):
+            _pinned_node = "node"
+        else:
+            completed = subprocess.run(
+                [executable("npx"), "--yes", "--package", "node@22.17.0", "node", "-e", "process.stdout.write(process.execPath)"],
+                cwd=ROOT, text=True, capture_output=True, check=False,
+            )
+            resolved = completed.stdout.strip().splitlines()[-1].strip() if completed.stdout.strip() else ""
+            _pinned_node = resolved if completed.returncode == 0 else ""
+    return _pinned_node
+
+
 def node_command(*args: str) -> list[str]:
     if shutil.which("node") and os.environ.get("CI"):
         return ["node", *args]
+    resolved = pinned_node()
+    if resolved:
+        return [resolved, *args]
     return [executable("npx"), "--yes", "--package", "node@22.17.0", "node", *args]
 
 
@@ -366,14 +391,28 @@ def run_command(
 ) -> int:
     print(f"\n== {label} ==")
     print("Reproduce:", subprocess.list2cmdline(command))
+    started = time.monotonic()
     try:
         completed = subprocess.run(command, cwd=cwd, env=env, check=False)
     except FileNotFoundError:
+        _STAGE_TIMINGS.append((label, time.monotonic() - started))
         print(f"FAILED [environment]: executable not found: {command[0]}", file=sys.stderr)
         return 127
+    elapsed = time.monotonic() - started
+    _STAGE_TIMINGS.append((label, elapsed))
+    print(f"-- stage time: {elapsed:.1f}s")
     if completed.returncode:
         print(f"FAILED [{classification}]: {label}", file=sys.stderr)
     return completed.returncode
+
+
+def print_stage_timings() -> None:
+    if not _STAGE_TIMINGS:
+        return
+    print("\n== stage timings ==")
+    for label, elapsed in sorted(_STAGE_TIMINGS, key=lambda item: item[1], reverse=True):
+        print(f"{elapsed:7.1f}s  {label}")
+    print(f"{sum(item[1] for item in _STAGE_TIMINGS):7.1f}s  total")
 
 
 def run_full(*, release: bool = False, allow_missing_forge: bool = False) -> int:
@@ -393,9 +432,21 @@ def run_full(*, release: bool = False, allow_missing_forge: bool = False) -> int
         if run_command(label, command, cwd, env, classification):
             return 1
     browser_scripts = sorted((ROOT / "javascript").glob("prompt_agent*.js"))
-    for script in browser_scripts:
+    if browser_scripts:
+        relative_scripts = [str(script.relative_to(ROOT)) for script in browser_scripts]
+        checker = (
+            "const fs=require('fs'),vm=require('vm');let failed=false;"
+            "for(const f of process.argv.slice(1)){"
+            "try{new vm.Script(fs.readFileSync(f,'utf8'),{filename:f});}"
+            "catch(e){console.error('syntax '+f+': '+e.message);failed=true;}}"
+            "process.exit(failed?1:0);"
+        )
         if run_command(
-            f"syntax {script.name}", node_command("--check", str(script.relative_to(ROOT))), ROOT, env, "generated/browser syntax"
+            "syntax generated/browser scripts",
+            node_command("-e", checker, *relative_scripts),
+            ROOT,
+            env,
+            "generated/browser syntax",
         ):
             return 1
     if not release:
@@ -456,10 +507,16 @@ def main() -> int:
     if status or args.command == "preflight":
         return status
     if args.command == "affected":
-        return run_affected(result)
+        status = run_affected(result)
+        print_stage_timings()
+        return status
     if args.command == "full":
-        return run_full()
-    return run_full(release=True, allow_missing_forge=args.allow_missing_forge)
+        status = run_full()
+        print_stage_timings()
+        return status
+    status = run_full(release=True, allow_missing_forge=args.allow_missing_forge)
+    print_stage_timings()
+    return status
 
 
 if __name__ == "__main__":

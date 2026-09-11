@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ast
+import os
 import pathlib
 import unittest
+from functools import lru_cache
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -65,17 +67,19 @@ ARCHIVED_TECHNICAL_NAME_MARKERS = {
 }
 
 
-def source_files() -> list[pathlib.Path]:
+@lru_cache(maxsize=1)
+def source_files() -> tuple[pathlib.Path, ...]:
     result: list[pathlib.Path] = []
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
-            continue
-        if any(part in SKIP_PARTS for part in path.relative_to(ROOT).parts):
-            continue
-        if path.relative_to(ROOT) in GENERATED_OR_LOCKED:
-            continue
-        result.append(path)
-    return result
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = [name for name in dirnames if name not in SKIP_PARTS]
+        for name in filenames:
+            path = pathlib.Path(dirpath) / name
+            if path.suffix.lower() not in TEXT_SUFFIXES:
+                continue
+            if path.relative_to(ROOT) in GENERATED_OR_LOCKED:
+                continue
+            result.append(path)
+    return tuple(result)
 
 
 def module_name(path: pathlib.Path) -> str:
