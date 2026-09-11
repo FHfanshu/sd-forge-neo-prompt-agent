@@ -13,6 +13,7 @@ const TOOL_NAMES = [
   "generate_image",
   "list_recent_generations",
   "read_pnginfo",
+  "read_image",
   "search_resources",
   "inspect_resource",
   "search_danbooru_tags",
@@ -63,6 +64,7 @@ describe("Forge Agent Tools", () => {
       generate_image: {},
       list_recent_generations: {},
       read_pnginfo: { image_id: "gen-1-0" },
+      read_image: { image_id: "gen-1-0" },
       search_resources: { kind: "model" },
       inspect_resource: { kind: "style", id: "style" },
       search_danbooru_tags: { queries: ["long hair"] },
@@ -152,6 +154,17 @@ describe("Forge Agent Tools", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toEqual({ type: "image", data: "aW1hZ2U=", mimeType: "image/png" });
     expect(JSON.parse(blocks[1].text!)).toEqual({ ok: true, target: "txt2img", duration_ms: 4200, image_mime_type: "image/png" });
+  });
+
+  it("returns an indexed render as an image block when read_image succeeds", async () => {
+    const fake = host({ ok: true, image_id: "gen-2-1", target: "txt2img", width: 64, height: 48, image_mime_type: "image/webp", image_base64: "aW1hZ2U=" });
+    const tool = createForgeAgentTools({ host: () => fake.api }).find((item) => item.name === "read_image")!;
+
+    const result = await tool.execute("read-1", { image_id: "gen-2-1" }, new AbortController().signal);
+
+    expect(fake.calls[0]).toMatchObject({ tool: "read_image", arguments: { image_id: "gen-2-1" } });
+    const blocks = result.content as Array<{ type: string; data?: string; mimeType?: string }>;
+    expect(blocks[0]).toEqual({ type: "image", data: "aW1hZ2U=", mimeType: "image/webp" });
   });
 
   it("sends compact search candidates to the model while keeping the full host result in details", async () => {

@@ -137,6 +137,10 @@ const readPnginfoSchema = Type.Object({
   image_id: Type.String({ pattern: "^gen-\\d+-\\d+$" }),
 }, { additionalProperties: false });
 
+const readImageSchema = Type.Object({
+  image_id: Type.String({ pattern: "^gen-\\d+-\\d+$" }),
+}, { additionalProperties: false });
+
 export const FORGE_TOOL_SCHEMAS = {
   read_prompt: Type.Object({ target: targetSchema, field: promptFieldSchema }, { additionalProperties: false }),
   edit_prompt: promptEditSchema,
@@ -145,6 +149,7 @@ export const FORGE_TOOL_SCHEMAS = {
   generate_image: generateImageSchema,
   list_recent_generations: listRecentGenerationsSchema,
   read_pnginfo: readPnginfoSchema,
+  read_image: readImageSchema,
   search_resources: resourceListSchema,
   inspect_resource: resourceMetadataSchema,
   search_danbooru_tags: danbooruSearchSchema,
@@ -204,6 +209,7 @@ const TOOL_TIMEOUTS: Record<ForgeToolName, number> = {
   generate_image: 320_000,
   list_recent_generations: 10_000,
   read_pnginfo: 15_000,
+  read_image: 20_000,
   search_resources: 15_000,
   inspect_resource: 15_000,
   search_danbooru_tags: 30_000,
@@ -217,6 +223,11 @@ const WRITE_TOOLS = new Set<ForgeToolName>([
   "edit_prompt",
   "apply_generation_parameters",
   "generate_image",
+]);
+
+const IMAGE_RESULT_TOOLS = new Set<ForgeToolName>([
+  "generate_image",
+  "read_image",
 ]);
 
 const defaultHost = (): PromptAgentHostApi | null => (
@@ -346,7 +357,7 @@ function textResult(result: unknown, modelResult: unknown = result): AgentToolRe
   };
 }
 
-function generationResult(result: unknown): AgentToolResult<unknown> {
+function imageResult(result: unknown): AgentToolResult<unknown> {
   const value = (result ?? {}) as Record<string, unknown>;
   const data = typeof value.image_base64 === "string" ? value.image_base64 : "";
   if (!data) return textResult(result);
@@ -381,7 +392,7 @@ function createForgeTool<T extends TSchema>(
     execute: async (_toolCallId, params, signal) => {
       const args = prepareArguments ? prepareArguments(params) : params as Record<string, unknown>;
       const result = await invokeForgeTool(name, args, permission, signal, options);
-      return name === "generate_image" ? generationResult(result) : textResult(result, modelFacingResult(name, result));
+      return IMAGE_RESULT_TOOLS.has(name) ? imageResult(result) : textResult(result, modelFacingResult(name, result));
     },
   };
 }
@@ -420,6 +431,14 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
       "Read PNGInfo",
       "Read the generation metadata (parsed prompt and parameters) of a previously completed host generation, addressed by its image_id from list_recent_generations. Read-only; filenames and filesystem paths are never returned.",
       FORGE_TOOL_SCHEMAS.read_pnginfo,
+      "read",
+      options,
+    ),
+    createForgeTool(
+      "read_image",
+      "Read image",
+      "Return the pixels of a previously completed host generation as image content, addressed by its image_id from list_recent_generations, so you can inspect it directly. Read-only; filenames and filesystem paths are never returned.",
+      FORGE_TOOL_SCHEMAS.read_image,
       "read",
       options,
     ),

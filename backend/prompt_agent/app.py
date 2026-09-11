@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import mimetypes
 import re
 import sqlite3
 from typing import Any
@@ -25,6 +27,7 @@ API_PREFIX = "/prompt-agent/api"
 API_VERSION = 1
 _REGISTRATION_MARKER = "_prompt_agent_api_registered"
 _IMAGE_ID_RE = re.compile(r"gen-\d+-\d+\Z")
+MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
 
 def health_payload() -> dict[str, Any]:
@@ -207,7 +210,7 @@ def register_prompt_agent_api(
     @app.post(f"{API_PREFIX}/images/pnginfo")
     async def prompt_agent_image_pnginfo(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         try:
-            image_id = _pnginfo_request(payload)
+            image_id = _image_id_request(payload)
         except ValueError as error:
             raise HTTPException(
                 status_code=422,
@@ -237,6 +240,42 @@ def register_prompt_agent_api(
             "width": int(metadata.get("width") or reference.width),
             "height": int(metadata.get("height") or reference.height),
             "metadata": metadata,
+        }
+
+    @app.post(f"{API_PREFIX}/images/content")
+    async def prompt_agent_image_content(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        try:
+            image_id = _image_id_request(payload)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=422,
+                detail={"ok": False, "error": {"code": "invalid_request", "message": str(error), "retryable": False}},
+            ) from error
+        reference = DEFAULT_IMAGE_INDEX.find(image_id)
+        if reference is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"ok": False, "error": {"code": "not_found", "message": "unknown image id", "retryable": False}},
+            )
+        binary = _read_indexed_image(reference)
+        if binary is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"ok": False, "error": {"code": "not_found", "message": "image file unavailable", "retryable": False}},
+            )
+        if len(binary) > MAX_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail={"ok": False, "error": {"code": "too_large", "message": "image exceeds the content limit", "retryable": False}},
+            )
+        return {
+            "ok": True,
+            "image_id": image_id,
+            "target": reference.target,
+            "width": reference.width,
+            "height": reference.height,
+            "image_mime_type": _image_mime_type(reference),
+            "image_base64": base64.b64encode(binary).decode("ascii"),
         }
 
     @app.post(f"{API_PREFIX}/profiles/{{profile_id}}/connection-test")
@@ -402,7 +441,7 @@ def _recent_images_request(payload: Any) -> dict[str, Any]:
     return {"limit": limit, "target": target, "include_grids": include_grids}
 
 
-def _pnginfo_request(payload: Any) -> str:
+def _image_id_request(payload: Any) -> str:
     if not isinstance(payload, dict):
         raise ValueError("request body must be an object")
     unknown = set(payload) - {"image_id"}
@@ -412,6 +451,11 @@ def _pnginfo_request(payload: Any) -> str:
     if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
         raise ValueError("image_id is required")
     return image_id
+
+
+def _image_mime_type(reference: Any) -> str:
+    mime = mimetypes.guess_type(str(getattr(reference, "filename", "") or ""))[0]
+    return mime or "image/png"
 
 
 def _read_indexed_image(reference: Any) -> bytes | None:

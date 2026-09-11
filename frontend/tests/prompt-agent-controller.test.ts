@@ -320,6 +320,7 @@ describe("PromptAgentController recovery", () => {
       "generate_image",
       "list_recent_generations",
       "read_pnginfo",
+      "read_image",
       "search_resources",
       "inspect_resource",
       "search_danbooru_tags",

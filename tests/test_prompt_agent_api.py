@@ -193,6 +193,61 @@ class PromptAgentApiTests(unittest.TestCase):
             404,
         )
 
+    def test_image_content_route_returns_base64_for_an_indexed_image(self):
+        from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
+
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+        with TemporaryDirectory() as directory:
+            path = os.path.join(directory, "00000-1.png")
+            Image.new("RGB", (24, 16), (10, 20, 30)).save(path)
+            with open(path, "rb") as handle:
+                expected = handle.read()
+            DEFAULT_IMAGE_INDEX.clear()
+            try:
+                DEFAULT_IMAGE_INDEX.record_saved(
+                    batch_key=object(),
+                    target="txt2img",
+                    filename=path,
+                    width=24,
+                    height=16,
+                )
+
+                response = client.post(f"{API_PREFIX}/images/content", json={"image_id": "gen-1-0"})
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["image_id"], "gen-1-0")
+                self.assertEqual(payload["image_mime_type"], "image/png")
+                self.assertEqual(base64.b64decode(payload["image_base64"]), expected)
+                self.assertNotIn("filename", json.dumps(payload))
+            finally:
+                DEFAULT_IMAGE_INDEX.clear()
+
+    def test_image_content_route_rejects_bad_input_and_missing_files(self):
+        from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
+
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+
+        self.assertEqual(client.post(f"{API_PREFIX}/images/content", json={}).status_code, 422)
+        self.assertEqual(
+            client.post(f"{API_PREFIX}/images/content", json={"image_id": "gen-999-0"}).status_code,
+            404,
+        )
+        DEFAULT_IMAGE_INDEX.clear()
+        try:
+            DEFAULT_IMAGE_INDEX.record_saved(batch_key=object(), target="txt2img", filename="", width=8, height=8)
+            self.assertEqual(
+                client.post(f"{API_PREFIX}/images/content", json={"image_id": "gen-1-0"}).status_code,
+                404,
+            )
+        finally:
+            DEFAULT_IMAGE_INDEX.clear()
+
     @acceptance("SECURITY-PRIVACY-001@1", "projection")
     def test_profiles_never_return_secret_or_local_paths(self):
         app = FastAPI()

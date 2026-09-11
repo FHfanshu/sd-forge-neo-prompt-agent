@@ -546,6 +546,32 @@ Entries from 2026-07-19 through 2026-07-30 moved to
 - Verification: `python tools/test_gate.py affected` exit 0 (50.3s); frontend
   suite and mock-host e2e passed.
 
+## 2026-09-11 Read-only read_image tool
+- Goal: the agent could read a generation's metadata but not its pixels, so it
+  could not visually inspect an earlier render (PRD step 4).
+- Added `POST /prompt-agent/api/images/content` in `backend/prompt_agent/app.py`:
+  validates a strict `image_id`, looks it up in `DEFAULT_IMAGE_INDEX`, reads the
+  indexed file, and returns base64 pixels with a guessed MIME type, bounded to
+  12 MiB (413 when exceeded, 404 when the id or file is unavailable). Responses
+  never include a filename or path; the shared image-id validator is now used by
+  both the pnginfo and content routes.
+- Declared `read_image` across the Forge tool surface: TypeBox schema and tool
+  entry (`frontend/src/tools/forge-tools.ts`), Python validation
+  (`backend/prompt_agent/forge_tools.py`), and host executor
+  (`javascript/prompt_agent_02_resources.js`). The frontend now emits an image
+  content block for any read tool in an `IMAGE_RESULT_TOOLS` set (generate_image,
+  read_image).
+- Tests: `tests/test_prompt_agent_api.py` (base64 round-trip, bad input, missing
+  file/id), `tests/test_forge_tools.py` (validation, 15-name surface),
+  `tests/test_frontend_resources.js` (POST body), `frontend/tests/forge-tools.test.ts`
+  (image block), `frontend/tests/prompt-agent-controller.test.ts` (surface).
+- Extended acceptance `AGENT-TOOLS-001` (revision 9) with a `read_image` bullet
+  and updated the stale mapped tests.
+- Verification: `python -m unittest tests.test_forge_tools tests.test_prompt_agent_api
+  tests.test_image_index` passed (48 tests); rebuilt
+  `javascript/prompt_agent_90_ui.js`; `node --check
+  javascript/prompt_agent_02_resources.js` passed.
+
 
 
 

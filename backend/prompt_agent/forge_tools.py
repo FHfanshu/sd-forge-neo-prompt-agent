@@ -12,6 +12,7 @@ FORGE_TOOL_NAMES = (
     "generate_image",
     "list_recent_generations",
     "read_pnginfo",
+    "read_image",
     "search_resources",
     "inspect_resource",
     "search_danbooru_tags",
@@ -125,7 +126,7 @@ def validate_forge_tool_request(tool: str, payload: Any) -> dict[str, Any]:
         _bounded_integer(payload.get("limit", 8), "limit", 1, 20)
         if "include_grids" in payload and not isinstance(payload.get("include_grids"), bool):
             raise ForgeToolValidationError("include_grids must be a boolean")
-    elif tool == "read_pnginfo":
+    elif tool in ("read_pnginfo", "read_image"):
         _allow_keys(payload, {"image_id"})
         image_id = payload.get("image_id")
         if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
