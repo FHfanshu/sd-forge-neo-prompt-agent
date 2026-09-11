@@ -27,7 +27,6 @@ EXACT_E2E_PIXEL_RE = re.compile(r"expect\([^\n]*(?:\.x|\.y|\.width|\.height)\)\.
 AREAS = {"ui", "session", "agent", "provider", "lifecycle", "security", "data"}
 MANAGED_TEST_FILES = {
     "tests/test_forge_tools.py",
-    "tests/test_local_runtime.py",
     "tests/test_prompt_agent_api.py",
     "tests/test_prompt_agent_provider_adapters.py",
     "tests/test_security_boundaries.py",

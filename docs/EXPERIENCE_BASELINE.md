@@ -45,16 +45,12 @@ Defaults (`profile-adapter.ts`):
 - capabilities: all `true`.
 - parameters: temperature `0.25`, topP `0.9`, maxTokens `8192`,
   reasoningEffort `low`, timeout `180`, sanitizeSensitive `true`.
-- local: nCtx `16384`, nGpuLayers `-1`, thinking `false`,
-  unloadAfterTurn `false`, idleUnloadMinutes `30`.
 - modelInfo: source/providerId/matchedModelId/syncedAt empty,
   contextLimit `0`, outputLimit `0`, temperatureSupported `true`,
   reasoningToggle `false`, reasoningEfforts `[]`.
 - seeds: `gemini` (enabled, gemini-native, remote-http), `openai-compatible`
-  (disabled, vision false), `local-llama-once` (disabled, llama-once).
-  Built-in preset `deepseek-v4.1-flash`.
-- state: `activeProfileId`, `sessionProfileId` (llama-once only),
-  `namingProfileId` (llama-once only).
+  (disabled, vision false). Built-in preset `deepseek-v4.1-flash`.
+- state: `activeProfileId`.
 
 Save behavior (must be preserved, not simplified):
 - Field edits autosave: `update(patch)` -> `$useProfileStore.updateProfile`
@@ -77,9 +73,9 @@ expand action; "Default" = visible in the section's summary view.
 | `displayName` | "Model profile" | all | autosave | 连接与模型 | Default (config name) |
 | `enabled` | true (preset) | all | autosave | 连接与模型 | Default (status) |
 | `runtime` + `protocol` (connection type select) | remote-http / openai-chat-completions | all | autosave | 连接与模型 | Default |
-| `endpoint` | seed / `http://127.0.0.1:8080/v1` | remote-http (disabled for llama-once) | autosave | 连接与模型 | Default (address) |
+| `endpoint` | seed | remote-http | autosave | 连接与模型 | Default (address) |
 | `hasApiKey` + API key draft | false | remote-http | draft + Save | 连接与模型 | Default (credential status) |
-| `modelId` | "model"/"local-model" | all | autosave | 连接与模型 | Default (model select) |
+| `modelId` | "model" | all | autosave | 连接与模型 | Default (model select) |
 | test connection action | - | all | action | 连接与模型 | Default |
 | `fallbackEndpoints` | [] | remote-http | autosave | 连接与模型 | On-demand |
 | `capabilities.*` tools/vision/streaming | true | all | autosave | 连接与模型 | Default (short toggles) |
@@ -90,20 +86,13 @@ expand action; "Default" = visible in the section's summary view.
 | `parameters.topP` | 0.9 | remote | autosave | 回复偏好 | On-demand |
 | `parameters.timeout` | 180 | all | autosave | 高级 | On-demand |
 | `parameters.sanitizeSensitive` | true | all | autosave | 高级 | On-demand |
-| `localModelConfigured` (status) | false | llama-once | read-only | 本地运行 | Default (status) |
-| local paths `modelPath`/`mmprojPath`/`draftModelPath`/`llamaServerPath` | "" | llama-once | draft + Save | 本地运行 | Default (config status) |
-| `nCtx` | 16384 | llama-once | autosave | 本地运行 | On-demand |
-| `nGpuLayers` | -1 | llama-once | autosave | 本地运行 | On-demand |
-| `thinking` | false | llama-once | autosave | 本地运行 | On-demand |
-| `unloadAfterTurn` | false | llama-once | autosave | 本地运行 | On-demand |
-| `idleUnloadMinutes` | 30 | llama-once | autosave | 本地运行 | On-demand |
-| `mmprojConfigured`/`draftModelConfigured`/`llamaServerConfigured` | false | llama-once | read-only | 本地运行 | Default (config status) |
-| routes: active/session/naming profile | seed | all / llama-once | autosave | 高级 | On-demand |
+| routes: active profile | seed | all | autosave | 高级 | On-demand |
 | `modelInfo.*` (source/limits/efforts) | see defaults | all | sync + autosave | 高级 | On-demand (summary) |
 | agentGeneration toggle | on | UI pref (`useUiStore`) | local pref | 高级 | On-demand |
 | language, reset layouts, restore defaults | - | UI pref | local pref | 高级 | On-demand |
 
-No field is dropped. `modelInfo.temperatureSupported` continues to gate the
+Local-model fields were removed with the llama.cpp runtime; every remaining
+field is preserved. `modelInfo.temperatureSupported` continues to gate the
 temperature control; `modelInfo.reasoningEfforts`/`reasoningToggle` continue to
 drive the reasoning scale.
 

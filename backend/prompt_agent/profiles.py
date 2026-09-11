@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .migration import merge_legacy_state
-from .profile_contracts import LLAMA_ONCE, migrate_legacy_profile, normalize_profile, public_profile
+from .profile_contracts import migrate_legacy_profile, normalize_profile, public_profile
 from .secrets import protect_text, unprotect_text
 
 
@@ -120,17 +120,13 @@ class ProfileAuthority:
         return self.create(source)
 
     def set_default(self, role: str, profile_id: str) -> dict[str, Any]:
-        if role not in {"active", "session", "naming"}:
+        if role != "active":
             raise ValueError("invalid profile route role")
         state = self._load_state()
         item = next((profile for profile in state["profiles"] if profile["profile_id"] == profile_id), None)
         if item is None or not item.get("enabled", True):
             raise ValueError("profile must be enabled")
-        if role == "session" and item["runtime"] != LLAMA_ONCE:
-            raise ValueError("session profile must use a local runtime")
-        if role == "naming" and item["runtime"] != LLAMA_ONCE:
-            raise ValueError("naming profile must use llama-once")
-        state[f"{role}_profile_id"] = profile_id
+        state["active_profile_id"] = profile_id
         self._write(self.profiles_path, state)
         return self.list_state()
 
@@ -149,26 +145,12 @@ class ProfileAuthority:
 
     def _state_with_routes(self, source: dict[str, Any], profiles: list[dict[str, Any]]) -> dict[str, Any]:
         enabled = [item["profile_id"] for item in profiles if item.get("enabled", True)]
-        agent_profiles = [
-            item["profile_id"]
-            for item in profiles
-            if item.get("enabled", True)
-        ]
-        first = agent_profiles[0] if agent_profiles else ""
-        result = {"version": 1, "profiles": profiles}
-        for role in ("active", "session", "naming"):
-            value = str(source.get(f"{role}_profile_id") or source.get(f"{role}ProfileId") or "")
-            if role == "naming":
-                valid = value in enabled and next(item for item in profiles if item["profile_id"] == value).get("runtime") == LLAMA_ONCE
-                result[f"{role}_profile_id"] = value if valid else ""
-            elif role == "session":
-                local = [item["profile_id"] for item in profiles if item["profile_id"] in enabled and item.get("runtime") == LLAMA_ONCE]
-                result[f"{role}_profile_id"] = value if value in local else (local[0] if local else "")
-            elif role == "active":
-                result[f"{role}_profile_id"] = value if value in agent_profiles else first
-            else:
-                result[f"{role}_profile_id"] = value if value in enabled else first
-        return result
+        requested = str(source.get("active_profile_id") or source.get("activeProfileId") or "")
+        return {
+            "version": 1,
+            "profiles": profiles,
+            "active_profile_id": requested if requested in enabled else (enabled[0] if enabled else ""),
+        }
 
     def _load_state(self) -> dict[str, Any]:
         raw = self._read(self.profiles_path, self._default_state())
@@ -187,8 +169,6 @@ class ProfileAuthority:
         return {
             "version": 1,
             "active_profile_id": "openai-compatible",
-            "session_profile_id": "",
-            "naming_profile_id": "",
             "profiles": [normalize_profile({
                 "profile_id": "openai-compatible",
                 "display_name": "OpenAI-compatible",
@@ -202,16 +182,10 @@ class ProfileAuthority:
     @staticmethod
     def _public_state(state: dict[str, Any], profiles: list[dict[str, Any]]) -> dict[str, Any]:
         active = state.get("active_profile_id", "")
-        session = state.get("session_profile_id", "")
-        naming = state.get("naming_profile_id", "")
         return {
             "version": 2,
             "active_profile_id": active,
-            "session_profile_id": session,
-            "naming_profile_id": naming,
             "activeProfileId": active,
-            "sessionProfileId": session,
-            "namingProfileId": naming,
             "profiles": profiles,
         }
 

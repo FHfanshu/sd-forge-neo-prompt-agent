@@ -72,7 +72,7 @@ describe("Svelte chat surface", () => {
     expect(tool.compareDocumentPosition(response) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@12", "process", "keeps one chronological process timeline while recovered tool failures and cache usage stay scoped", async () => {
+  acceptanceTest("UI-FEEDBACK-001@13", "process", "keeps one chronological process timeline while recovered tool failures and cache usage stay scoped", async () => {
     const user = userEvent.setup();
     const messages = [
       mockMessages[0],
@@ -205,7 +205,7 @@ describe("Svelte chat surface", () => {
     expect(process?.querySelector(":scope > summary")).toHaveTextContent("Execution failed");
   });
 
-  acceptanceTest("UI-FEEDBACK-001@12", "streaming", "defers Markdown parsing while progressively revealing an assistant stream", async () => {
+  acceptanceTest("UI-FEEDBACK-001@13", "streaming", "defers Markdown parsing while progressively revealing an assistant stream", async () => {
     render(Surface, {
       initialOpen: true,
       messages: [{
@@ -600,7 +600,7 @@ describe("Svelte chat surface", () => {
     expect(newSession).toHaveBeenCalledOnce();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@12", "queue", "keeps the primary control stable, queues follow-ups, and exposes stop separately during an active request", async () => {
+  acceptanceTest("UI-FEEDBACK-001@13", "queue", "keeps the primary control stable, queues follow-ups, and exposes stop separately during an active request", async () => {
     const user = userEvent.setup();
     useChatStore.getState().beginRequest("active");
     useRuntimeStore.getState().setWorking("thinking");
@@ -634,7 +634,7 @@ describe("Svelte chat surface", () => {
     expect(stopRequest).toHaveBeenCalledOnce();
   });
 
-  acceptanceTest("UI-FEEDBACK-001@12", "submission", "acknowledges send immediately without swapping a stop control under the pointer", async () => {
+  acceptanceTest("UI-FEEDBACK-001@13", "submission", "acknowledges send immediately without swapping a stop control under the pointer", async () => {
     const user = userEvent.setup();
     let finishSend!: () => void;
     const sendMessage = vi.fn(() => new Promise<void>((resolve) => { finishSend = resolve; }));
@@ -667,16 +667,13 @@ describe("Svelte chat surface", () => {
     await waitFor(() => expect(send).toHaveAttribute("aria-busy", "false"));
   });
 
-  acceptanceTest("UI-FEEDBACK-001@12", "loading,recovery", "uses one automatically expanded process drawer for current assistant work", async () => {
+  acceptanceTest("UI-FEEDBACK-001@13", "loading,recovery", "uses one automatically expanded process drawer for current assistant work", async () => {
     useChatStore.getState().beginRequest("active");
     useRuntimeStore.getState().setWorking("submitting");
     const { container } = render(Surface, { initialOpen: true, actions: {} });
 
     expect(screen.getByText("Sending request…")).toBeInTheDocument();
     expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
-    useRuntimeStore.getState().setWorking("model-loading", "loading:7");
-    expect(await screen.findByText("Loading local model…")).toBeInTheDocument();
-    expect(screen.getByText("Starting llama.cpp and loading model weights · 7s")).toBeInTheDocument();
     useRuntimeStore.getState().setWorking("thinking");
     expect(await screen.findByText("Thinking…")).toBeInTheDocument();
     useChatStore.getState().appendMessage({ id: "assistant-active", role: "assistant", content: "", reasoning: "draft rationale", status: "streaming" });
@@ -784,7 +781,7 @@ describe("Svelte chat surface", () => {
     expect(composer?.querySelector(".pa-send-button")?.closest("form")).toBe(composer);
   });
 
-  acceptanceTest("UI-FEEDBACK-001@12", "context-usage", "shows the latest request input against the active model context window", () => {
+  acceptanceTest("UI-FEEDBACK-001@13", "context-usage", "shows the latest request input against the active model context window", () => {
     const profiles = useProfileStore.getState().profiles;
     const activeId = useProfileStore.getState().activeProfileId;
     useProfileStore.getState().setProfiles(profiles.map((profile) => profile.id === activeId

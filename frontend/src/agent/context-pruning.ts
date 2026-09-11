@@ -2,7 +2,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 
 const RECENT_TOOL_RESULTS = 6;
-const PROTECTED_ACTIVE_TOOLS = new Set(["load_skill", "edit_prompt", "apply_generation_parameters"]);
+const PROTECTED_ACTIVE_TOOLS = new Set(["load_skill", "load_tools", "edit_prompt", "apply_generation_parameters"]);
 const OLD_IMAGE_PLACEHOLDER = "[Earlier attached image omitted from the active model context.]";
 const TOOL_RESULT_PLACEHOLDER = "[Older tool result omitted from the active model context; newer steps are retained.]";
 

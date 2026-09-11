@@ -8,7 +8,6 @@ from ..contracts import StreamRequest
 from ..profile_contracts import GEMINI_NATIVE
 from .common import AdapterCapabilities, capability_report as build_capability_report
 from .gemini import GEMINI_CAPABILITIES, stream_gemini
-from .llama_cpp import LLAMA_CPP_CAPABILITIES, stream_llama_cpp
 from .openai_compatible import OPENAI_CAPABILITIES, stream_openai_compatible
 
 
@@ -29,7 +28,6 @@ class ProviderAdapter:
 ADAPTERS = {
     "openai-compatible": ProviderAdapter("openai-compatible", OPENAI_CAPABILITIES, stream_openai_compatible),
     "gemini": ProviderAdapter("gemini", GEMINI_CAPABILITIES, stream_gemini),
-    "llama-cpp": ProviderAdapter("llama-cpp", LLAMA_CPP_CAPABILITIES, stream_llama_cpp),
 }
 
 ALIASES = {
@@ -39,9 +37,6 @@ ALIASES = {
     "openrouter": "openai-compatible",
     "gemini": "gemini",
     "google": "gemini",
-    "llama": "llama-cpp",
-    "llama-cpp": "llama-cpp",
-    "llama.cpp": "llama-cpp",
 }
 
 
@@ -55,9 +50,6 @@ def provider_id_for(profile: dict[str, Any]) -> str:
         model_provider = str(model_info.get("provider_id", model_info.get("providerId", ""))).strip().lower()
     if model_provider in ALIASES:
         return ALIASES[model_provider]
-    runtime = str(profile.get("runtime") or "")
-    if runtime.startswith("llama"):
-        return "llama-cpp"
     protocol = str(profile.get("protocol") or "")
     if protocol == GEMINI_NATIVE:
         return "gemini"

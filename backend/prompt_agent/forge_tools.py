@@ -35,8 +35,6 @@ _FORBIDDEN_KEYS = frozenset({
     "mmproj_path",
     "draft_model_path",
     "mmprojpath",
-    "llama_server_path",
-    "llamaserverpath",
 })
 _LOCAL_PATH_RE = re.compile(r"(?:^[A-Za-z]:[\\/]|^\\\\|^/|^\.?\.?[\\/]|\.gguf$|\.safetensors$)", re.IGNORECASE)
 _PATCH_OPERATIONS = frozenset({

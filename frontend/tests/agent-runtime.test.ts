@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { PiPromptAgentRuntime } from "../src/agent/agent-runtime";
 import { toPromptAgentModel } from "../src/providers/proxy-model";
+import { createForgeToolRegistry } from "../src/tools/tool-registry";
 import { acceptanceTest } from "./acceptance";
 
 const model = toPromptAgentModel({
@@ -113,7 +114,34 @@ describe("PiPromptAgentRuntime", () => {
     runtime.destroy();
   });
 
-  acceptanceTest("AGENT-TOOLS-001@12", "parallel-reads,serialized-writes", "runs independent read batches concurrently while serializing any batch that contains a write", async () => {
+  acceptanceTest("AGENT-TOOLS-001@13", "on-demand-reveal", "keeps grouped tools hidden until load_tools reveals them", async () => {
+    const registry = createForgeToolRegistry({ host: () => null });
+    const seen: string[][] = [];
+    let call = 0;
+    const streamFn: StreamFn = (activeModel, context) => {
+      seen.push((context.tools ?? []).map((tool) => tool.name));
+      call += 1;
+      return call === 1
+        ? streamMessage(activeModel as typeof model, [{ type: "toolCall", id: "load-tools-1", name: "load_tools", arguments: { groups: ["danbooru"] } }], "toolUse")
+        : streamMessage(activeModel as typeof model, [{ type: "text", text: "done" }]);
+    };
+    const runtime = new PiPromptAgentRuntime({
+      model,
+      streamFn,
+      tools: registry.list(),
+      initialTools: registry.core(),
+    });
+    await runtime.submit({ text: "Find a Danbooru tag" });
+    expect(seen[0]).toContain("load_tools");
+    expect(seen[0]).not.toContain("search_danbooru_tags");
+    expect(seen[1]).toContain("search_danbooru_tags");
+    expect(seen[1]).toContain("inspect_danbooru_tags");
+    expect(seen[1]).toContain("inspect_danbooru_wikis");
+    expect(runtime.getTools().map((tool) => tool.name)).toContain("related_danbooru_tags");
+    runtime.destroy();
+  });
+
+  acceptanceTest("AGENT-TOOLS-001@13", "parallel-reads,serialized-writes", "runs independent read batches concurrently while serializing any batch that contains a write", async () => {
     async function peakConcurrency(modes: Array<"parallel" | "sequential">): Promise<number> {
       let turn = 0;
       let active = 0;

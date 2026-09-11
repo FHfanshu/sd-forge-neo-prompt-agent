@@ -42,23 +42,23 @@ const defaultMetadata: Record<LocaleCode, RuntimeLocaleMetadata> = {
 const localFallbackMessages: Record<LocaleCode, Record<string, string>> = {
   en: {
     "profiles.tab.model": "Model", "profiles.tab.routes": "Routes", "profiles.tab.interface": "Interface", "profiles.advanced_tabs": "Advanced profile settings",
-    "profiles.routes.title": "Routing", "profiles.routes.hint": "Choose which enabled profile handles each assistant role.", "profiles.active_profile": "Active profile", "profiles.route.active.hint": "Used for the main chat route", "profiles.route.naming.hint": "Creates titles with a llama-once profile", "profiles.role.naming.short": "N",
-    "profiles.api_key.stored": "Stored securely", "profiles.api_key.placeholder": "Paste an API key", "profiles.model_path.empty": "Model path not configured", "profiles.resize": "Resize profile window",
+    "profiles.routes.title": "Routing", "profiles.routes.hint": "Choose which enabled profile handles each assistant role.", "profiles.active_profile": "Active profile", "profiles.route.active.hint": "Used for the main chat route",
+    "profiles.api_key.stored": "Stored securely", "profiles.api_key.placeholder": "Paste an API key", "profiles.resize": "Resize profile window",
     "profiles.delete.confirm_action": "Delete profile", "profiles.restore.confirm_action": "Restore defaults", "common.cancel": "Cancel",
     "profiles.agent_generation.on": "Agent image generation: on", "profiles.agent_generation.off": "Agent image generation: off",
     "profiles.interface.hint": "Tune the floating windows without changing chat content.", "profiles.interface.layouts": "Window layouts", "profiles.interface.layouts_hint": "Reset both chat and profile window positions and sizes to their defaults.", "profiles.interface.reset": "Reset window layouts", "profiles.interface.mobile": "Mobile resize hint", "profiles.interface.mobile_hint": "Drag the corner to resize on mobile",     "profiles.interface.dismiss_hint": "Dismiss", "profiles.interface.hint_seen": "Dismissed",
-    "profiles.section.connection_model": "Connection & model", "profiles.section.response": "Response preferences", "profiles.section.local": "Local runtime", "profiles.section.advanced": "Advanced",
-    "profiles.more.connection": "More connection settings", "profiles.more.response": "More response settings", "profiles.more.local": "More local settings", "profiles.more.advanced": "Advanced settings",
+    "profiles.section.connection_model": "Connection & model", "profiles.section.response": "Response preferences", "profiles.section.advanced": "Advanced",
+    "profiles.more.connection": "More connection settings", "profiles.more.response": "More response settings", "profiles.more.advanced": "Advanced settings",
   },
   "zh-CN": {
     "profiles.tab.model": "模型", "profiles.tab.routes": "路由", "profiles.tab.interface": "界面", "profiles.advanced_tabs": "高级模型设置",
-    "profiles.routes.title": "路由分配", "profiles.routes.hint": "为每个助手角色选择启用的模型配置。", "profiles.active_profile": "主模型", "profiles.route.active.hint": "用于主要对话路由", "profiles.route.naming.hint": "使用 llama-once 模型生成标题", "profiles.role.naming.short": "命",
-    "profiles.api_key.stored": "已安全保存", "profiles.api_key.placeholder": "粘贴 API Key", "profiles.model_path.empty": "尚未配置模型路径", "profiles.resize": "调整模型配置窗口大小",
+    "profiles.routes.title": "路由分配", "profiles.routes.hint": "为每个助手角色选择启用的模型配置。", "profiles.active_profile": "主模型", "profiles.route.active.hint": "用于主要对话路由",
+    "profiles.api_key.stored": "已安全保存", "profiles.api_key.placeholder": "粘贴 API Key", "profiles.resize": "调整模型配置窗口大小",
     "profiles.delete.confirm_action": "删除配置", "profiles.restore.confirm_action": "恢复默认配置", "common.cancel": "取消",
     "profiles.agent_generation.on": "Agent 自动出图：开", "profiles.agent_generation.off": "Agent 自动出图：关",
     "profiles.interface.hint": "调整浮动窗口，不会改变对话内容。", "profiles.interface.layouts": "窗口布局", "profiles.interface.layouts_hint": "将聊天窗口和模型配置窗口的位置与大小恢复为默认值。", "profiles.interface.reset": "重置窗口布局", "profiles.interface.mobile": "移动端调整提示", "profiles.interface.mobile_hint": "拖动窗口角落调整移动端大小",     "profiles.interface.dismiss_hint": "关闭提示", "profiles.interface.hint_seen": "已关闭",
-    "profiles.section.connection_model": "连接与模型", "profiles.section.response": "回复偏好", "profiles.section.local": "本地运行", "profiles.section.advanced": "高级",
-    "profiles.more.connection": "更多连接设置", "profiles.more.response": "更多回复设置", "profiles.more.local": "更多本地设置", "profiles.more.advanced": "高级设置",
+    "profiles.section.connection_model": "连接与模型", "profiles.section.response": "回复偏好", "profiles.section.advanced": "高级",
+    "profiles.more.connection": "更多连接设置", "profiles.more.response": "更多回复设置", "profiles.more.advanced": "高级设置",
   },
 };
 

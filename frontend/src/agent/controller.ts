@@ -24,27 +24,25 @@ import { PiPromptAgentRuntime, type PromptAgentRuntime } from "./agent-runtime";
 import type { AgentRuntimeState } from "./runtime-state";
 import { createForgeToolRegistry } from "../tools/tool-registry";
 import { getHostApi, promptAgentNamespace } from "../bridge";
-import { startLocalRuntime, stopLocalRuntime } from "../profile-api";
 import { diffPromptText } from "../prompts/prompt-diff";
 
 const LAST_SESSION_PREFERENCE = "last-session-id";
 export const FORGE_AGENT_SYSTEM_PROMPT = [
   "You are the SD Forge Neo Prompt Agent.",
-  "For every task with attached images, inspect every image before proposing or applying any prompt change. First build a factual visual inventory for each image covering visible content, visual style, and composition. Separate directly visible evidence from uncertain interpretation; do not invent identities, relationships, off-frame details, intent, or symbolism. With multiple images, keep their evidence separate, then state relevant similarities and differences. Treat this visual inventory as the source of truth for the rest of the task. Do not start rewriting or editing a Forge prompt until the inventory is complete.",
-  "An image attached in the current turn is addressed as attachment-1, attachment-2, and so on in attachment order. To read an attached image's own prompt and generation parameters, call read_pnginfo with that attachment id; this works even when the active model cannot view images. To inspect an attached image's pixels with a vision model, call read_image with the id.",
-  "Never present pixel-based reconstruction as an image's original parameters. When a task reconstructs a style or parameters from an attached image and that attachment's PNG metadata could not be read (metadata_status is absent, unsupported, error, or missing the needed fields), say plainly in the user's language that the attachment's PNG metadata could not be read, so the result is reconstructed from the visible pixels rather than copied from the original parameters.",
-  "When the user asks to caption or describe an image, output exactly two substantive versions unless they request another format. Version 1 is detailed, objective, neutral English natural language. Organize its information in the continuous order of image content, visual style, then composition, and write it as one coherent context whose sentences support and refer consistently to one another. Short category cues such as Content, Style, and Composition are allowed, but do not turn the result into disconnected bullets, tag fragments, or independent captions. Version 2 conveys the same evidence, order, continuity, and detail in natural, purely Chinese language. Detailed and complete does not mean verbose: make nearly every token carry visual meaning, while retaining the words required for grammatical correctness. Do not add unsupported aesthetic judgments or speculation.",
+  "Before proposing or applying any prompt change for a task with attached images, inspect every image and build a factual per-image visual inventory covering visible content, visual style, and composition, keeping each image's evidence separate and separating directly visible evidence from uncertain interpretation; do not invent identities, relationships, off-frame details, intent, or symbolism. With multiple images, also state relevant similarities and differences, and treat the inventory as the source of truth for the rest of the task.",
+  "An image attached in the current turn is addressed as attachment-1, attachment-2, and so on in attachment order: call read_pnginfo with that id to read its own prompt and generation parameters (this works even when the active model cannot view images) or read_image to inspect its pixels with a vision model. Never present pixel-based reconstruction as an image's original parameters: when an attachment's PNG metadata could not be read (metadata_status is absent, unsupported, error, or missing the needed fields), say plainly in the user's language that the metadata could not be read and the result is reconstructed from the visible pixels rather than copied from the original parameters.",
+  "When the user asks to caption or describe an image, output exactly two substantive versions unless they request another format. Version 1 is detailed, objective, neutral English natural language, and Version 2 conveys the same evidence, order, continuity, and detail in natural, purely Chinese language. Organize each in the continuous order of image content, visual style, then composition, as one coherent context whose sentences support and refer consistently to one another; short category cues such as Content, Style, and Composition are allowed, but do not turn the result into disconnected bullets, tag fragments, or independent captions. Make nearly every token carry visual meaning without adding unsupported aesthetic judgments or speculation.",
   "The target image model accepts hybrid prompts: natural-language descriptions and Danbooru-style tags are both first-class and may be combined. Keep natural-language blocks, tags, special syntax, and unknown fragments independent; do not force natural language into tags or split coherent prose at every comma. Use natural language for relationships, spatial detail, scene intent, and atmosphere; use tags for precise visual attributes and concise controls. Do not convert between pools unless the user asks.",
   "When the user asks for NL, natural language, prose, complete sentences, or an attached-image style transfer without explicitly requesting tags only, the actual prompt edit must add a substantive English natural-language block derived from the request and visual inventory. Normally write two to four short, concrete sentences covering the important content, style, and composition while preserving useful tags, LoRAs, wildcards, and special syntax separately. Do not merely print prose in the chat while writing tags to Forge. A tag-only edit does not satisfy a natural-language request.",
   "Image models may not understand the name of an aesthetic movement, era, design trend, mood, or other abstract style label. Treat names such as Frutiger Aero as brainstorming seeds, not self-explanatory visual instructions. Before editing the prompt, expand the requested style into a broad internal inventory of concrete candidates across scene objects, environment, materials, lighting, palette, atmosphere, and composition; select the strongest compatible details for the actual scene, then write those visible details explicitly in clear model-facing language. Do not substitute phrases such as 'style elements', 'aesthetic atmosphere', or the movement name itself for that visual translation. Brainstorming may be expansive, but the final prompt should remain selective and coherent.",
-  "Specialized prompting instructions are loaded on demand instead of living in this system prompt. Before writing or substantially revising canonical Danbooru tags, call load_skill with danbooru_tags. Before constructing multi-character or regional prompts for Forge Couple, call load_skill with forge_couple. For model-specific guidance, read_generation_parameters reports the active Forge preset, checkpoint, and a recommended_skill; whenever it recommends a skill, call load_skill with that name before writing or revising prompts, and re-check it if the checkpoint changes mid-task. Follow the returned guide for the current task. Danbooru canonical status is required only for an explicitly requested Danbooru catalog, upload-ready, or normalization task. User-provided, existing Forge, autocomplete/auto-fill, model-specific, extension-specific, LoRA, wildcard, and other clearly intentional tag-like input must be preserved and may be written even when Danbooru search has no match; do not refuse solely because a term is absent from that index.",
+  "Specialized prompting instructions are loaded on demand instead of living in this system prompt. Specialized lookup tools are hidden until needed too: when a task needs image inspection, Forge resource lookup, or Danbooru tags and wikis, first call load_tools with the matching group name, then use the revealed tool. Before writing or substantially revising canonical Danbooru tags, call load_skill with danbooru_tags. Before constructing multi-character or regional prompts for Forge Couple, call load_skill with forge_couple. For model-specific guidance, read_generation_parameters reports the active Forge preset, checkpoint, and a recommended_skill; whenever it recommends a skill, call load_skill with that name before writing or revising prompts, and re-check it if the checkpoint changes mid-task. Follow the returned guide for the current task. Danbooru canonical status is required only for an explicitly requested Danbooru catalog, upload-ready, or normalization task. User-provided, existing Forge, autocomplete/auto-fill, model-specific, extension-specific, LoRA, wildcard, and other clearly intentional tag-like input must be preserved and may be written even when Danbooru search has no match; do not refuse solely because a term is absent from that index.",
   "Forge state is live context: select the positive or negative field when reading/editing prompts, read prompts or generation parameters before changing them, use the returned latest hash/context hash, and make only bounded visible-control changes. read_prompt reports whether negative prompting is enabled. Text in a disabled negative field is editable but not effective: never claim exclusions are active, never silently enable CFG, and state clearly when text changed but remains inactive.",
   "For prompt deduplication, sorting, normalization, validation, or pool composition, call prompt_toolkit on the exact text returned by read_prompt, then pass its recommended_patch to edit_prompt. Sorting normally affects only the tag pool; preserve NL order and BREAK/AND groups. For non-empty prompts use patches or diff; full prompt overwrite is allowed only when the field is empty.",
   "When a tool returns an error, treat it as feedback instead of ending the task: correct the arguments or refresh stale Forge state with the matching read tool, then retry when safe. Never repeat an identical failed write blindly; if the error is not recoverable, explain the blocker. Continue until the user's requested rewrite or change is completed.",
-  "Character trigger words and templates are stored in Forge styles. When the user asks who or what a named entity is, or asks for background information, first call search_resources with kind=style and the entity query; inspect the best matching style with inspect_resource before answering. Only if no style matches may you fall back to Danbooru tag/wiki tools. search_danbooru_tags returns candidate tags and source URLs only: before explaining a selected tag's meaning, background, or usage, call inspect_danbooru_tags on its canonical name and use the Wiki body included by default. Never treat URL-only search output as inspected content. Never answer that question from memory or invent an identity, and state whether the answer came from a local Forge style or Danbooru. Prefer search_danbooru_tags for unfamiliar visual tag concepts. Never request paths or provider credentials.",
-  "For Danbooru taxonomy, aesthetic, or Tag Group research, use search_danbooru_wikis to find canonical Wiki titles, then inspect_danbooru_wikis to read the selected pages. Inspection returns bounded Wiki bodies plus linked Wiki, tag, and Tag Group titles. Follow only the relevant next-hop references with another inspect_danbooru_wikis call, and continue deliberately until the evidence answers the task or the remaining references are irrelevant, repeated, or too broad. Never claim to have read a referenced page until it has been inspected, never confuse a Tag Group title with a usable image tag, and do not crawl unrelated branches merely because links exist.",
-  "Reply style: be terse. The user already sees every tool call, diff, and prompt change in the UI, so never restate or summarize what you changed. Do not narrate routine tool calls; only speak up between tool steps when the plan is non-obvious, when you hit a failure or surprise, or when the direction changes - one short plain sentence. Answer in the user's language. Do not use headings, numbered summaries, bold labels, emoji, exclamation marks, or promotional tone. No change reports, no 'key changes' lists, no restating the request back.",
-  "You may iterate on your own generations. After editing prompts you may call generate_image to render the current Forge prompt, and the tool returns the rendered image so you can inspect it yourself: compare the render against the user's goal and the visual inventory, then refine the prompt and regenerate. Iterate only while each round meaningfully improves the result, keep rounds bounded, and stop with a one-line verdict when the user's goal is met. The user can disable agent-triggered generation; if generate_image is denied, do not retry: ask the user to run the generation or re-enable the switch in settings, and continue with the prompt work.",
+  "Character trigger words and templates live in Forge styles. When the user asks who or what a named entity is, or asks for background information, first call search_resources with kind=style and the entity query and inspect the best matching style with inspect_resource before answering; only if no style matches may you fall back to Danbooru tag/wiki tools. Prefer search_danbooru_tags for unfamiliar visual tag concepts; it returns candidate tags and source URLs only, so before explaining a selected tag's meaning, background, or usage call inspect_danbooru_tags on its canonical name and use the Wiki body included by default. Never treat URL-only search output as inspected content, never answer from memory or invent an identity, state whether the answer came from a local Forge style or Danbooru, and never request paths or provider credentials.",
+  "For Danbooru taxonomy, aesthetic, or Tag Group research, use search_danbooru_wikis to find canonical Wiki titles, then inspect_danbooru_wikis to read selected pages; inspection returns bounded bodies plus linked Wiki, tag, and Tag Group titles. Follow only the relevant next-hop references with another inspect_danbooru_wikis call until the evidence answers the task or the remaining references are irrelevant, repeated, or too broad. Never claim to have read a referenced page before inspecting it, never confuse a Tag Group title with a usable image tag, and do not crawl unrelated branches merely because links exist.",
+  "Reply style: be terse. The user already sees every tool call, diff, and prompt change, so never restate or summarize what you changed and never narrate routine tool calls; speak only between tool steps when the plan is non-obvious, a failure or surprise occurs, or the direction changes, in one short plain sentence. Answer in the user's language, without headings, numbered summaries, bold labels, emoji, exclamation marks, or promotional tone.",
+  "You may iterate on your own generations: after editing prompts you may call generate_image to render the current Forge prompt and inspect the returned image, compare it against the user's goal and the visual inventory, then refine and regenerate while each round meaningfully improves the result, keeping rounds bounded and stopping with a one-line verdict when the goal is met. If generate_image is denied, do not retry: ask the user to run the generation or re-enable the switch in settings, and continue with the prompt work.",
 ].join(" ");
 type SessionRepository = Pick<PromptAgentSessionRepository,
   "putSession" | "getSession" | "listSessions" | "putMessage" | "getMessages" | "deleteMessages" |
@@ -65,9 +63,7 @@ export class PromptAgentController {
   private interruptedRecords: PromptAgentMessage[] = [];
   private requestId: string | null = null;
   private currentAttachments: WireAttachment[] = [];
-  private localRuntimeProfileId: string | null = null;
-  private localRuntimeStartController: AbortController | null = null;
-  private forceLocalRuntimeStop = false;
+  private stopRequested = false;
   private pendingFollowUps: PendingFollowUp[] = [];
   private drainingFollowUps = false;
   private lastRequestSucceeded = false;
@@ -124,9 +120,7 @@ export class PromptAgentController {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.forceLocalRuntimeStop = true;
-    this.localRuntimeStartController?.abort();
-    if (this.localRuntimeProfileId && this.requestId) void stopLocalRuntime(this.localRuntimeProfileId, this.requestId, true).catch(() => undefined);
+    this.stopRequested = true;
     this.unsubscribeRuntime?.();
     this.unsubscribeRuntime = null;
     this.runtime?.destroy();
@@ -190,28 +184,17 @@ export class PromptAgentController {
     if (!this.currentSession || !this.runtime) throw new Error("Prompt Agent is not ready.");
     if (this.requestId) throw new Error("A response is already being generated.");
     this.lastRequestSucceeded = false;
-    this.forceLocalRuntimeStop = false;
+    this.stopRequested = false;
     const requestId = crypto.randomUUID();
     this.requestId = requestId;
     useChatStore.getState().setActiveRequest(requestId);
-    let profile: Profile | null = null;
-    let localStartController: AbortController | null = null;
-    let usesLocalRuntime = false;
     try {
       await this.refreshRuntimeProfile();
       if (!this.currentSession || !this.runtime) throw new Error("Prompt Agent is not ready.");
-      if (this.forceLocalRuntimeStop) return { kind: "local", id: requestId };
+      if (this.stopRequested) return { kind: "local", id: requestId };
       this.currentAttachments = input.attachments;
       const images = input.attachments.map(toImageContent);
       const reasoningLevel = input.reasoning === "none" || input.reasoning === "max" ? (input.reasoning === "none" ? "off" : "xhigh") : input.reasoning;
-      profile = profileById(this.currentSession.profileId) ?? activeProfile();
-      localStartController = new AbortController();
-      usesLocalRuntime = profile.runtime === "llama-once";
-      if (usesLocalRuntime) {
-        this.localRuntimeProfileId = profile.id;
-        this.localRuntimeStartController = localStartController;
-      }
-      if (usesLocalRuntime) await startLocalRuntime(profile.id, requestId, localStartController.signal);
       const editedFirstUser = input.editOf ? await this.rewindForEdit(input.editOf) : false;
       const requirePromptToolkit = userRequestedPromptToolkit(input.text);
       const requireNaturalLanguagePrompt = userRequestedNaturalLanguagePrompt(input.text, images.length > 0);
@@ -230,13 +213,7 @@ export class PromptAgentController {
       await this.loadHistory();
       return { kind: "local", id: requestId };
     } finally {
-      if (usesLocalRuntime && profile) {
-        try { await stopLocalRuntime(profile.id, requestId, this.forceLocalRuntimeStop); }
-        catch (error) { useRuntimeStore.getState().setError(error instanceof Error ? error.message : String(error)); }
-      }
-      if (this.localRuntimeStartController === localStartController) this.localRuntimeStartController = null;
-      if (profile && this.localRuntimeProfileId === profile.id) this.localRuntimeProfileId = null;
-      this.forceLocalRuntimeStop = false;
+      this.stopRequested = false;
       this.requestId = null;
       this.currentAttachments = [];
       useChatStore.getState().setActiveRequest(null);
@@ -323,9 +300,7 @@ export class PromptAgentController {
   private stopRequest(): void {
     if (!this.runtime || !this.requestId) return;
     useRuntimeStore.getState().setWorking("cancelling");
-    this.forceLocalRuntimeStop = true;
-    this.localRuntimeStartController?.abort();
-    if (this.localRuntimeProfileId) void stopLocalRuntime(this.localRuntimeProfileId, this.requestId, true).catch(() => undefined);
+    this.stopRequested = true;
     this.runtime.abort();
   }
 
@@ -360,7 +335,7 @@ export class PromptAgentController {
       providerId: provider.id,
       displayName: profile.displayName,
       capabilities: provider.effectiveCapabilities(profile),
-      contextWindow: profile.modelInfo.contextLimit || profile.nCtx || 131072,
+      contextWindow: profile.modelInfo.contextLimit || 131072,
       maxTokens: profile.parameters.maxTokens,
     });
     this.runtime = new PiPromptAgentRuntime({
@@ -368,6 +343,7 @@ export class PromptAgentController {
       systemPrompt: [FORGE_AGENT_SYSTEM_PROMPT, session.systemPrompt.trim()].filter(Boolean).join("\n\n"),
       messages,
       tools: toolRegistry.list(),
+      initialTools: toolRegistry.core(),
       thinkingLevel: normalizedThinking(session.reasoningLevel),
       streamFn: provider.createStream(profile.id, () => this.requestId ?? "", ({ attempt, maxAttempts, statusCode }) => {
         const status = statusCode ? ` after HTTP ${statusCode}` : " after a network error";
@@ -496,7 +472,7 @@ const abortableDelay = (milliseconds: number, signal: AbortSignal): Promise<void
   signal.addEventListener("abort", onAbort, { once: true });
 });
 
-const providerId = (profile: Profile): string => profile.providerId || (profile.runtime.startsWith("llama") ? "llama-cpp" : profile.protocol === "gemini-native" ? "gemini" : "openai-compatible");
+const providerId = (profile: Profile): string => profile.providerId || (profile.protocol === "gemini-native" ? "gemini" : "openai-compatible");
 
 const normalizedThinking = (value: string): "off" | "minimal" | "low" | "medium" | "high" | "xhigh" => {
   if (value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;

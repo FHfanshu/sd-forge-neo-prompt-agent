@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from .profile_contracts import LLAMA_ONCE, migrate_legacy_profile, normalize_profile
+from .profile_contracts import migrate_legacy_profile, normalize_profile
 
 
 def merge_legacy_state(
@@ -79,24 +79,12 @@ def _with_routes(
     enabled = [item["profile_id"] for item in profiles if item.get("enabled", True)]
     enabled_set = set(enabled)
     first_enabled = enabled[0] if enabled else ""
-    result = {"version": 1, "profiles": profiles}
-    for role in ("active", "session", "naming"):
-        requested = _route_value(imported_state, role)
-        if not requested:
-            requested = _route_value(current_state, role)
-        if role == "naming":
-            valid = requested in enabled_set and _profile(profiles, requested).get("runtime") == LLAMA_ONCE
-            result[f"{role}_profile_id"] = requested if valid else ""
-        elif role == "session":
-            local = [
-                item["profile_id"]
-                for item in profiles
-                if item.get("enabled", True) and item.get("runtime") == LLAMA_ONCE
-            ]
-            result[f"{role}_profile_id"] = requested if requested in local else (local[0] if local else "")
-        else:
-            result[f"{role}_profile_id"] = requested if requested in enabled_set else first_enabled
-    return result
+    requested = _route_value(imported_state, "active") or _route_value(current_state, "active")
+    return {
+        "version": 1,
+        "profiles": profiles,
+        "active_profile_id": requested if requested in enabled_set else first_enabled,
+    }
 
 
 def _route_value(state: dict[str, Any], role: str) -> str:
@@ -104,7 +92,3 @@ def _route_value(state: dict[str, Any], role: str) -> str:
     if value is None:
         value = state.get(f"{role}ProfileId")
     return str(value or "")
-
-
-def _profile(profiles: list[dict[str, Any]], profile_id: str) -> dict[str, Any]:
-    return next(item for item in profiles if item["profile_id"] == profile_id)

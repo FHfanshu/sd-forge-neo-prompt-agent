@@ -109,11 +109,10 @@
     },
     {
       "id": "UI-FEEDBACK-001",
-      "revision": 12,
+      "revision": 13,
       "area": "ui",
       "title": "Compact lifecycle and process feedback",
       "acceptance": [
-        "On-demand local model startup shows a distinct loading phase and elapsed time.",
         "Completion, failure, and cancellation clear the loading state without leaving the composer disabled.",
         "Each user turn presents one final assistant response and one process drawer whose reasoning, intermediate responses, and tools remain in original runtime message order. While work is active, that drawer opens automatically, contains the current working status, and is the only top-level disclosure control; after completion it returns to a collapsed summary. Tool disclosures expand only their own details, terminal turn failure marks the whole drawer as failed, and recovered tool failure remains scoped to that tool.",
         "The chat transcript is one continuous borderless reading surface: assistant responses, the process drawer, expanded reasoning, and tool results use spacing and typography instead of nested card borders, decorative horizontal rules, or vertical rails.",
@@ -124,7 +123,6 @@
         "The composer shows a compact context meter using the latest provider request input against the active model context limit. Per-turn process usage also reports the latest request rather than summing internal agent iterations and presenting that sum as current context."
       ],
       "required_scenarios": [
-        "loading",
         "recovery",
         "process",
         "submission",
@@ -133,7 +131,6 @@
         "context-usage"
       ],
       "paths": [
-        "backend/prompt_agent/local_runtime.py",
         "frontend/src/agent/controller.ts",
         "frontend/src/components/ProcessDrawer.svelte",
         "frontend/src/components/ContextMeter.svelte",
@@ -144,8 +141,7 @@
         "frontend/src/styles.css",
         "frontend/tests/style-tokens.test.ts",
         "frontend/tests/markdown.test.ts",
-        "frontend/tests/surface.test.ts",
-        "tests/test_local_runtime.py"
+        "frontend/tests/surface.test.ts"
       ],
       "assertion_policy": "Assert immediate user-visible submission feedback, stable control semantics, latest-request context usage, terminal recovery, and later usability; do not depend on polling counts, exact timing, or private promise ordering."
     },
@@ -252,11 +248,12 @@
     },
     {
       "id": "AGENT-TOOLS-001",
-      "revision": 12,
+      "revision": 13,
       "area": "agent",
       "title": "Forge tool authority and freshness",
       "acceptance": [
         "The agent receives only the declared Forge tool surface.",
+        "The declared Forge tool surface is disclosed progressively: the core prompt, generation, toolkit, and skill tools are always provided, while image inspection, Forge resource, and Danbooru tag and wiki tools stay hidden until the agent calls load_tools with the matching group; a revealed group becomes callable from the next turn and stays revealed for the session.",
         "Browser tool arguments are revalidated by Python.",
         "Prompt and generation mutations require fresh hashes.",
         "The declared Forge tool surface includes generate_image, which runs one bounded txt2img/img2img generation on demand and returns the fresh render as image content for the agent to inspect.",
@@ -272,6 +269,7 @@
       ],
       "required_scenarios": [
         "surface",
+        "on-demand-reveal",
         "revalidation",
         "freshness",
         "parallel-reads",
@@ -301,11 +299,11 @@
     },
     {
       "id": "PROVIDER-TOOLS-001",
-      "revision": 2,
+      "revision": 3,
       "area": "provider",
       "title": "Provider-native tool execution contract",
       "acceptance": [
-        "OpenAI-compatible, Gemini Native, and one-shot llama.cpp requests use their native forced-tool format.",
+        "OpenAI-compatible and Gemini Native requests use their native forced-tool format.",
         "Tool-call streams normalize to one frontend event contract.",
         "Cancellation closes upstream work."
       ],
@@ -321,29 +319,6 @@
         "tests/test_prompt_agent_provider_adapters.py"
       ],
       "assertion_policy": "Provider wire fields are contractual; request ordering outside the protocol is not."
-    },
-    {
-      "id": "LOCAL-RUNTIME-001",
-      "revision": 1,
-      "area": "lifecycle",
-      "title": "On-demand llama.cpp lifecycle",
-      "acceptance": [
-        "Runtime status exposes only idle, loading, ready, or failed plus elapsed time.",
-        "Force stop during loading reclaims the process.",
-        "Status and stop responses do not expose local paths or endpoints."
-      ],
-      "required_scenarios": [
-        "loading",
-        "abort",
-        "privacy"
-      ],
-      "paths": [
-        "backend/prompt_agent/local_runtime.py",
-        "backend/prompt_agent/app.py",
-        "frontend/src/profile-api.ts",
-        "tests/test_local_runtime.py"
-      ],
-      "assertion_policy": "Assert lifecycle phases, process reclamation, and safe public projection."
     },
     {
       "id": "SECURITY-PRIVACY-001",

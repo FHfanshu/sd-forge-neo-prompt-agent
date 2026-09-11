@@ -2,6 +2,8 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createForgeAgentTools, type ForgeAgentTool, type ForgeToolFactoryOptions, type ForgeToolName, forgeToolPermission } from "./forge-tools";
 import { createPromptToolkitTool } from "./prompt-toolkit";
 import { createLoadSkillTool } from "./load-skill";
+import { createLoadToolsTool } from "./load-tools";
+import { CORE_TOOL_NAMES } from "./tool-groups";
 
 export interface ToolExecutionContext {
   sessionId: string;
@@ -27,6 +29,11 @@ export class PromptAgentToolRegistry {
     return [...this.tools.values()];
   }
 
+  core(): AgentTool<any>[] {
+    const core = new Set<string>(CORE_TOOL_NAMES);
+    return this.list().filter((tool) => core.has(tool.name));
+  }
+
   permission(name: string): "read" | "write" | null {
     const tool = this.tools.get(name) as ForgeAgentTool | undefined;
     return tool?.permission ?? forgeToolPermission(name);
@@ -38,6 +45,7 @@ export function createForgeToolRegistry(options: ForgeToolFactoryOptions = {}): 
   for (const tool of createForgeAgentTools(options)) registry.register(tool);
   registry.register(createPromptToolkitTool());
   registry.register(createLoadSkillTool({ host: options.host }));
+  registry.register(createLoadToolsTool({ resolveTools: () => registry.list() }));
   return registry;
 }
 

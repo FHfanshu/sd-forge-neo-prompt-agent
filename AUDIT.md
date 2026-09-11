@@ -658,6 +658,115 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   `javascript/prompt_agent_90_ui.js`; `node --check
   javascript/prompt_agent_02_resources.js` passed.
 
+## 2026-09-11 Progressive tool disclosure
+- Problem: every provider request carried all 17 agent tools, so low-frequency
+  lookups (image inspection, Forge resources, Danbooru tags/wikis) spent context
+  on schemas and diluted tool selection.
+- Change: grouped on-demand reveal. `frontend/src/tools/tool-groups.ts` defines
+  the always-on core (read_prompt, edit_prompt, read_generation_parameters,
+  apply_generation_parameters, generate_image, prompt_toolkit, load_skill) plus
+  the groups image, forge_resources, and danbooru.
+  `frontend/src/tools/load-tools.ts` adds a `load_tools` meta-tool that returns
+  the full definitions for the requested groups. `tool-registry.ts` registers it
+  and exposes `core()`. `agent-runtime.ts` accepts `initialTools`, tracks
+  revealed groups per session, reveals on a successful `load_tools` by updating
+  the live loop context, auto-reveals image tools on attachment turns and
+  forge_resources+danbooru on background-lookup turns, and reports the visible
+  subset through getTools/state. `controller.ts` passes the core surface, and the
+  system prompt now directs the model to `load_tools` before using a hidden tool.
+  `context-pruning.ts` keeps `load_tools` guidance in the active turn.
+- Tests: new `AGENT-TOOLS-001@13` `on-demand-reveal` test in
+  `frontend/tests/agent-runtime.test.ts`; updated the controller surface
+  expectation; advanced AGENT-TOOLS-001 to revision 13 and refreshed the stale
+  Python and JS acceptance mappings.
+- Verification: frontend vitest 213/213 pass; `python tools/test_gate.py
+  affected` exit 0 (49.0s).
+- Residual risk: same-run reveal mutates pi's live loop context because
+  `AgentOptions.prepareNextTurn` only forwards a signal; the pinned pi 0.74.2
+  behavior is covered by the new regression test.
+
+## 2026-09-11 System prompt consolidation
+- Problem: the per-request system prompt repeated image-handling and reply-style
+  rules and restated tool mechanics that now belong to progressively loaded tool
+  descriptions, spending tokens on every request.
+- Change: consolidated `FORGE_AGENT_SYSTEM_PROMPT` in
+  `frontend/src/agent/controller.ts` from 16 to 14 entries, merging the three
+  image-inventory/attachment/pixel-reconstruction rules into two and tightening
+  the caption, background-lookup, Danbooru-wiki, reply-style, and generate_image
+  paragraphs. All distinct behavioral rules and the load_tools/load_skill
+  guidance are preserved; only duplicated phrasing was removed.
+- Tests: updated the changed canary substring in
+  `frontend/tests/prompt-agent-controller.test.ts` and added a `load_tools`
+  guidance assertion. No acceptance revision changed because the observable
+  semantics are unchanged.
+- Verification: svelte-check 0 errors; frontend vitest 213/213 pass; `python
+  tools/test_gate.py affected` exit 0 (53.0s).
+- Residual risk: prose changes are behaviorally load-bearing but unmeasured;
+  the controller prompt-contract test and IMAGE-INPUT-001 scenario coverage are
+  the current regression guard.
+
+## 2026-09-11 Collapse frontend provider adapters
+- Problem: `frontend/src/providers/{gemini,llama-cpp,openai-compatible}.ts`
+  documented capability defaults and id normalization per provider, but every
+  `createStream` resolved to the same proxy `StreamFn`, so three modules and a
+  `ProviderRegistry` class had to track the Python provider registry by hand.
+- Change: replaced them with a single row table in
+  `frontend/src/providers/registry.ts` (id, shared `allProviderCapabilities()`
+  defaults, and a `matches` predicate), built once through
+  `createProviderAdapter`. Deleted `gemini.ts`, `llama-cpp.ts`, and
+  `openai-compatible.ts`. The public surface (`providerRegistry.list/get/resolve`,
+  `normalizeProviderId`, `createProviderStream`) is unchanged, including list
+  order and alias normalization.
+- Tests: no test edits required; `frontend/tests/provider-adapters.test.ts`
+  still pins list order, explicit normalization, fallback matching, unknown-id
+  rejection, proxy-only streaming, and abort propagation.
+- Verification: svelte-check 0 errors; frontend vitest exit 0 (213/213);
+  `python tools/test_gate.py affected` exit 0 (50.0s), 0 preflight warnings,
+  0 errors. One initial full-suite run reported a single `surface.test.ts`
+  preview-release failure that passed in isolation and on the immediate full
+  rerun, identified as a load-sensitive flake rather than a regression.
+- Residual risk: provider capability defaults remain hardcoded on both sides of
+  the proxy; the table is now the only frontend copy, but Python stays
+  authoritative for profiles.
+
+## 2026-09-11 Remove local llama.cpp runtime
+- Problem: local llama.cpp inference, the on-demand `llama-once` runtime, and
+  local reference-image analysis were no longer needed, but their lifecycle,
+  profile fields, routes, UI, and tests still spanned the backend, the root
+  `prompt_agent/` package, the frontend, and the acceptance registry.
+- Change: deleted the llama-only Python modules (`backend/prompt_agent/local_runtime.py`,
+  `backend/prompt_agent/provider_adapters/llama_cpp.py`, `prompt_agent/llama_runtime.py`,
+  `prompt_agent/reference_image.py`, `prompt_agent/model_paths.py`,
+  `prompt_agent/constants.py`), the `/prompt-agent/api/local-runtime/*` and
+  `/analyze-image` routes, and all llama branches in `app.py`, `contracts.py`,
+  `forge_tools.py`, `migration.py`, `models.py`, `profile_contracts.py`,
+  `profiles.py`, `providers.py`, and `provider_adapters/registry.py`. Frontend
+  lost the local-runtime lifecycle, local profile fields and UI, the `llama-cpp`
+  provider adapter, and the llama-once-only session/naming route feature. The
+  session/naming route existed only for local profiles, so it was removed end to
+  end. Legacy stored `llama-once`/`llama-endpoint` profiles now migrate to a
+  disabled `remote-http`/`openai-compatible` profile instead of failing
+  validation, covered by a new data-integrity test.
+- Acceptance: removed `LOCAL-RUNTIME-001`; advanced `UI-FEEDBACK-001` to
+  revision 13 (dropped the local-startup loading criterion, `loading` scenario,
+  and local-runtime paths) and `PROVIDER-TOOLS-001` to revision 3 (dropped the
+  llama.cpp forced-tool clause); removed the deleted test from the gate's
+  managed-file set; regenerated `quality/ACCEPTANCE.md`.
+- Docs: updated `README.md`, `AGENTS.md` (dependency direction and Local Models
+  removal note), `ROADMAP.md` (Phase 5 supersede note), `docs/EXPERIENCE_BASELINE.md`,
+  and `docs/PROMPT_TOOLKIT_DESIGN.md`; rebuilt `javascript/prompt_agent_90_ui.js`.
+- Verification: `python -m unittest discover -s tests` 120 tests OK;
+  `python tools/test_gate.py preflight --mode full` 17 requirements / 60
+  mappings / 0 warnings / 0 errors; frontend svelte-check 0 errors and vitest
+  pass (206 tests); one full-suite run hit the pre-existing load-sensitive
+  `surface.test.ts` preview-release flake, which passed in isolation and is not
+  related to this removal. `python tools/test_gate.py full` exit 0 (see
+  `quality/ACCEPTANCE.md` for the current revision table).
+- Residual risk: remote providers are unaffected, but the removal is broad; the
+  migration test guards upgrade safety for stored local profiles. Historical
+  archive docs under `docs/archive/` still describe the old runtime by design.
+
+
 
 
 

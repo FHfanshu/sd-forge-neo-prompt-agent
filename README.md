@@ -2,8 +2,7 @@
 
 Single-agent prompt assistant for Forge Neo. The browser owns the Pi agent loop
 and keeps an IndexedDB session cache; Python owns durable synchronized chat
-history, profiles, secrets, provider streaming, local-model lifecycle, and
-privileged Forge tools.
+history, profiles, secrets, provider streaming, and privileged Forge tools.
 
 Image reverse prompting is a separate sibling extension:
 `sd_forge_reverse_prompt`.
@@ -13,13 +12,12 @@ Image reverse prompting is a separate sibling extension:
 - Floating assistant for composition, layout, and prompt rewriting
 - Frontend Pi runtime: stream, reason, tool calls, abort, terminal recovery
 - FIFO follow-ups while a response is active, with visible pause/resume recovery
-- Python-authoritative Model Profiles (HTTP + local llama.cpp)
+- Python-authoritative Model Profiles (HTTP)
 - Server-owned secrets; browser never receives plaintext keys or local paths
 - Cross-browser sessions with a server-side SQLite authority and IndexedDB cache
 - Interrupted-message recovery after refresh without request or tool replay
 - Hash-guarded positive/negative prompt reads and edits
 - Forge resource discovery: styles, wildcards, LoRAs, checkpoints, embeddings
-- Local reference-image analysis via a configured llama.cpp VLM
 
 ## Architecture
 
@@ -28,7 +26,7 @@ API prefix: `/prompt-agent/api`.
 | Layer | Owns |
 | --- | --- |
 | Browser | `PromptAgentRuntime`, UI, IndexedDB session cache, profile selection |
-| Python | Durable session snapshots, profiles, secrets, provider proxy, llama.cpp, Forge tools |
+| Python | Durable session snapshots, profiles, secrets, provider proxy, Forge tools |
 
 The server stores history but never owns or resumes agent execution. There is no
 managed sidecar, execution lease, or refresh-time tool replay. Refresh keeps
@@ -42,7 +40,7 @@ history. Do not expose Forge to an untrusted network without authentication.
 
 ```text
 backend/prompt_agent/   # API, profiles, provider proxy, Forge tool validation
-prompt_agent/           # shared leaf modules (i18n, resources, llama helpers)
+prompt_agent/           # shared leaf modules (i18n, resources, images)
 scripts/                # Forge extension entry
 frontend/               # Svelte 5 source (build only)
 javascript/             # Forge-loaded browser scripts (incl. generated UI)
@@ -54,38 +52,35 @@ data/                   # local runtime state (gitignored)
 
 ## Agent tools
 
-The model only sees these tools (frontend registry + Python validation / host):
+The agent always has a small core surface plus a `load_tools` meta-tool; grouped
+lookups stay hidden until the model requests them, so a request does not pay
+schema and selection cost for tools it will not use.
 
-| Tool | Access | Purpose |
-| --- | --- | --- |
-| `read_prompt` | read | Read `positive` or `negative` prompt + hash |
-| `edit_prompt` | write | Patch selected prompt field; full overwrite only when empty |
-| `read_generation_parameters` | read | Read allowlisted generation controls + hash |
-| `apply_generation_parameters` | write | Apply allowlisted generation controls with hash |
-| `search_resources` | read | Search styles, wildcards, LoRAs, models, embeddings |
-| `inspect_resource` | read | Inspect one resource by logical ID |
-| `search_danbooru_tags` | read | Live Danbooru tag search for 1–12 concepts |
-| `inspect_danbooru_tags` | read | Inspect 1–12 tags with Wiki bodies by default |
-| `related_danbooru_tags` | read | Related tags for one verified seed |
-| `search_danbooru_wikis` | read | Search arbitrary Wiki and Tag Group titles |
-| `inspect_danbooru_wikis` | read | Read Wiki/Group bodies and bounded next-hop references |
+Always available: `read_prompt`, `edit_prompt`, `read_generation_parameters`,
+`apply_generation_parameters`, `generate_image`, `prompt_toolkit`, `load_skill`,
+and `load_tools`.
 
-The model receives 11 Forge tools: 9 read-only and 2 write tools, plus the
-frontend prompt toolkit and on-demand skill loader. Write tools require a
-fresh hash from a prior read. Non-empty prompt fields must
-use `patches` or `diff`; a full `prompt` body is accepted only when the current
-field is empty. Browser arguments are revalidated by Python before Forge DOM
-access. `ask_teacher` is removed.
+Revealed on demand through `load_tools`:
+
+| Group | Tools |
+| --- | --- |
+| `image` | `list_recent_generations`, `read_pnginfo`, `read_image` |
+| `forge_resources` | `search_resources`, `inspect_resource` |
+| `danbooru` | `search_danbooru_tags`, `inspect_danbooru_tags`, `related_danbooru_tags`, `search_danbooru_wikis`, `inspect_danbooru_wikis` |
+
+Attachment turns reveal `image`, and background-lookup turns reveal
+`forge_resources` and `danbooru`, automatically. Every revealed tool is
+revalidated by Python, and Forge DOM access is host-gated. Write tools require a
+fresh hash from a prior read. Non-empty prompt fields must use `patches` or
+`diff`; a full `prompt` body is accepted only when the current field is empty.
+`ask_teacher` is removed.
 
 ## Model profiles
 
-Profiles define model ID, protocol, runtime, endpoint, capabilities, generation
-parameters, and local runtime config. Public APIs only expose safe status flags
-(for example “has API key / has local path configured”).
-
-Local one-shot profiles use a server-configured `llama-server.exe` via
-`LLAMA_SERVER_EXE`. Browser requests cannot inject executable or model paths
-into generation endpoints.
+Profiles define model ID, protocol, runtime (`remote-http`), endpoint,
+capabilities, and generation parameters. Public APIs only expose safe status
+flags (for example “has API key”). Browser requests cannot inject provider
+endpoints, credentials, model identifiers, or paths into generation endpoints.
 
 ## License
 

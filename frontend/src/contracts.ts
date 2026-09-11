@@ -133,7 +133,7 @@ export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "
 export const profileProtocolSchema = z.enum(["gemini-native", "openai-chat-completions"]);
 export type ProfileProtocol = z.infer<typeof profileProtocolSchema>;
 
-export const profileRuntimeSchema = z.enum(["remote-http", "llama-once"]);
+export const profileRuntimeSchema = z.enum(["remote-http"]);
 export type ProfileRuntime = z.infer<typeof profileRuntimeSchema>;
 
 export const profileCapabilitiesSchema = z.object({
@@ -185,15 +185,6 @@ export const profileSchema = z.object({
   capabilities: profileCapabilitiesSchema,
   parameters: profileParametersSchema,
   modelInfo: profileModelInfoSchema,
-  localModelConfigured: z.boolean(),
-  mmprojConfigured: z.boolean(),
-  draftModelConfigured: z.boolean(),
-  llamaServerConfigured: z.boolean(),
-  nCtx: z.number().int().positive(),
-  nGpuLayers: z.number().int(),
-  thinking: z.boolean(),
-  unloadAfterTurn: z.boolean(),
-  idleUnloadMinutes: z.number().int().min(0).max(1440),
 });
 export type Profile = z.infer<typeof profileSchema>;
 
@@ -210,23 +201,12 @@ export const profilePatchSchema = z.object({
   capabilities: profileCapabilitiesSchema.partial().optional(),
   parameters: profileParametersSchema.partial().optional(),
   modelInfo: profileModelInfoSchema.partial().optional(),
-  modelPath: z.string().optional(),
-  mmprojPath: z.string().optional(),
-  draftModelPath: z.string().optional(),
-  llamaServerPath: z.string().optional(),
-  nCtx: z.number().int().positive().optional(),
-  nGpuLayers: z.number().int().optional(),
-  thinking: z.boolean().optional(),
-  unloadAfterTurn: z.boolean().optional(),
-  idleUnloadMinutes: z.number().int().min(0).max(1440).optional(),
 });
 export type ProfilePatch = z.infer<typeof profilePatchSchema>;
 
 export const profileStateSchema = z.object({
   version: z.literal(2),
   activeProfileId: z.string(),
-  sessionProfileId: z.string(),
-  namingProfileId: z.string(),
   profiles: z.array(profileSchema).min(1),
 });
 export type ProfileState = z.infer<typeof profileStateSchema>;
@@ -235,10 +215,6 @@ export const profileStateInputSchema = z.object({
   version: z.number().int().optional(),
   activeProfileId: z.string().optional(),
   active_profile_id: z.string().optional(),
-  sessionProfileId: z.string().optional(),
-  session_profile_id: z.string().optional(),
-  namingProfileId: z.string().optional(),
-  naming_profile_id: z.string().optional(),
   profiles: z.array(z.unknown()).optional(),
 }).passthrough();
 export type ProfileStateInput = z.infer<typeof profileStateInputSchema>;
@@ -254,8 +230,6 @@ export interface ProfileStoreActionContracts {
   updateProfile(profileId: string, patch: ProfilePatch): Profile | null;
   deleteProfile(profileId: string): Promise<boolean>;
   activateProfile(profileId: string): void;
-  setSessionProfile(profileId: string): void;
-  setNamingProfile(profileId: string): void;
   restoreDefaults(): void;
   reset(): void;
 }
@@ -268,8 +242,6 @@ export interface ProfileActionHandlers {
   updateProfile?(profileId: string, patch: ProfilePatch): Profile | null;
   deleteProfile?(profileId: string): Promise<boolean>;
   activateProfile?(profileId: string): void;
-  setSessionProfile?(profileId: string): void;
-  setNamingProfile?(profileId: string): void;
   restoreDefaults?(): void;
 }
 

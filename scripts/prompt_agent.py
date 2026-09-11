@@ -18,8 +18,7 @@ from prompt_agent.danbooru import (
 )
 from prompt_agent.i18n import locale_metadata, translation_bundle
 from prompt_agent.prompt_skills import load_prompt_skill
-from prompt_agent.reference_image import analyze_reference_image
-from modules import call_queue, script_callbacks
+from modules import script_callbacks
 
 
 _LOGGER = logging.getLogger("prompt_agent")
@@ -79,17 +78,9 @@ def _record_saved_image(params) -> None:
 
 
 def _assistant_api(_: gr.Blocks, app):
-    from fastapi import Body, HTTPException
+    from fastapi import HTTPException
     register_prompt_agent_api(app)
     _LOGGER.info("Prompt Agent API registered under /prompt-agent/api")
-
-    @app.post("/prompt-agent/api/analyze-image")
-    async def prompt_agent_reference_image(payload: dict = Body(...)):
-        try:
-            with call_queue.queue_lock:
-                return analyze_reference_image(payload)
-        except Exception as error:
-            raise HTTPException(status_code=500, detail=str(error)) from error
 
     @app.get("/prompt-agent/api/i18n")
     async def prompt_agent_i18n(locale: str | None = None):

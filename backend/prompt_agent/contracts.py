@@ -48,7 +48,6 @@ def parse_stream_request(payload: Any) -> StreamRequest:
         raise ValueError("options must be an object")
     forbidden = {
         "api_key", "apiKey", "endpoint", "model", "model_path", "modelPath",
-        "mmproj_path", "mmprojPath", "draft_model_path", "draftModelPath", "llama_server_path", "llamaServerPath",
         "fallback_endpoints", "headers",
     }
     if forbidden.intersection(payload) or forbidden.intersection(options):

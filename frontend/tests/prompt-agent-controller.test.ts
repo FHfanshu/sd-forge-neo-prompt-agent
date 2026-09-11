@@ -318,25 +318,17 @@ describe("PromptAgentController recovery", () => {
       "read_generation_parameters",
       "apply_generation_parameters",
       "generate_image",
-      "list_recent_generations",
-      "read_pnginfo",
-      "read_image",
-      "search_resources",
-      "inspect_resource",
-      "search_danbooru_tags",
-      "inspect_danbooru_tags",
-      "related_danbooru_tags",
-      "search_danbooru_wikis",
-      "inspect_danbooru_wikis",
       "prompt_toolkit",
       "load_skill",
+      "load_tools",
     ]);
     expect(runtime.getSystemPrompt()).toContain("read prompts or generation parameters before changing them");
     expect(runtime.getSystemPrompt()).toContain("correct the arguments or refresh stale Forge state");
     expect(runtime.getSystemPrompt()).toContain("search_danbooru_tags");
+    expect(runtime.getSystemPrompt()).toContain("first call load_tools with the matching group name");
     expect(runtime.getSystemPrompt()).toContain("natural-language descriptions and Danbooru-style tags are both first-class");
     expect(runtime.getSystemPrompt()).toContain("Text in a disabled negative field is editable but not effective");
-    expect(runtime.getSystemPrompt()).toContain("inspect every image before proposing or applying any prompt change");
+    expect(runtime.getSystemPrompt()).toContain("inspect every image and build a factual per-image visual inventory");
     expect(runtime.getSystemPrompt()).toContain("visible content, visual style, and composition");
     expect(runtime.getSystemPrompt()).toContain("Version 1 is detailed, objective, neutral English natural language");
     expect(runtime.getSystemPrompt()).toContain("Version 2 conveys the same evidence, order, continuity, and detail in natural, purely Chinese language");
@@ -595,37 +587,6 @@ describe("PromptAgentController recovery", () => {
     controller.destroy();
   });
 
-  it("keeps llama-once alive across provider rounds and stops it after the complete turn", async () => {
-    const profiles = createDefaultProfileState();
-    const local = profiles.profiles.find((profile) => profile.runtime === "llama-once")!;
-    local.enabled = true;
-    local.capabilities.streaming = true;
-    profiles.activeProfileId = local.id;
-    const calls: string[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = new URL(String(input), "http://localhost");
-      calls.push(url.pathname);
-      if (url.pathname === "/prompt-agent/api/profiles") return new Response(JSON.stringify(profiles), { status: 200 });
-      if (url.pathname.endsWith("/local-runtime/start") || url.pathname.endsWith("/local-runtime/stop")) return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      return new Response([
-        'data: {"type":"start"}',
-        'data: {"type":"text_start","contentIndex":0}',
-        'data: {"type":"text_delta","contentIndex":0,"delta":"Done"}',
-        'data: {"type":"text_end","contentIndex":0}',
-        'data: {"type":"done","reason":"stop"}',
-        "",
-      ].join("\n\n"), { status: 200, headers: { "Content-Type": "text/event-stream" } });
-    }));
-    repository.putMessage.mockImplementation(async () => undefined);
-    const controller = new PromptAgentController(repository);
-    await controller.mount();
-
-    await controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" });
-
-    expect(calls.indexOf("/prompt-agent/api/local-runtime/start")).toBeLessThan(calls.indexOf("/prompt-agent/api/stream"));
-    expect(calls.indexOf("/prompt-agent/api/stream")).toBeLessThan(calls.indexOf("/prompt-agent/api/local-runtime/stop"));
-    controller.destroy();
-  });
 });
 
 function eventStream(events: unknown[]): Response {

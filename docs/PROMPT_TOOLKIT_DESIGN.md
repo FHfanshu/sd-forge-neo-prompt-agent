@@ -7,9 +7,8 @@ follow-up work.
 Scope: frontend Pi Agent Loop, deterministic prompt operations, and user-visible prompt diffs
 Product: SD Forge Neo Prompt Agent
 
-Implementation baseline: develop on `main`. The local
-`resident-gemma-llama-once` branch is not the development branch and must not be
-used implicitly for this work.
+Implementation baseline: develop on `main`. Do not work implicitly on an
+unmerged feature branch.
 
 ## Purpose
 

@@ -80,7 +80,7 @@ describe("Svelte profile settings", () => {
     expect(screen.queryByRole("tab", { name: "Interface" })).not.toBeInTheDocument();
   });
 
-  acceptanceTest("MODEL-PROFILE-001@3", "connection-modes", "offers only the three supported connection modes and maps them atomically", async () => {
+  acceptanceTest("MODEL-PROFILE-001@3", "connection-modes", "offers only the two supported connection modes and maps them atomically", async () => {
     const user = userEvent.setup();
     render(ProfileSettings, { open: true, onclose: () => undefined });
 
@@ -88,16 +88,15 @@ describe("Svelte profile settings", () => {
     expect([...connection.querySelectorAll("option")].map((option) => option.value)).toEqual([
       "openai-compatible",
       "gemini-native",
-      "llama-once",
     ]);
     expect(screen.queryByLabelText("API protocol")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Runtime")).not.toBeInTheDocument();
 
-    await user.selectOptions(connection, "llama-once");
+    await user.selectOptions(connection, "openai-compatible");
     await waitFor(() => expect(useProfileStore.getState().profiles.find((profile) => profile.id === useProfileStore.getState().selectedProfileId)).toMatchObject({
       protocol: "openai-chat-completions",
-      runtime: "llama-once",
-      providerId: "llama-cpp",
+      runtime: "remote-http",
+      providerId: "openai-compatible",
     }));
   });
 
@@ -291,15 +290,6 @@ describe("Svelte profile settings", () => {
     expect(useI18nStore.getState().manualLocale).toBe("zh-CN");
   });
 
-  it("shows local runtime controls alongside the connection section", () => {
-    const local = useProfileStore.getState().profiles.find((profile) => profile.runtime === "llama-once");
-    expect(local).toBeDefined();
-    useProfileStore.getState().selectProfile(local!.id);
-    render(ProfileSettings, { open: true, onclose: () => undefined });
-    expect(screen.getByRole("tab", { name: "Local runtime" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Connection & model" })).toBeInTheDocument();
-  });
-
   acceptanceTest("MODEL-PROFILE-001@3", "edit-stability", "keeps a catalog-backed Gemini profile selected and editable", async () => {
     const defaults = createDefaultProfileState();
     const gemini = normalizeProfile({
@@ -310,8 +300,8 @@ describe("Svelte profile settings", () => {
       endpoint: "https://gateway.invalid",
       modelInfo: { ...defaults.profiles[0].modelInfo, source: "models.dev", providerId: "pioneer" },
     });
-    const local = normalizeProfile({ ...defaults.profiles.at(-1), id: "local-endpoint", displayName: "Gemma local", enabled: true });
-    useProfileStore.getState().setState({ ...defaults, profiles: [local, gemini], activeProfileId: gemini.id });
+    const secondary = normalizeProfile({ ...defaults.profiles.at(-1), id: "secondary-endpoint", displayName: "Gemma remote", enabled: true });
+    useProfileStore.getState().setState({ ...defaults, profiles: [secondary, gemini], activeProfileId: gemini.id });
 
     render(ProfileSettings, { open: true, onclose: () => undefined });
 
@@ -323,49 +313,6 @@ describe("Svelte profile settings", () => {
     await fireEvent.change(screen.getByLabelText("Endpoint"), { target: { value: "https://gateway-2.invalid" } });
     expect(useProfileStore.getState().selectedProfileId).toBe(gemini.id);
     expect(screen.getByLabelText("Endpoint")).toHaveValue("https://gateway-2.invalid");
-  });
-
-  it("allows a configured llama-once profile to become the active agent", () => {
-    const local = useProfileStore.getState().profiles.find((profile) => profile.runtime === "llama-once");
-    expect(local).toBeDefined();
-    useProfileStore.getState().updateProfile(local!.id, { enabled: true });
-    useProfileStore.getState().selectProfile(local!.id);
-    render(ProfileSettings, { open: true, onclose: () => undefined });
-
-    expect(screen.queryByText("Agent chat is unavailable for this runtime")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Use model" })).toBeEnabled();
-  });
-
-  it("defaults local one-shot profiles to resident with idle unloading", async () => {
-    const user = userEvent.setup();
-    const local = useProfileStore.getState().profiles.find((profile) => profile.runtime === "llama-once");
-    expect(local?.unloadAfterTurn).toBe(false);
-    expect(local?.idleUnloadMinutes).toBe(30);
-    useProfileStore.getState().selectProfile(local!.id);
-    render(ProfileSettings, { open: true, onclose: () => undefined });
-    await user.click(screen.getByRole("tab", { name: "Local runtime" }));
-
-    const toggle = screen.getByRole("switch", { name: "Unload local model after each reply" });
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-    await user.click(toggle);
-    expect(useProfileStore.getState().profiles.find((profile) => profile.id === local!.id)?.unloadAfterTurn).toBe(true);
-  });
-
-  it("keeps local paths out of profile state and submits them only on explicit save", async () => {
-    const user = userEvent.setup();
-    const fetchMock = installProfileApi();
-    const local = useProfileStore.getState().profiles.find((profile) => profile.runtime === "llama-once");
-    expect(local).toBeDefined();
-    useProfileStore.getState().selectProfile(local!.id);
-    render(ProfileSettings, { open: true, onclose: () => undefined });
-    await user.click(screen.getByRole("tab", { name: "Local runtime" }));
-
-    await user.type(screen.getByLabelText("GGUF path"), "C:/private/model.gguf");
-
-    expect(JSON.stringify(useProfileStore.getState())).not.toContain("C:/private/model.gguf");
-    expect(fetchMock).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => String((init as RequestInit | undefined)?.body ?? "").includes("C:/private/model.gguf"))).toBe(true));
   });
 
   acceptanceTest("MODEL-PROFILE-001@3", "touch-delete", "offers a direct touch deletion action and deletes the captured profile only after confirmation", async () => {
@@ -399,14 +346,14 @@ describe("Svelte profile settings", () => {
     expect(screen.getByRole("button", { name: "Delete selected profile" })).toBeEnabled();
   });
 
-  it("exposes active, session, and naming route controls without a teacher route", async () => {
+  it("exposes only the active profile route control", async () => {
     const user = userEvent.setup();
     render(ProfileSettings, { open: true, onclose: () => undefined });
     await user.click(screen.getByRole("tab", { name: "Advanced" }));
     await user.click(screen.getByText("Advanced settings"));
     expect(screen.getByRole("combobox", { name: /Active profile/ })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: /Teacher profile/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: /Session model/ })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: /Naming model/ })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /Session model/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /Naming model/ })).not.toBeInTheDocument();
   });
 });

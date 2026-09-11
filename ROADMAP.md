@@ -35,8 +35,7 @@ Python owns:
 - provider secret storage and request authorization;
 - streaming provider proxying;
 - profile authority;
-- durable synchronized session snapshots;
-- llama.cpp process lifecycle and local model paths.
+- durable synchronized session snapshots.
 
 The migration must not introduce another Kotlin, Node, or Bun sidecar, a second
 agent loop, tool leases, browser bridge claims, server ownership of agent
@@ -168,7 +167,6 @@ Add frontend adapters for:
 ```text
 OpenAI Compatible
 Gemini
-llama.cpp one-shot
 ```
 
 Normalize capabilities, messages, tools, attachments, reasoning, usage, stream
@@ -181,14 +179,8 @@ Exit criteria:
 - unsupported capabilities are explicit in the UI.
 
 OpenRouter and other Chat Completions gateways use the OpenAI-compatible path;
-there is no provider-branded frontend transport layer. The llama.cpp adapter
-supports an on-demand `llama-once` process owned by Python. A single process
-is reused across every model/tool round in one frontend Pi agent turn. By
-default it remains resident between turns and is unloaded after the configured
-idle period; `0` disables idle unloading. Profile settings can instead unload
-after every reply. Force-stop, abort, startup failure, and stale interrupted
-turn recovery still reclaim the owned process immediately. Local paths stay
-server-owned.
+there is no provider-branded frontend transport layer. Local llama.cpp one-shot
+support described by the original phase was removed in Phase 13.
 
 ## Phase 6: Forge Agent Tools
 
@@ -377,6 +369,31 @@ Remaining:
 - confirmed inverse-diff undo with truthful history;
 - real-Forge visual verification for narrow mobile and model-specific negative
   activation variants.
+
+## Phase 13: Context Diet And Remote-Only Providers
+
+Status: complete.
+
+Reduce per-request cost and remove the unused local inference stack:
+
+- progressive tool disclosure: a small always-on core plus a `load_tools`
+  meta-tool that reveals the `image`, `forge_resources`, and `danbooru` groups
+  only when needed, with attachment and background-lookup turns auto-revealing
+  their groups;
+- a consolidated system prompt with duplicated image and reply-style rules
+  removed;
+- a single frontend provider capability table replacing the three
+  proxy-identical adapter modules;
+- removal of the local `llama-once` runtime, local reference-image analysis, and
+  their profile fields, routes, and UI, with legacy local profiles migrating to
+  disabled remote profiles.
+
+Exit criteria:
+
+- the always-on tool surface is the core set and grouped tools stay hidden until
+  requested;
+- no local model module, route, profile field, or control remains;
+- remote OpenAI-compatible and Gemini behavior is unchanged.
 
 ## Quality Gates
 

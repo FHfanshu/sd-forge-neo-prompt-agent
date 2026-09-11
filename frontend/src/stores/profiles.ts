@@ -15,18 +15,14 @@ function nextId(prefix: string, profiles: Profile[]): string {
 export interface ProfileStore extends ProfileStoreActionContracts {
   profiles: Profile[];
   activeProfileId: string;
-  sessionProfileId: string;
-  namingProfileId: string;
   selectedProfileId: string;
   loaded: boolean;
 }
 
-function stateSlice(state: ProfileState): Pick<ProfileStore, "profiles" | "activeProfileId" | "sessionProfileId" | "namingProfileId"> {
+function stateSlice(state: ProfileState): Pick<ProfileStore, "profiles" | "activeProfileId"> {
   return {
     profiles: state.profiles,
     activeProfileId: state.activeProfileId,
-    sessionProfileId: state.sessionProfileId,
-    namingProfileId: state.namingProfileId,
   };
 }
 
@@ -101,17 +97,7 @@ export const useProfileStore = createStore<ProfileStore>((set, get) => {
     activateProfile(profileId) {
       if (!get().profiles.some((profile) => profile.id === profileId && profile.enabled && supportsAgentChat(profile))) return;
       set({ activeProfileId: profileId });
-      persist(api.setProfileRoute("active", profileId).then((state) => apply(state)));
-    },
-    setSessionProfile(profileId) {
-      if (!get().profiles.some((profile) => profile.runtime === "llama-once" && profile.id === profileId && profile.enabled)) return;
-      set({ sessionProfileId: profileId });
-      persist(api.setProfileRoute("session", profileId).then((state) => apply(state)));
-    },
-    setNamingProfile(profileId) {
-      if (!get().profiles.some((profile) => profile.runtime === "llama-once" && profile.id === profileId && profile.enabled)) return;
-      set({ namingProfileId: profileId });
-      persist(api.setProfileRoute("naming", profileId).then((state) => apply(state)));
+      persist(api.setProfileRoute(profileId).then((state) => apply(state)));
     },
     restoreDefaults() {
       apply(defaults, defaults.activeProfileId);

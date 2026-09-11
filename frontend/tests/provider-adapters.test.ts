@@ -8,7 +8,6 @@ const capabilities = { streaming: true, tools: true, vision: true, reasoning: tr
 const profiles: Array<ProviderProfileMetadata & { id: string; expected: string }> = [
   { id: "openai-profile", expected: "openai-compatible", protocol: "openai-chat-completions", runtime: "remote-http", endpoint: "https://provider.invalid/v1" },
   { id: "gemini-profile", expected: "gemini", protocol: "gemini-native", runtime: "remote-http", endpoint: "https://generativelanguage.googleapis.com" },
-  { id: "llama-profile", expected: "llama-cpp", protocol: "openai-chat-completions", runtime: "llama-once", endpoint: "http://127.0.0.1:8080/v1" },
 ];
 
 function response(...events: unknown[]): Response {
@@ -21,11 +20,10 @@ function response(...events: unknown[]): Response {
 }
 
 describe("provider adapter registry", () => {
-  it("resolves the three supported connection modes to proxy-only adapters", () => {
+  it("resolves the two supported connection modes to proxy-only adapters", () => {
     expect(providerRegistry.list().map((adapter) => adapter.id)).toEqual([
       "openai-compatible",
       "gemini",
-      "llama-cpp",
     ]);
     for (const profile of profiles) expect(providerRegistry.resolve(profile).id).toBe(profile.expected);
     expect(() => providerRegistry.resolve({ providerId: "unsupported-provider", protocol: "openai-chat-completions" })).toThrow("Unknown provider adapter");
@@ -46,7 +44,6 @@ describe("provider adapter registry", () => {
     const profile = { protocol: "openai-chat-completions", runtime: "remote-http", capabilities: { ...capabilities, tools: false } };
     expect(adapter.effectiveCapabilities(profile).tools).toBe(false);
     expect(adapter.unsupportedCapabilities(profile)).toContain("tools");
-    expect(providerRegistry.get("llama-cpp").unsupportedCapabilities({ runtime: "llama-once" })).toEqual([]);
   });
 
   it("returns the shared proxy StreamFn and never needs provider credentials", async () => {

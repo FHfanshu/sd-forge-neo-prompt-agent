@@ -92,7 +92,7 @@
   const windowMinimum = $derived(minimumForViewport(kind));
   const currentLayout = $derived(clampWindowLayout($useUiStore.layouts[kind], viewport, windowMinimum));
   const activeProfile = $derived($useProfileStore.profiles.find((profile) => profile.id === $useProfileStore.activeProfileId && profile.enabled));
-  const contextLimit = $derived(activeProfile?.modelInfo.contextLimit || activeProfile?.nCtx || 131072);
+  const contextLimit = $derived(activeProfile?.modelInfo.contextLimit || 131072);
   const contextTokens = $derived([...visibleMessages].reverse().find((message) => message.role === "assistant" && (message.usage?.inputTokens ?? 0) > 0)?.usage?.inputTokens ?? 0);
   const workingPhase = $derived($useRuntimeStore.workingPhase);
   const requestActive = $derived(Boolean($useChatStore.activeRequestId));

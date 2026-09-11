@@ -54,7 +54,6 @@
 
   function providerLabel(profile: Profile): string {
     if (profile.modelInfo.providerId) return profile.modelInfo.providerId.toUpperCase();
-    if (profile.runtime !== "remote-http") return "LOCAL";
     try {
       return new URL(profile.endpoint).hostname.split(".")[0]?.toUpperCase() || "CUSTOM";
     } catch {
@@ -64,7 +63,7 @@
 
   function contextLabel(profile: Profile): string {
     const limit = profile.modelInfo.contextLimit;
-    if (!limit) return profile.runtime === "remote-http" ? t("model_picker.remote", "Remote") : t("model_picker.local", "Local");
+    if (!limit) return t("model_picker.remote", "Remote");
     if (limit >= 1_000_000) return `${(limit / 1_000_000).toFixed(1)}m ctx`;
     if (limit >= 1_000) return `${Math.round(limit / 1_000)}k ctx`;
     return `${limit} ctx`;

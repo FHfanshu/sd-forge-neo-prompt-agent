@@ -572,8 +572,6 @@
   .pa-profile-enabled-switch > span { width: .83rem; height: .83rem; border-radius: 50%; background: var(--pa-ink-soft); box-shadow: 0 1px 3px rgb(0 0 0 / 24%); transition: transform .14s, background-color .14s; }
   .pa-profile-enabled-toggle.is-enabled .pa-profile-enabled-switch { background: var(--pa-focus); }
   .pa-profile-enabled-toggle.is-enabled .pa-profile-enabled-switch > span { background: var(--pa-primary-foreground); transform: translateX(.85rem); }
-  .pa-profile-connection-row { display: block; }
-  .pa-profile-connection-row > :first-child { width: 100%; min-width: 0; }
   .pa-profile-summary-footer { display: flex; min-height: 30px; align-items: center; justify-content: space-between; gap: .75rem; }
   .pa-profile-summary-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: .3rem; }
   .pa-profile-delete-button { display: inline-flex; min-height: 2rem; align-items: center; gap: .3rem; padding: 0 .58rem; border: 1px solid color-mix(in srgb, var(--pa-destructive) 45%, var(--pa-line)); border-radius: var(--pa-radius-md); color: var(--pa-destructive); background: transparent; font-size: .72rem; font-weight: 700; }
@@ -602,10 +600,6 @@
   .pa-profile-key-row:focus-within { border-color: var(--pa-focus); }
   .pa-profile-key-row input { min-width: 0; height: 29px; flex: 1; padding: 0; border: 0; outline: 0; color: var(--pa-ink); background: transparent; }
   .pa-profile-key-row button { padding: 5px 6px; border-radius: var(--pa-radius-md); color: var(--pa-focus); background: var(--pa-secondary); font-size: 9px; font-weight: 700; }
-  .pa-profile-local-callout { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border: 1px solid var(--pa-line); border-radius: var(--pa-radius-md); color: var(--pa-focus); background: var(--pa-surface-alt); }
-  .pa-profile-local-callout > div { display: grid; min-width: 0; gap: 2px; }
-  .pa-profile-local-callout strong { color: var(--pa-ink); font-size: var(--pa-type-label); }
-  .pa-profile-local-callout small { overflow: hidden; color: var(--pa-ink-soft); font-size: var(--pa-type-meta); text-overflow: ellipsis; white-space: nowrap; }
   .pa-profile-capability-warning { display: flex; align-items: flex-start; gap: 9px; padding: 8px 9px; border: 1px solid color-mix(in srgb, var(--error-fill, #b42318) 22%, transparent); border-radius: var(--pa-radius-md); color: var(--pa-ink); background: color-mix(in srgb, var(--error-fill, #b42318) 5%, transparent); }
   .pa-profile-capability-warning > svg { flex: 0 0 auto; color: var(--error-fill, #b42318); }
   .pa-profile-capability-warning > div { display: grid; min-width: 0; gap: 2px; }

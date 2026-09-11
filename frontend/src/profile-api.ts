@@ -14,21 +14,9 @@ const publicModelSchema = z.object({
   hasApiKey: z.boolean(),
   capabilities: profileCapabilitiesSchema.partial(),
   modelInfo: profileModelInfoSchema,
-  localModelConfigured: z.boolean(),
-  mmprojConfigured: z.boolean(),
-  draftModelConfigured: z.boolean(),
-  llamaServerConfigured: z.boolean(),
 });
 const publicModelStateSchema = z.object({ version: z.literal(1), models: z.array(publicModelSchema) });
 export type PublicModelState = z.infer<typeof publicModelStateSchema>;
-const localRuntimeStatusSchema = z.object({
-  ok: z.literal(true),
-  profile_id: z.string(),
-  turn_id: z.string(),
-  phase: z.enum(["idle", "loading", "ready", "failed"]),
-  elapsed_seconds: z.number().int().nonnegative(),
-});
-export type LocalRuntimeStatus = z.infer<typeof localRuntimeStatusSchema>;
 
 async function request<T>(path: string, init?: RequestInit, parse?: (value: unknown) => T): Promise<T> {
   const response = await fetch(`${API}${path}`, {
@@ -85,8 +73,8 @@ export function duplicateProfile(profileId: string): Promise<Profile> {
   return request<Profile>(`/profiles/${encodeURIComponent(profileId)}/duplicate`, { method: "POST" }, (value) => normalizeProfile(value));
 }
 
-export function setProfileRoute(role: "active" | "session" | "naming", profileId: string): Promise<ProfileState> {
-  return request<ProfileState>("/profile-routes/default", { method: "POST", body: JSON.stringify({ role, profile_id: profileId }) }, normalizeProfileState);
+export function setProfileRoute(profileId: string): Promise<ProfileState> {
+  return request<ProfileState>("/profile-routes/default", { method: "POST", body: JSON.stringify({ role: "active", profile_id: profileId }) }, normalizeProfileState);
 }
 
 export function restoreDefaultProfiles(): Promise<ProfileState> {
@@ -95,20 +83,4 @@ export function restoreDefaultProfiles(): Promise<ProfileState> {
 
 export function testProfileConnection(profileId: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(`/profiles/${encodeURIComponent(profileId)}/connection-test`, { method: "POST", signal });
-}
-
-export function startLocalRuntime(profileId: string, turnId: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("/local-runtime/start", { method: "POST", body: JSON.stringify({ profile_id: profileId, turn_id: turnId }), signal });
-}
-
-export function stopLocalRuntime(profileId: string, turnId: string, force = false): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("/local-runtime/stop", { method: "POST", body: JSON.stringify({ profile_id: profileId, turn_id: turnId, force }), keepalive: true });
-}
-
-export function getLocalRuntimeStatus(profileId: string, turnId: string, signal?: AbortSignal): Promise<LocalRuntimeStatus> {
-  return request<LocalRuntimeStatus>("/local-runtime/status", {
-    method: "POST",
-    body: JSON.stringify({ profile_id: profileId, turn_id: turnId }),
-    signal,
-  }, (value) => localRuntimeStatusSchema.parse(value));
 }

@@ -8,10 +8,9 @@ from typing import Any
 GEMINI_NATIVE = "gemini-native"
 OPENAI_CHAT_COMPLETIONS = "openai-chat-completions"
 REMOTE_HTTP = "remote-http"
-LLAMA_ONCE = "llama-once"
 
 SUPPORTED_PROTOCOLS = frozenset({GEMINI_NATIVE, OPENAI_CHAT_COMPLETIONS})
-SUPPORTED_RUNTIMES = frozenset({REMOTE_HTTP, LLAMA_ONCE})
+SUPPORTED_RUNTIMES = frozenset({REMOTE_HTTP})
 _PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$")
 _MAX_ENDPOINT_LENGTH = 2048
 _MAX_FALLBACK_ENDPOINTS = 8
@@ -22,12 +21,13 @@ def migrate_legacy_profile(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
     migrated = dict(value)
-    if migrated.get("runtime") == "llama-endpoint":
+    if migrated.get("runtime") in {"llama-once", "llama-endpoint"}:
         migrated["runtime"] = REMOTE_HTTP
         provider_id = str(migrated.get("provider_id", migrated.get("providerId", "")) or "").lower()
         if provider_id in {"", "llama", "llama-cpp", "llama.cpp"}:
             migrated["provider_id"] = "openai-compatible"
             migrated.pop("providerId", None)
+        migrated["enabled"] = False
     if migrated.get("protocol") == "anthropic-native":
         migrated["protocol"] = OPENAI_CHAT_COMPLETIONS
         migrated["enabled"] = False
@@ -48,14 +48,10 @@ def normalize_profile(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"unsupported profile protocol: {protocol}")
     if runtime not in SUPPORTED_RUNTIMES:
         raise ValueError(f"unsupported profile runtime: {runtime}")
-    if runtime == LLAMA_ONCE and protocol != OPENAI_CHAT_COMPLETIONS:
-        raise ValueError(f"protocol must be {OPENAI_CHAT_COMPLETIONS!r} for local profiles")
 
     endpoint = _string(profile, "endpoint")
     if endpoint:
         _validate_url(endpoint)
-    if runtime == LLAMA_ONCE and _boolean(profile, "enabled", True) and not _string(profile, "model_path"):
-        raise ValueError("model_path is required for llama-once profiles")
 
     parameters = profile.get("parameters")
     if parameters is None:
@@ -75,15 +71,6 @@ def normalize_profile(payload: dict[str, Any]) -> dict[str, Any]:
         "capabilities": _capabilities(profile.get("capabilities")),
         "parameters": _parameters(parameters),
         "model_info": _model_info(profile.get("model_info", profile.get("modelInfo", {})) or {}),
-        "model_path": _string(profile, "model_path", aliases=("modelPath",)),
-        "mmproj_path": _string(profile, "mmproj_path", aliases=("mmprojPath",)),
-        "draft_model_path": _string(profile, "draft_model_path", aliases=("draftModelPath",)),
-        "llama_server_path": _string(profile, "llama_server_path", aliases=("llamaServerPath",)),
-        "n_ctx": _integer(profile, "n_ctx", 131072, aliases=("nCtx",)),
-        "n_gpu_layers": _integer(profile, "n_gpu_layers", -1, aliases=("nGpuLayers",)),
-        "thinking": _boolean(profile, "thinking", False),
-        "unload_after_turn": _boolean(profile, "unload_after_turn", False),
-        "idle_unload_minutes": _bounded_integer(profile, "idle_unload_minutes", 30, 0, 1440),
     }
     return result
 
@@ -105,15 +92,6 @@ def public_profile(profile: dict[str, Any], *, has_api_key: bool) -> dict[str, A
         "capabilities": dict(profile["capabilities"]),
         "parameters": _public_parameters(profile["parameters"]),
         "modelInfo": _public_model_info(profile["model_info"]),
-        "localModelConfigured": bool(profile["model_path"]),
-        "mmprojConfigured": bool(profile["mmproj_path"]),
-        "draftModelConfigured": bool(profile["draft_model_path"]),
-        "llamaServerConfigured": bool(profile["llama_server_path"]),
-        "nCtx": profile["n_ctx"],
-        "nGpuLayers": profile["n_gpu_layers"],
-        "thinking": profile["thinking"],
-        "unloadAfterTurn": profile["unload_after_turn"],
-        "idleUnloadMinutes": profile["idle_unload_minutes"],
     }
     if profile.get("provider_id"):
         public["providerId"] = profile["provider_id"]
@@ -173,25 +151,6 @@ def _boolean(source: dict[str, Any], key: str, default: bool) -> bool:
     value = source.get(key, default)
     if not isinstance(value, bool):
         raise ValueError(f"{key} must be a boolean")
-    return value
-
-
-def _integer(source: dict[str, Any], key: str, default: int, aliases: tuple[str, ...] = ()) -> int:
-    value: Any = source.get(key)
-    for alias in aliases:
-        if value is None:
-            value = source.get(alias)
-    if value is None:
-        return default
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{key} must be an integer")
-    return value
-
-
-def _bounded_integer(source: dict[str, Any], key: str, default: int, minimum: int, maximum: int) -> int:
-    value = _integer(source, key, default)
-    if value < minimum or value > maximum:
-        raise ValueError(f"{key} is out of range")
     return value
 
 

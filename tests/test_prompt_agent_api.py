@@ -21,6 +21,7 @@ from backend.prompt_agent.profiles import ProfileAuthority, default_storage_root
 from backend.prompt_agent.providers import public_profile_state
 from backend.prompt_agent import secrets
 from backend.prompt_agent.profile_connection import ConnectionTestError, test_profile_connection
+from backend.prompt_agent.profile_contracts import migrate_legacy_profile, normalize_profile, public_profile
 from quality.acceptance import acceptance
 
 
@@ -326,38 +327,12 @@ class PromptAgentApiTests(unittest.TestCase):
                 "endpoint": "https://provider.invalid/v1",
                 "fallback_endpoints": ["https://fallback.invalid/v1"],
                 "api_key": "secret",
-                "model_path": "C:/private/model.gguf",
-                "mmproj_path": "C:/private/mmproj.gguf",
-                "llama_server_path": "C:/private/llama-server.exe",
             }],
         }
         projected = public_profile_state(state)
         serialized = str(projected)
         for forbidden in ("secret", "provider.invalid", "C:/private"):
             self.assertNotIn(forbidden, serialized)
-
-    def test_profile_authority_projects_local_paths_as_configuration_flags(self):
-        with TemporaryDirectory() as directory:
-            authority = ProfileAuthority(Path(directory))
-            created = authority.create({
-                "id": "local-once",
-                "displayName": "Local once",
-                "modelId": "model",
-                "protocol": "openai-chat-completions",
-                "runtime": "llama-once",
-                "model_path": "C:/private/model.gguf",
-                "mmproj_path": "C:/private/mmproj.gguf",
-                "llama_server_path": "C:/private/llama-server.exe",
-            })
-
-            self.assertTrue(created["localModelConfigured"])
-            self.assertTrue(created["mmprojConfigured"])
-            self.assertTrue(created["llamaServerConfigured"])
-            serialized = str(created)
-            self.assertNotIn("C:/private", serialized)
-            self.assertNotIn("modelPath", created)
-            self.assertNotIn("mmprojPath", created)
-            self.assertNotIn("llamaServerPath", created)
 
     @acceptance("SECURITY-PRIVACY-001@1", "request-rejection")
     def test_stream_rejects_browser_owned_provider_fields(self):
@@ -472,16 +447,30 @@ class PromptAgentApiTests(unittest.TestCase):
                         "runtime": "remote-http",
                         "endpoint": "https://api.anthropic.com/v1",
                     },
+                    {
+                        "profile_id": "legacy-once",
+                        "display_name": "Legacy once",
+                        "model_id": "local-model",
+                        "protocol": "openai-chat-completions",
+                        "runtime": "llama-once",
+                        "model_path": "C:/private/model.gguf",
+                        "mmproj_path": "C:/private/mmproj.gguf",
+                        "llama_server_path": "C:/private/llama-server.exe",
+                    },
                 ],
             }), encoding="utf-8")
 
             state = authority.list_state()
 
-            endpoint, anthropic = state["profiles"]
+            endpoint, anthropic, once = state["profiles"]
             self.assertEqual("remote-http", endpoint["runtime"])
             self.assertEqual("openai-chat-completions", endpoint["protocol"])
             self.assertFalse(anthropic["enabled"])
             self.assertEqual("openai-chat-completions", anthropic["protocol"])
+            self.assertEqual("remote-http", once["runtime"])
+            self.assertEqual("openai-compatible", once["providerId"])
+            self.assertFalse(once["enabled"])
+            self.assertNotIn("C:/private", json.dumps(state))
 
     def test_models_api_returns_safe_metadata_only(self):
         with TemporaryDirectory() as directory:
@@ -497,11 +486,11 @@ class PromptAgentApiTests(unittest.TestCase):
                     "api_key": "secret-value",
                 })
                 authority.create({
-                    "id": "local",
-                    "displayName": "Local",
+                    "id": "legacy-local",
+                    "displayName": "Legacy local",
                     "modelId": "local-model",
                     "protocol": "openai-chat-completions",
-                    "runtime": "llama-once",
+                    "runtime": "remote-http",
                     "enabled": False,
                     "model_path": "C:/private/model.gguf",
                     "mmproj_path": "C:/private/mmproj.gguf",
@@ -521,7 +510,6 @@ class PromptAgentApiTests(unittest.TestCase):
             remote = next(item for item in payload["models"] if item["id"] == "remote")
             self.assertEqual("safe-model", remote["modelId"])
             self.assertTrue(remote["hasApiKey"])
-            self.assertFalse(remote["localModelConfigured"])
 
     def test_import_api_is_idempotent_and_does_not_discover_loom(self):
         with TemporaryDirectory() as directory:
@@ -605,20 +593,62 @@ class PromptAgentApiTests(unittest.TestCase):
             self.assertTrue(remote["hasApiKey"])
             self.assertNotIn("secret-value", str(state))
 
-    def test_llama_once_can_be_selected_as_the_active_agent_profile(self):
+    def test_remote_profile_can_be_selected_as_the_active_agent_profile(self):
         with TemporaryDirectory() as directory:
             authority = ProfileAuthority(Path(directory))
             authority.create({
-                "id": "one-shot",
-                "displayName": "One shot",
-                "modelId": "local-model",
+                "id": "remote",
+                "displayName": "Remote",
+                "modelId": "model",
                 "protocol": "openai-chat-completions",
-                "runtime": "llama-once",
-                "model_path": "C:/models/local-model.gguf",
+                "runtime": "remote-http",
+                "endpoint": "https://provider.invalid/v1",
             })
-            self.assertEqual("one-shot", authority.set_default("active", "one-shot")["activeProfileId"])
+            self.assertEqual("remote", authority.set_default("active", "remote")["activeProfileId"])
             with self.assertRaisesRegex(ValueError, "invalid profile route role"):
-                authority.set_default("teacher", "one-shot")
+                authority.set_default("teacher", "remote")
+
+    def test_legacy_local_runtimes_migrate_to_valid_disabled_remote_http_profiles(self):
+        legacy_local = {
+            "profile_id": "legacy-once",
+            "display_name": "Legacy once",
+            "model_id": "local-model",
+            "protocol": "openai-chat-completions",
+            "runtime": "llama-once",
+            "enabled": True,
+            "model_path": "C:/private/model.gguf",
+            "mmproj_path": "C:/private/mmproj.gguf",
+            "draft_model_path": "C:/private/draft.gguf",
+            "llama_server_path": "C:/private/llama-server.exe",
+            "n_ctx": 16384,
+            "n_gpu_layers": -1,
+            "thinking": True,
+            "unload_after_turn": True,
+            "idle_unload_minutes": 30,
+        }
+        legacy_endpoint = {
+            "profile_id": "legacy-endpoint",
+            "display_name": "Legacy endpoint",
+            "model_id": "local-model",
+            "protocol": "openai-chat-completions",
+            "runtime": "llama-endpoint",
+            "endpoint": "http://127.0.0.1:8080/v1",
+            "provider_id": "llama-cpp",
+        }
+        local_only_fields = (
+            "model_path", "mmproj_path", "draft_model_path", "llama_server_path",
+            "n_ctx", "n_gpu_layers", "thinking", "unload_after_turn", "idle_unload_minutes",
+        )
+        for raw in (legacy_local, legacy_endpoint):
+            normalized = normalize_profile(migrate_legacy_profile(raw))
+            self.assertEqual("remote-http", normalized["runtime"])
+            self.assertEqual("openai-compatible", normalized["provider_id"])
+            self.assertFalse(normalized["enabled"])
+            for field in local_only_fields:
+                self.assertNotIn(field, normalized)
+            public = public_profile(normalized, has_api_key=False)
+            self.assertFalse(public["enabled"])
+            self.assertEqual("openai-compatible", public["providerId"])
 
     def test_openai_connection_test_performs_bounded_models_request(self):
         calls: list[tuple[str, dict[str, str]]] = []

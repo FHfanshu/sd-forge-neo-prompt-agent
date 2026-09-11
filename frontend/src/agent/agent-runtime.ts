@@ -1,6 +1,7 @@
 import { Agent, type AgentMessage, type AgentOptions, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Message, Model } from "@earendil-works/pi-ai";
 import { parseHybridPrompt } from "../prompts/prompt-parser";
+import { TOOL_GROUPS, type ToolGroupName } from "../tools/tool-groups";
 import { pruneContextForModel } from "./context-pruning";
 import type { RuntimeListener } from "./runtime-events";
 import {
@@ -38,6 +39,7 @@ export interface PromptAgentRuntimeOptions
   systemPrompt?: string;
   messages?: AgentMessage[];
   tools?: AgentTool<any>[];
+  initialTools?: AgentTool<any>[];
   thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
@@ -162,14 +164,19 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
   private backgroundLookupStage: BackgroundLookupStage = "style-search";
   private lastTurnHadToolError = false;
   private readonly suppressedAssistantTimestamps = new Set<number>();
+  private readonly allTools: AgentTool<any>[];
+  private readonly initialToolNames: Set<string> | null;
+  private readonly revealedToolGroups = new Set<ToolGroupName>();
 
   constructor(options: PromptAgentRuntimeOptions) {
+    this.allTools = options.tools ?? [];
+    this.initialToolNames = options.initialTools ? new Set(options.initialTools.map((tool) => tool.name)) : null;
     this.agent = new Agent({
       initialState: {
         model: options.model,
         systemPrompt: options.systemPrompt ?? "Forge context is available through tools. Read current state before every mutation and use the returned hash for writes.",
         messages: options.messages ?? [],
-        tools: options.tools ?? [],
+        tools: options.initialTools ?? options.tools ?? [],
         thinkingLevel: options.thinkingLevel ?? "off",
       },
       streamFn: options.streamFn
@@ -193,7 +200,15 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
         }
         return options.beforeToolCall?.(context, signal);
       },
-      afterToolCall: options.afterToolCall,
+      afterToolCall: async (context, signal) => {
+        if (this.initialToolNames && context.toolCall.name === "load_tools" && !context.isError) {
+          this.revealToolGroups(context.result.details);
+          // ponytail: mutating the live loop context is the only hook pi 0.74.2 exposes for
+          // same-run tool reveal; revisit if AgentOptions ever forwards prepareNextTurn context.
+          context.context.tools = this.visibleTools();
+        }
+        return options.afterToolCall?.(context, signal);
+      },
       toolExecution: "parallel",
     });
     this.state = this.snapshot("idle");
@@ -265,8 +280,17 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
     this.emit();
     try {
       if (input.reasoningLevel) this.agent.state.thinkingLevel = input.reasoningLevel;
+      if (this.initialToolNames) {
+        if (this.backgroundLookupRequired) {
+          this.revealGroup("forge_resources");
+          this.revealGroup("danbooru");
+        }
+        if (input.images?.length) this.revealGroup("image");
+        this.agent.state.tools = this.visibleTools();
+      }
       await this.agent.prompt(input.text, input.images);
       this.agent.state.messages = this.visibleMessages();
+      if (this.initialToolNames) this.agent.state.tools = this.visibleTools();
       if (!this.agent.state.errorMessage && this.promptMutationRequired && !this.promptMutationSucceeded) {
         this.state = {
           ...this.snapshot("failed"),
@@ -340,6 +364,7 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
     this.backgroundLookupStage = "style-search";
     this.lastTurnHadToolError = false;
     this.suppressedAssistantTimestamps.clear();
+    this.revealedToolGroups.clear();
     this.agent.reset();
     this.state = initialAgentRuntimeState();
     this.emit();
@@ -412,6 +437,26 @@ export class PiPromptAgentRuntime implements PromptAgentRuntime {
     if (this.backgroundLookupStage === "style-inspect") return "inspect_resource";
     if (this.backgroundLookupStage === "danbooru-wiki-search") return "search_danbooru_wikis";
     return "inspect_danbooru_wikis";
+  }
+
+  private revealGroup(group: ToolGroupName): void {
+    this.revealedToolGroups.add(group);
+  }
+
+  private revealToolGroups(details: unknown): void {
+    if (!details || typeof details !== "object") return;
+    const groups = (details as Record<string, unknown>).groups;
+    if (!Array.isArray(groups)) return;
+    for (const group of groups) {
+      if (typeof group === "string" && group in TOOL_GROUPS) this.revealGroup(group as ToolGroupName);
+    }
+  }
+
+  private visibleTools(): AgentTool<any>[] {
+    if (!this.initialToolNames) return this.allTools;
+    const revealed = new Set<string>();
+    for (const group of this.revealedToolGroups) for (const name of TOOL_GROUPS[group].tools) revealed.add(name);
+    return this.allTools.filter((tool) => this.initialToolNames!.has(tool.name) || revealed.has(tool.name));
   }
 
   private recordBackgroundLookup(toolName: string, details: unknown): void {

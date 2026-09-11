@@ -142,15 +142,6 @@ def profile(provider: str) -> dict:
     }
     if provider == "gemini":
         return {**common, "protocol": "gemini-native", "endpoint": "https://generativelanguage.googleapis.com"}
-    if provider == "llama-cpp":
-        return {
-            **common,
-            "protocol": "openai-chat-completions",
-            "runtime": "llama-once",
-            "endpoint": "http://127.0.0.1:8080/v1",
-            "model_path": "C:/models/local.gguf",
-            "api_key": "",
-        }
     return {**common, "protocol": "openai-chat-completions", "endpoint": "https://provider.invalid/v1"}
 
 
@@ -179,7 +170,6 @@ class ProviderAdapterContractTests(unittest.TestCase):
         profiles = {
             "openai-compatible": profile("openai-compatible"),
             "gemini": profile("gemini"),
-            "llama-cpp": profile("llama-cpp"),
         }
         self.assertEqual(set(profiles), {provider_id_for(item) for item in profiles.values()})
         explicit = profile("openai-compatible") | {"provider_id": "openrouter", "endpoint": "https://gateway.invalid/v1"}
@@ -189,15 +179,11 @@ class ProviderAdapterContractTests(unittest.TestCase):
         report = capability_report(limited)
         self.assertFalse(report["effective"]["tools"])
         self.assertIn("tools", report["unsupported"])
-        once_report = capability_report(profile("llama-cpp") | {"runtime": "llama-once"})
-        self.assertTrue(once_report["supported"]["streaming"])
-        self.assertNotIn("abort", once_report["unsupported"])
 
     def test_each_adapter_normalizes_text_reasoning_and_usage(self):
         cases = {
             "openai-compatible": openai_frames(),
             "gemini": gemini_frames(),
-            "llama-cpp": openai_frames(),
         }
         for provider, chunks in cases.items():
             with self.subTest(provider=provider):
@@ -210,12 +196,11 @@ class ProviderAdapterContractTests(unittest.TestCase):
                 self.assertEqual(2, events[-1]["usage"]["output"])
                 self.assertIn("thinking_delta", types)
 
-    @acceptance("PROVIDER-TOOLS-001@2", "normalization")
+    @acceptance("PROVIDER-TOOLS-001@3", "normalization")
     def test_each_adapter_normalizes_tool_calls_and_native_request_schema(self):
         cases = {
             "openai-compatible": openai_frames(tool=True),
             "gemini": gemini_frames(tool=True),
-            "llama-cpp": openai_frames(tool=True),
         }
         for provider, chunks in cases.items():
             with self.subTest(provider=provider):
@@ -225,28 +210,25 @@ class ProviderAdapterContractTests(unittest.TestCase):
                 start = next(item for item in events if item["type"] == "toolcall_start")
                 self.assertEqual("lookup", start["toolName"])
                 body = json.loads(harness.requests[0].content)
-                if provider in {"openai-compatible", "llama-cpp"}:
+                if provider == "openai-compatible":
                     self.assertEqual("lookup", body["tools"][0]["function"]["name"])
-                else:
-                    self.assertEqual("lookup", body["tools"][0]["functionDeclarations"][0]["name"])
-                if provider in {"openai-compatible", "llama-cpp"}:
                     self.assertEqual("image_url", body["messages"][1]["content"][1]["type"])
                 else:
+                    self.assertEqual("lookup", body["tools"][0]["functionDeclarations"][0]["name"])
                     self.assertIn("inlineData", body["contents"][0]["parts"][1])
                     self.assertEqual("provider-secret", harness.requests[0].headers["x-goog-api-key"])
                     self.assertNotIn("key=", str(harness.requests[0].url))
 
-    @acceptance("PROVIDER-TOOLS-001@2", "forced-choice")
+    @acceptance("PROVIDER-TOOLS-001@3", "forced-choice")
     def test_each_adapter_forces_the_requested_declared_tool(self):
         cases = {
             "openai-compatible": openai_frames(tool=True),
             "gemini": gemini_frames(tool=True),
-            "llama-cpp": openai_frames(tool=True),
         }
         for provider, chunks in cases.items():
             with self.subTest(provider=provider):
                 body = self.collect_forced_tool(UpstreamHarness(200, chunks), provider)
-                if provider in {"openai-compatible", "llama-cpp"}:
+                if provider == "openai-compatible":
                     self.assertEqual({"type": "function", "function": {"name": "lookup"}}, body["tool_choice"])
                 else:
                     self.assertEqual({"mode": "ANY", "allowedFunctionNames": ["lookup"]}, body["toolConfig"]["functionCallingConfig"])
@@ -278,7 +260,7 @@ class ProviderAdapterContractTests(unittest.TestCase):
         self.assertIn("inlineData", tool_content["parts"][1])
 
     def test_each_adapter_sanitizes_terminal_http_errors(self):
-        for provider in ("openai-compatible", "gemini", "llama-cpp"):
+        for provider in ("openai-compatible", "gemini"):
             with self.subTest(provider=provider):
                 harness = UpstreamHarness(401, [frame('{"error":{"message":"provider-secret"}}')])
                 events = self.collect(harness, provider)
@@ -286,7 +268,7 @@ class ProviderAdapterContractTests(unittest.TestCase):
                 self.assertNotIn("provider-secret", json.dumps(events))
                 self.assertIn("credentials", events[-1]["errorMessage"])
 
-    @acceptance("PROVIDER-TOOLS-001@2", "abort")
+    @acceptance("PROVIDER-TOOLS-001@3", "abort")
     def test_each_adapter_cancellation_closes_upstream_work(self):
         async def run(provider: str) -> tuple[list[str], TrackingByteStream, httpx.AsyncClient]:
             started = asyncio.Event()
@@ -308,7 +290,7 @@ class ProviderAdapterContractTests(unittest.TestCase):
             self.assertIsNotNone(harness.client)
             return received, harness.streams[0], harness.client
 
-        for provider in ("openai-compatible", "gemini", "llama-cpp"):
+        for provider in ("openai-compatible", "gemini"):
             with self.subTest(provider=provider):
                 received, stream, client = asyncio.run(run(provider))
                 self.assertEqual(["start"], received)

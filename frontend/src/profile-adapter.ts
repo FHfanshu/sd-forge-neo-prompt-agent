@@ -9,14 +9,12 @@ import {
   type ProfileParameters,
   type ProfilePatch,
   type ProfileProtocol,
-  type ProfileRuntime,
   type ProfileState,
 } from "./contracts";
 import { supportsAgentChat } from "./providers/profile-capabilities";
 
 type RecordValue = Record<string, unknown>;
 
-const DEFAULT_ENDPOINT = "http://127.0.0.1:8080/v1";
 const DEFAULT_MODEL_ID = "local-model";
 
 const DEFAULT_CAPABILITIES: ProfileCapabilities = {
@@ -92,11 +90,6 @@ function normalizeProtocol(value: unknown, fallback: ProfileProtocol): ProfilePr
   return value === "gemini-native" || value === "openai-chat-completions" ? value : fallback;
 }
 
-function normalizeRuntime(value: unknown, fallback: ProfileRuntime): ProfileRuntime {
-  if (value === "llama-endpoint") return "remote-http";
-  return value === "remote-http" || value === "llama-once" ? value : fallback;
-}
-
 function normalizeCapabilities(raw: unknown, fallback = DEFAULT_CAPABILITIES): ProfileCapabilities {
   const source = objectValue(raw);
   const attachmentFallback = source.attachments === undefined && typeof source.vision === "boolean"
@@ -147,7 +140,6 @@ export function normalizeProfile(raw: unknown, fallback?: Partial<Profile>): Pro
   const baseCapabilities = normalizeCapabilities(base.capabilities);
   const baseParameters = normalizeParameters(base.parameters);
   const baseModelInfo = normalizeModelInfo(base.modelInfo);
-  const runtime = normalizeRuntime(firstValue(source, ["runtime"], base.runtime), normalizeRuntime(base.runtime, "remote-http"));
   const protocol = normalizeProtocol(
     firstValue(source, ["protocol"], base.protocol),
     normalizeProtocol(base.protocol, "openai-chat-completions"),
@@ -162,33 +154,21 @@ export function normalizeProfile(raw: unknown, fallback?: Partial<Profile>): Pro
     modelId: modelId.trim() || DEFAULT_MODEL_ID,
     enabled: booleanValue(source, ["enabled"], booleanValue(base, ["enabled"], true)),
     protocol,
-    runtime,
-    endpoint: stringValue(source, ["endpoint"], stringValue(base, ["endpoint"], runtime === "remote-http" ? "" : DEFAULT_ENDPOINT)).trim().replace(/\/+$/, ""),
+    runtime: "remote-http",
+    endpoint: stringValue(source, ["endpoint"], stringValue(base, ["endpoint"], "")).trim().replace(/\/+$/, ""),
     fallbackEndpoints: arrayValue(source, ["fallbackEndpoints", "fallback_endpoints"], arrayValue(base, ["fallbackEndpoints", "fallback_endpoints"])),
     hasApiKey: booleanValue(source, ["hasApiKey", "has_api_key"], booleanValue(base, ["hasApiKey", "has_api_key"], false)),
     capabilities: normalizeCapabilities(source.capabilities, baseCapabilities),
     parameters: normalizeParameters(source.parameters, baseParameters),
     modelInfo,
-    localModelConfigured: booleanValue(source, ["localModelConfigured", "local_model_configured"], booleanValue(base, ["localModelConfigured", "local_model_configured"], false)),
-    mmprojConfigured: booleanValue(source, ["mmprojConfigured", "mmproj_configured"], booleanValue(base, ["mmprojConfigured", "mmproj_configured"], false)),
-    draftModelConfigured: booleanValue(source, ["draftModelConfigured", "draft_model_configured"], booleanValue(base, ["draftModelConfigured", "draft_model_configured"], false)),
-    llamaServerConfigured: booleanValue(source, ["llamaServerConfigured", "llama_server_configured"], booleanValue(base, ["llamaServerConfigured", "llama_server_configured"], false)),
-    nCtx: Math.round(numberValue(source, ["nCtx", "n_ctx", "localNCtx", "local_n_ctx"], numberValue(base, ["nCtx", "n_ctx"], 16384), 1024, 1048576)),
-    nGpuLayers: Math.round(numberValue(source, ["nGpuLayers", "n_gpu_layers", "localNGpuLayers", "local_n_gpu_layers"], numberValue(base, ["nGpuLayers", "n_gpu_layers"], -1), -1, 10000)),
-    thinking: booleanValue(source, ["thinking", "localTextThinking", "local_text_thinking", "enableThinking"], booleanValue(base, ["thinking"], false)),
-    unloadAfterTurn: booleanValue(source, ["unloadAfterTurn", "unload_after_turn"], booleanValue(base, ["unloadAfterTurn", "unload_after_turn"], false)),
-    idleUnloadMinutes: Math.round(numberValue(source, ["idleUnloadMinutes", "idle_unload_minutes"], numberValue(base, ["idleUnloadMinutes", "idle_unload_minutes"], 30), 0, 1440)),
   };
   if (providerId) normalized.providerId = providerId;
-  if (normalized.runtime === "llama-once") normalized.protocol = "openai-chat-completions";
-  if (normalized.runtime === "llama-once") normalized.endpoint = normalized.endpoint || DEFAULT_ENDPOINT;
   return profileSchema.parse(normalized);
 }
 
 const DEFAULT_PROFILE_SEEDS: Array<Partial<Profile>> = [
   { id: "gemini", displayName: "Gemini", modelId: "gemini-model", enabled: true, protocol: "gemini-native", runtime: "remote-http", endpoint: "https://generativelanguage.googleapis.com", fallbackEndpoints: [], capabilities: { ...DEFAULT_CAPABILITIES }, parameters: { ...DEFAULT_PARAMETERS, temperature: 0.35, timeout: 120 } },
   { id: "openai-compatible", displayName: "OpenAI-compatible", modelId: "model", enabled: false, protocol: "openai-chat-completions", runtime: "remote-http", endpoint: "", fallbackEndpoints: [], capabilities: { ...DEFAULT_CAPABILITIES, vision: false }, parameters: { ...DEFAULT_PARAMETERS, temperature: 0.35, timeout: 120 } },
-  { id: "local-llama-once", displayName: "Local llama one-shot", modelId: DEFAULT_MODEL_ID, enabled: false, runtime: "llama-once", endpoint: DEFAULT_ENDPOINT, parameters: { ...DEFAULT_PARAMETERS } },
 ];
 
 export interface ProfilePreset {
@@ -232,8 +212,6 @@ export function createDefaultProfileState(): ProfileState {
   return {
     version: 2,
     activeProfileId: "gemini",
-    sessionProfileId: "",
-    namingProfileId: "",
     profiles: DEFAULT_PROFILE_SEEDS.map((profile) => normalizeProfile(profile)),
   };
 }
@@ -253,20 +231,13 @@ export function normalizeProfileState(raw: unknown): ProfileState {
   });
   if (!profiles.some((profile) => profile.enabled)) profiles[0].enabled = true;
   const enabled = profiles.filter((profile) => profile.enabled);
-  const enabledIds = new Set(enabled.map((profile) => profile.id));
   const agentProfiles = enabled.filter(supportsAgentChat);
   const agentIds = new Set(agentProfiles.map((profile) => profile.id));
   const firstEnabled = agentProfiles[0]?.id ?? "";
   const requestedActive = stringValue(source, ["activeProfileId", "active_profile_id"]);
-  const requestedSession = stringValue(source, ["sessionProfileId", "session_profile_id"]);
-  const requestedNaming = stringValue(source, ["namingProfileId", "naming_profile_id"]);
-  const localIds = enabled.filter((profile) => profile.runtime === "llama-once").map((profile) => profile.id);
-  const namingIds = enabled.filter((profile) => profile.runtime === "llama-once").map((profile) => profile.id);
   return profileStateSchema.parse({
     version: 2,
     activeProfileId: agentIds.has(requestedActive) ? requestedActive : firstEnabled,
-    sessionProfileId: localIds.includes(requestedSession) ? requestedSession : localIds[0] ?? "",
-    namingProfileId: namingIds.includes(requestedNaming) ? requestedNaming : (namingIds.includes("local-llama-once") ? "local-llama-once" : namingIds[0] ?? ""),
     profiles,
   });
 }
@@ -275,7 +246,7 @@ export function toHostProfilePatch(patch: ProfilePatch | Partial<Profile>): Reco
   const source = profilePatchSchema.parse(patch) as RecordValue;
   const result: RecordValue = {};
   const copy = (camel: string, snake: string) => { if (source[camel] !== undefined) result[snake] = source[camel]; };
-  ["providerId", "displayName", "modelId", "enabled", "protocol", "runtime", "endpoint", "fallbackEndpoints", "hasApiKey", "modelPath", "mmprojPath", "draftModelPath", "llamaServerPath", "nCtx", "nGpuLayers", "thinking", "unloadAfterTurn", "idleUnloadMinutes"].forEach((key) => {
+  ["providerId", "displayName", "modelId", "enabled", "protocol", "runtime", "endpoint", "fallbackEndpoints", "hasApiKey"].forEach((key) => {
     const snake = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
     copy(key, snake);
   });
@@ -303,8 +274,6 @@ export function toHostProfileState(state: ProfileState): RecordValue {
   return {
     version: normalized.version,
     active_profile_id: normalized.activeProfileId,
-    session_profile_id: normalized.sessionProfileId,
-    naming_profile_id: normalized.namingProfileId,
     profiles: normalized.profiles.map(toHostProfileInput),
   };
 }

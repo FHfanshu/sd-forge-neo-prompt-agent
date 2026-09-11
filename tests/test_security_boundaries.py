@@ -6,14 +6,13 @@ import sys
 import tempfile
 import types
 import unittest
-import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from fastapi import FastAPI
 
-from prompt_agent import image_payloads, model_paths
-from prompt_agent.reference_image import _reference_image_messages
+from backend.prompt_agent.profile_contracts import normalize_profile
+from prompt_agent import image_payloads
 from quality.acceptance import acceptance
 
 
@@ -70,80 +69,18 @@ print(parser.prog, API_PREFIX)
             callbacks[0][0](None, FastAPI())
             self.assertFalse(marker.exists())
 
-    def test_reference_image_messages_import_and_include_image(self):
-        image = MagicMock()
-        with patch("prompt_agent.reference_image._image_data_url", return_value="data:image/jpeg;base64,AA=="):
-            messages = _reference_image_messages(image)
-        self.assertEqual("system", messages[0]["role"])
-        self.assertEqual("image_url", messages[1]["content"][1]["type"])
-
     @acceptance("SECURITY-PRIVACY-001@1", "path-rejection")
-    def test_llama_server_path_must_be_server_configured(self):
-        with tempfile.TemporaryDirectory() as directory:
-            trusted = Path(directory) / "trusted.exe"
-            untrusted = Path(directory) / "untrusted.exe"
-            trusted.touch()
-            untrusted.touch()
-            with patch.dict("os.environ", {"LLAMA_SERVER_EXE": str(trusted)}, clear=False):
-                self.assertEqual(str(trusted.resolve()), model_paths.resolve_llama_server(str(trusted)))
-                with self.assertRaisesRegex(RuntimeError, "未受信任"):
-                    model_paths.resolve_llama_server(str(untrusted))
-
-    def test_llama_server_rejects_unc_before_filesystem_access(self):
-        with patch.object(model_paths.Path, "is_file") as is_file:
-            with self.assertRaisesRegex(RuntimeError, "远程"):
-                model_paths.resolve_llama_server(r"\\attacker\share\payload.exe")
-        is_file.assert_not_called()
-
-    def test_model_paths_reject_unc_before_filesystem_access(self):
-        with patch.object(model_paths.Path, "is_file") as is_file:
-            with self.assertRaisesRegex(RuntimeError, "远程"):
-                model_paths.resolve_vision_model_pair("自定义", r"\\attacker\share\model.gguf", "", False)
-        is_file.assert_not_called()
-
-    def test_model_paths_reject_directories_as_model_files(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            model_dir = root / "model.gguf"
-            mmproj_dir = root / "mmproj-model.gguf"
-            model_dir.mkdir()
-            mmproj_dir.mkdir()
-
-            with self.assertRaisesRegex(RuntimeError, "找不到"):
-                model_paths.resolve_vision_model_pair("自定义", str(model_dir), "", False)
-            with self.assertRaisesRegex(RuntimeError, "找不到"):
-                model_paths.resolve_vision_model_pair("自定义", str(root / "model.bin"), str(mmproj_dir), False)
-
-    def test_related_mmproj_ignores_directory_named_like_a_model(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            model = root / "model.gguf"
-            model.touch()
-            (root / "00-mmproj.gguf").mkdir()
-            valid = root / "01-mmproj.gguf"
-            valid.touch()
-
-            self.assertEqual(str(valid), model_paths._find_related_mmproj(model))
-
-    def test_zip_extraction_rejects_windows_traversal_and_symlinks(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            archive = root / "payload.zip"
-            target = root / "target"
-            target.mkdir()
-            with zipfile.ZipFile(archive, "w") as zip_file:
-                zip_file.writestr(r"..\outside.exe", b"bad")
-
-            with self.assertRaisesRegex(RuntimeError, "可疑路径"):
-                model_paths._safe_extract_zip(archive, target)
-
-            with zipfile.ZipFile(archive, "w") as zip_file:
-                info = zipfile.ZipInfo("link")
-                info.external_attr = (0o120777 << 16) | 0xA0000000
-                zip_file.writestr(info, "outside.txt")
-
-            with self.assertRaisesRegex(RuntimeError, "可疑路径"):
-                model_paths._safe_extract_zip(archive, target)
+    def test_profile_fields_reject_local_paths_before_any_validation(self):
+        base = {
+            "id": "remote",
+            "model_id": "model",
+            "protocol": "openai-chat-completions",
+            "runtime": "remote-http",
+            "endpoint": "https://provider.invalid/v1",
+        }
+        for field in ("id", "model_id", "display_name"):
+            with self.assertRaisesRegex(ValueError, "local path"):
+                normalize_profile({**base, field: "C:/private/model.gguf"})
 
     def test_inline_image_rejects_decoded_payload_over_limit(self):
         raw = base64.b64encode(b"123456789").decode("ascii")

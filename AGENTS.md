@@ -15,8 +15,11 @@ This extension is loaded inside Forge Neo, so keep changes small and easy to aud
 ## Architecture
 
 - Keep every source/documentation file at or below 1000 lines.
-- Preserve the package dependency direction:
-  `constants/utils/image_payloads/response_text` -> `model_paths/llama_runtime` -> `reference_image` -> `scripts`, with `backend.prompt_agent` depending only on shared leaf modules such as `provider_errors`.
+- Preserve the leaf direction: root `prompt_agent/` shared modules
+  (`provider_errors`, `i18n`, `utils`, `image_payloads`, `response_text`,
+  `pnginfo`, `danbooru`, `forge_resources`, `prompt_skills`, `image_index`)
+  must not import from `backend.prompt_agent`; `backend.prompt_agent` and
+  `scripts/` may depend on them.
 - Avoid circular imports. Run `python -m unittest discover -s tests` after changing Python module boundaries.
 
 ## Frontend
@@ -40,9 +43,10 @@ This extension is loaded inside Forge Neo, so keep changes small and easy to aud
 
 ## Local Models
 
-- The local Qwen text/VLM path used for testing is `E:\AI\lmcpp\models\Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-GGUF`.
-- The expected local backend binary is `E:\AI\lmcpp\llama.cpp\llama-server.exe` or `LLAMA_SERVER_EXE`.
-- Do not commit GGUF models, llama.cpp binaries, logs, cache directories, or generated pyc files.
+Local llama.cpp text/VLM inference, including the on-demand `llama-once`
+runtime and local reference-image analysis, was removed. All model profiles run
+against remote HTTP providers; do not reintroduce local model lifecycles, model
+paths, or bundled/GGUF artifacts.
 
 ## Git
 

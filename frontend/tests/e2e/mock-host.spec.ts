@@ -21,18 +21,10 @@ async function installMockHost(page: Page, hostDelayMs = 0): Promise<void> {
         capabilities: { tools: true, vision: true, streaming: true, reasoning: true },
         parameters: { temperature: 0.25, top_p: 0.9, max_tokens: 4096, reasoning_effort: "low", timeout: 30, sanitize_sensitive: true },
       },
-      {
-        id: "mock-local", display_name: "Mock local", model_id: "qwen-local", enabled: true,
-        protocol: "openai-chat-completions", runtime: "llama-once", endpoint: "http://127.0.0.1:8080/v1",
-        model_path: "C:/models/mock.gguf", capabilities: { tools: true, vision: true, streaming: true, reasoning: true },
-        parameters: { temperature: 0.25, top_p: 0.9, max_tokens: 4096, reasoning_effort: "low", timeout: 30, sanitize_sensitive: true },
-      },
     ];
     const state = {
       version: 2,
       active_profile_id: "mock-remote",
-      session_profile_id: "mock-local",
-      naming_profile_id: "mock-local",
       profiles,
     };
     const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
@@ -305,8 +297,8 @@ test("mounted desktop UI exercises chat, history, profiles, and attachments", as
   await settings.getByRole("tab", { name: "Advanced" }).click();
   await settings.getByText("Advanced settings").click();
   await expect(settings.getByRole("combobox", { name: /Active profile/ })).toBeVisible();
-  await expect(settings.getByRole("combobox", { name: /Session model/ })).toBeVisible();
-  await expect(settings.getByRole("combobox", { name: /Naming model/ })).toBeVisible();
+  await expect(settings.getByRole("combobox", { name: /Session model/ })).toHaveCount(0);
+  await expect(settings.getByRole("combobox", { name: /Naming model/ })).toHaveCount(0);
   await settings.getByRole("button", { name: "Language" }).click();
   await page.getByRole("menuitemradio", { name: "简体中文" }).click();
   await expect(settings.getByRole("tab", { name: "高级" })).toBeVisible();
