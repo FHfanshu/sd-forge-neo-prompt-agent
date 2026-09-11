@@ -495,6 +495,16 @@ Entries from 2026-07-19 through 2026-07-30 moved to
 - Verification: `python -m unittest tests.test_prompt_agent_api` passed (27
   tests, includes 2 new); `python tools/test_gate.py affected` exit 0 (5.8s).
 
+## 2026-09-11 Live verification of the recent-images route on Forge 2.29
+- Goal: prove the `on_image_saved` hook actually populates the index under real
+  Forge, not just in unit tests.
+- Restarted the updated Forge Neo 2.29 to load the new route, drove one real
+  txt2img generation through the Gradio UI, then queried
+  `POST /prompt-agent/api/images/recent`.
+- Result: the route returned generation `gen-1` with image `gen-1-0`
+  (1024x1024, target `txt2img`, `metadata_status` available, `is_grid` false),
+  confirming the hook records saved images with no runtime errors.
+
 
 
 
