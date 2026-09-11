@@ -1,5 +1,23 @@
 # SD Forge Neo Prompt Agent
 
+> **Maintenance ended 2026-09-12. This project is archived.** It is no longer
+> developed as a standalone product; only crash, data-loss, or
+> asset-extraction blockers would be fixed. The durable outputs live on:
+>
+> - [`generation-skills/`](generation-skills/README.md) — eight personal
+>   anime image-generation skills (Anima prompting, OC design, reference
+>   sheets, consistency, debugging, Danbooru methodology);
+> - [`danbooru-tools/`](danbooru-tools/README.md) — the standalone Danbooru
+>   lookup tools (Python + CLI);
+> - [`character-definitions/`](character-definitions/README.md) — the minimal
+>   character definition schema.
+>
+> **ComfyTV is the production workspace.** Import the skills there (first
+> `anima-image-generation` + `anthro-oc-design`, then the rest) and use
+> `danbooru-tools` as the lookup backend. Git history keeps the full product
+> (chat UI, providers, sessions, streaming, Forge glue); it is preserved, not
+> maintained.
+
 Single-agent prompt assistant for Forge Neo. The browser owns the Pi agent loop
 and keeps an IndexedDB session cache; Python owns durable synchronized chat
 history, profiles, secrets, provider streaming, and privileged Forge tools.
