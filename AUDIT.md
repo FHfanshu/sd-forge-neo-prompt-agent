@@ -1,5 +1,46 @@
 # Active Audit Log
 
+## 2026-09-11 Provider Tool-Result Image Ordering and Orphan Tool Calls
+- Root cause of two consecutive provider HTTP 400s: the OpenAI-compatible and
+  Gemini adapters appended a `role:"user"` image message immediately after each
+  tool result. When one assistant turn issued multiple tool calls whose results
+  carried images, the transcript became
+  `assistant(tool_calls=[A,B]) -> tool(A) -> user(image) -> tool(B) -> user(image)`,
+  and strict OpenAI-compatible endpoints reject a non-tool message while a
+  `tool_call` is still unanswered. Historical completed turns already strip tool
+  calls, so the same invalid active-turn batch was rebuilt and re-sent on the
+  follow-up ("继续"), producing the second 400. A single image-bearing tool
+  result is safe, which is why earlier single-result turns succeeded.
+- Changed `backend/prompt_agent/provider_adapters/openai_compatible.py` to buffer
+  images across consecutive tool results and emit one trailing `user` message
+  after all `tool` messages; changed `gemini.py` to fold consecutive tool results
+  into a single user turn (`functionResponse` + `inlineData`). Single-result and
+  text-only behavior is unchanged.
+- Hardened `frontend/src/agent/context-pruning.ts`: the active-turn projection
+  now synthesizes an interrupted `toolResult` (`orphanToolResultPlaceholder`,
+  `isError`) for any assistant `toolCall` without a matching result, so an
+  interrupted run can never forward an unmatched `tool_calls` to the provider.
+  Durable history may still contain the orphan; it is repaired on projection
+  rather than rewritten on disk.
+- Tests: `tests/test_prompt_agent_provider_adapters.py` batch-ordering and
+  text-only cases (10/10); `frontend/tests/context-pruning.test.ts` failed-turn
+  boundary and orphan-repair cases (8/8).
+- Verification: full gate exit 0 (67.1s): Python 2.6s, Svelte 0/0, frontend
+  tests 27.1s, build/budget, 7 mock-host browser acceptance, browser syntax.
+
+## 2026-09-11 Fast Inner-Loop Test Gate
+- Root cause: the developer inner loop paid for Playwright, build, and the full
+  frontend vitest suite even when only a mapped test file changed.
+- Added `python tools/test_gate.py fast` (preflight + affected Python + mapped
+  or changed frontend vitest; svelte-check only for `frontend/src/**` or
+  frontend type/config). `full`/`release` are unchanged. Test-only frontend
+  diffs now run the changed test files plus mapped acceptance tests instead of
+  the entire vitest suite; source/config still falls back to the full suite.
+- Verification: `python -m unittest tests.test_test_gate` 15/15 OK (0.163s).
+  `python tools/test_gate.py fast` exit 0 (35.3s): 43 Python, svelte-check 0/0,
+  132 frontend across 10 mapped files; no build/bundle/e2e. `run_full()` left
+  untouched. `affected` still uses mapped vitest plus Playwright.
+
 Historical migration implementation remains available on branch `kt` and tag
 `kt-final`. The concise archive index is in
 `docs/archive/audit-archive-2026-07-19.md`; detailed working notes are
@@ -783,6 +824,37 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   before this test-only change.
 - Residual risk: attachment chip rendering stays asynchronous by design; the
   test now tolerates it instead of assuming an immediate render.
+
+## 2026-09-11 Restore asynchronous post-turn release and incremental session sync
+- Root cause: the terminal send path regressed to awaiting the history reload and
+  the full server session sync before `Surface.svelte` cleared
+  `submissionInFlight`, so the composer stayed disabled until every local session
+  snapshot was uploaded and re-applied. The 2026-08-04 asynchronous post-turn
+  work had already removed this wait; the sync also pushed and re-applied all
+  local sessions on every turn regardless of change.
+- Change: `frontend/src/agent/controller.ts` now fires the post-turn history
+  reload and session sync after awaited local persistence, coalesces overlapping
+  syncs, and skips applying a sync result once a newer request owns the runtime.
+  `frontend/src/sessions/sync.ts` and `frontend/src/sessions/repository.ts` now
+  upload only dirty or never-synced sessions and skip re-applying snapshots whose
+  content hash already matches the local `syncHash`, with a full-sync fallback
+  until the first successful sync (in-memory dirty set, so a server data reset
+  still reconciles on the next full sync).
+- Regression tests: `frontend/tests/prompt-agent-controller.test.ts` (terminal
+  send resolves while sync is still pending; a rejected background history reload
+  does not fail the send) and `frontend/tests/session-sync.test.ts` (dirty-only
+  upload, never-synced upload, full-sync fallback, unchanged-snapshot skip).
+- Rebuilt `javascript/prompt_agent_90_ui.js` from frontend source.
+- Verification: `python tools/test_gate.py affected` exit 0 (43 Python, Svelte
+  0/0, 132 frontend, 7 browser, acceptance 0 warnings/0 errors);
+  `python tools/test_gate.py full` exit 0 (120 Python, 16 host contracts, Svelte
+  0/0, 212 frontend, build/budget, 7 browser, browser syntax).
+- Residual risk: only upload/apply is incremental; the response still returns
+  every stored snapshot (JSON parse plus server hashing) and the changed session
+  is echoed back and re-applied once. A local write racing the sync can be
+  cleared as clean (marked with a `ponytail:` note in `sync.ts`); the next write
+  re-dirties it. `UI-FEEDBACK-001` and `SESSION-SYNC-001` text and accepted
+  semantics are unchanged, so no acceptance revision was bumped.
 
 
 

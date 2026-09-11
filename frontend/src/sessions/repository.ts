@@ -72,6 +72,8 @@ async function withDatabase<T>(
 export class PromptAgentSessionRepository {
   private readonly channel: PromptAgentChangeChannel | undefined;
   private readonly listeners = new Set<SessionChangeListener>();
+  private readonly dirtySessions = new Set<string>();
+  private dirtyTrackingReady = false;
   private readonly handleChannelMessage = (event: MessageEvent): void => {
     if (!isSessionChangeNotification(event.data)) return;
     for (const listener of this.listeners) listener(event.data);
@@ -105,6 +107,7 @@ export class PromptAgentSessionRepository {
       await transactionComplete(transaction);
     });
     this.publish("session", "put", session.id);
+    this.dirtySessions.add(session.id);
   }
 
   async getSession(id: string): Promise<PromptAgentSession | undefined> {
@@ -157,6 +160,7 @@ export class PromptAgentSessionRepository {
       await transactionComplete(transaction);
     });
     this.publish("message", "put", message.id, message.sessionId);
+    this.dirtySessions.add(message.sessionId);
   }
 
   async getMessage(id: string): Promise<PromptAgentMessage | undefined> {
@@ -176,8 +180,12 @@ export class PromptAgentSessionRepository {
   }
 
   async deleteMessage(id: string): Promise<boolean> {
+    const existing = await this.getMessage(id);
     const deleted = await this.deleteById(SESSION_STORES.messages, id);
-    if (deleted) this.publish("message", "delete", id);
+    if (deleted) {
+      this.publish("message", "delete", id);
+      if (existing) this.dirtySessions.add(existing.sessionId);
+    }
     return deleted;
   }
 
@@ -198,7 +206,10 @@ export class PromptAgentSessionRepository {
       await completion;
       return records;
     });
-    for (const message of deleted) this.publish("message", "delete", message.id, message.sessionId);
+    for (const message of deleted) {
+      this.publish("message", "delete", message.id, message.sessionId);
+      this.dirtySessions.add(message.sessionId);
+    }
     return deleted.length;
   }
 
@@ -274,9 +285,21 @@ export class PromptAgentSessionRepository {
       const updatedAt = Date.now();
       for (const message of unfinished) store.put({ ...message, status: "interrupted", updatedAt });
       await transactionComplete(transaction);
-      for (const message of unfinished) this.publish("message", "put", message.id, message.sessionId);
+      for (const message of unfinished) {
+        this.publish("message", "put", message.id, message.sessionId);
+        this.dirtySessions.add(message.sessionId);
+      }
       return unfinished.length;
     });
+  }
+
+  dirtySessionIds(): string[] | undefined {
+    return this.dirtyTrackingReady ? [...this.dirtySessions] : undefined;
+  }
+
+  onSessionsSynced(sessionIds: string[]): void {
+    this.dirtyTrackingReady = true;
+    for (const id of sessionIds) this.dirtySessions.delete(id);
   }
 
   async syncWithServer() {

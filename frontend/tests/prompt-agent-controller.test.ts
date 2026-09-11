@@ -192,6 +192,35 @@ describe("PromptAgentController recovery", () => {
     controller.destroy();
   });
 
+  it("resolves a terminal send even while server sync is still pending", async () => {
+    installFetch();
+    const offline = {
+      ...repository,
+      syncWithServer: vi.fn(async () => ({ conflicts: [] })),
+    };
+    const controller = new PromptAgentController(offline);
+    await controller.mount();
+    offline.syncWithServer.mockImplementation(() => new Promise<never>(() => {}));
+
+    await controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" });
+
+    expect(useChatStore.getState().activeRequestId).toBeNull();
+    expect(useRuntimeStore.getState().workingPhase).toBe("idle");
+    controller.destroy();
+  });
+
+  it("does not fail a send when background history reload rejects", async () => {
+    installFetch();
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+    repository.listSessions.mockRejectedValueOnce(new Error("history failed"));
+
+    await controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" });
+
+    expect(useChatStore.getState().activeRequestId).toBeNull();
+    controller.destroy();
+  });
+
   acceptanceTest("MODEL-PROFILE-001@3", "hot-reload", "rebinds the current conversation to the latest active profile before sending", async () => {
     const profiles = createDefaultProfileState();
     const original = profiles.profiles.find((profile) => profile.id === profiles.activeProfileId)!;

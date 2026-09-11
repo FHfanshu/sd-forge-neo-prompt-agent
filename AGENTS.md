@@ -59,8 +59,9 @@ paths, or bundled/GGUF artifacts.
 - Reproduce UI bugs against the real frontend state transition before changing code; record the visible symptom and the state or event that caused it.
 - For session lifecycle bugs, verify success, failure, abort, refresh interruption, and stale-write recovery. A failed request must not leave the composer permanently disabled.
 - Add or update a focused regression test for every bugfix when the affected boundary is testable.
-- Run `python tools/test_gate.py affected` during development and
-  `python tools/test_gate.py full` before delivery. The affected gate warns on
+- Run `python tools/test_gate.py fast` during the inner loop,
+  `python tools/test_gate.py affected` when mapped browser acceptance is needed,
+  and `python tools/test_gate.py full` before delivery. The affected gate warns on
   stale high-level acceptance instead of making an old test dictate production
   behavior; the full gate requires every critical mapping to be current.
 - Critical UI, session, agent/provider, security, and data-integrity behavior is

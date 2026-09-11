@@ -1,4 +1,4 @@
-import { describe, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { synchronizePromptAgentSessions } from "../src/sessions/sync";
 import type { PromptAgentMessage, PromptAgentSession } from "../src/sessions/schema";
 import { acceptanceTest } from "./acceptance";
@@ -93,5 +93,89 @@ describe("cross-browser session sync", () => {
 
     await expect(synchronizePromptAgentSessions(local, request as typeof fetch)).rejects.toThrow("invalid response");
     expect(local.sessions.get("session-a")?.title).toBe("hello");
+  });
+
+  it("uploads only dirty sessions", async () => {
+    const sessionA = { ...session("session-a"), syncRevision: 1, syncHash: contentHash };
+    const sessionB = { ...session("session-b"), syncRevision: 1, syncHash: contentHash };
+    const local = {
+      ...store([sessionA, sessionB], [message("session-a"), message("session-b")]),
+      dirtySessionIds: () => ["session-a"],
+    };
+    const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.sessions.map((item: { session: { id: string } }) => item.session.id)).toEqual(["session-a"]);
+      return new Response(JSON.stringify({
+        version: 1,
+        conflicts: [],
+        sessions: [{ revision: 2, content_hash: contentHash, session: body.sessions[0].session, messages: body.sessions[0].messages }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await synchronizePromptAgentSessions(local, request as typeof fetch);
+  });
+
+  it("uploads sessions without a syncRevision even when they are not dirty", async () => {
+    const sessionA = { ...session("session-a"), syncRevision: 1, syncHash: contentHash };
+    const local = {
+      ...store([sessionA, session("session-b")], [message("session-a"), message("session-b")]),
+      dirtySessionIds: () => [],
+    };
+    const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.sessions.map((item: { session: { id: string } }) => item.session.id)).toEqual(["session-b"]);
+      return new Response(JSON.stringify({
+        version: 1,
+        conflicts: [],
+        sessions: [{ revision: 1, content_hash: contentHash, session: body.sessions[0].session, messages: body.sessions[0].messages }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await synchronizePromptAgentSessions(local, request as typeof fetch);
+  });
+
+  it("uploads all sessions when dirtySessionIds returns undefined", async () => {
+    const sessionA = { ...session("session-a"), syncRevision: 1, syncHash: contentHash };
+    const sessionB = { ...session("session-b"), syncRevision: 1, syncHash: contentHash };
+    const local = {
+      ...store([sessionA, sessionB], [message("session-a"), message("session-b")]),
+      dirtySessionIds: () => undefined,
+    };
+    const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.sessions.map((item: { session: { id: string } }) => item.session.id)).toEqual(["session-a", "session-b"]);
+      return new Response(JSON.stringify({
+        version: 1,
+        conflicts: [],
+        sessions: body.sessions.map((item: { session: PromptAgentSession; messages: PromptAgentMessage[] }) => ({
+          revision: 1,
+          content_hash: contentHash,
+          session: item.session,
+          messages: item.messages,
+        })),
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await synchronizePromptAgentSessions(local, request as typeof fetch);
+  });
+
+  it("skips applying a snapshot whose content hash already matches local syncHash", async () => {
+    const localSession = { ...session("session-a"), syncRevision: 1, syncHash: contentHash };
+    const base = store([localSession], [message()]);
+    const putSession = vi.fn(base.putSession);
+    const local = {
+      ...base,
+      getSession: async (id: string) => base.sessions.get(id),
+      putSession,
+    };
+    const request = vi.fn(async () => new Response(JSON.stringify({
+      version: 1,
+      conflicts: [],
+      sessions: [{ revision: 1, content_hash: contentHash, session: session("session-a"), messages: [message()] }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await synchronizePromptAgentSessions(local, request as typeof fetch);
+
+    expect(putSession).not.toHaveBeenCalled();
   });
 });

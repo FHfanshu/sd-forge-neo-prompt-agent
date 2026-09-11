@@ -68,6 +68,7 @@ export class PromptAgentController {
   private drainingFollowUps = false;
   private lastRequestSucceeded = false;
   private persistenceQueue: Promise<void> = Promise.resolve();
+  private syncPromise: Promise<void> | null = null;
   private mounted = false;
   private destroyed = false;
 
@@ -210,7 +211,7 @@ export class PromptAgentController {
       this.lastRequestSucceeded = this.runtime.getState().status === "completed";
       await this.queueRuntimePersistence(this.runtime.getState(), this.currentSession.id);
       await this.touchSession(input.text, editedFirstUser);
-      await this.loadHistory();
+      void this.loadHistory().catch(() => undefined);
       return { kind: "local", id: requestId };
     } finally {
       this.stopRequested = false;
@@ -219,7 +220,7 @@ export class PromptAgentController {
       useChatStore.getState().setActiveRequest(null);
       useRuntimeStore.getState().setWorking("idle");
       await this.persistenceQueue.catch(() => undefined);
-      await this.syncSessionsBestEffort();
+      void this.syncSessionsBestEffort().catch(() => undefined);
       if (this.lastRequestSucceeded && this.pendingFollowUps.length) queueMicrotask(() => void this.drainFollowUps());
     }
   }
@@ -423,10 +424,22 @@ export class PromptAgentController {
     useProfileStore.getState().setState(await response.json());
   }
 
-  private async syncSessionsBestEffort(): Promise<void> {
-    if (!this.sessions.syncWithServer) return;
+  private syncSessionsBestEffort(): Promise<void> {
+    const syncWithServer = this.sessions.syncWithServer;
+    if (!syncWithServer) return Promise.resolve();
+    if (this.syncPromise) return this.syncPromise;
+    const run = this.performSessionSync(syncWithServer).finally(() => {
+      if (this.syncPromise === run) this.syncPromise = null;
+    });
+    this.syncPromise = run;
+    return run;
+  }
+
+  private async performSessionSync(syncWithServer: () => Promise<SessionSyncResult>): Promise<void> {
     try {
-      const result = await this.sessions.syncWithServer();
+      const result = await syncWithServer();
+      // A newer request may own the runtime by now; do not replace it or open a conflict session underneath it.
+      if (this.requestId) return;
       const activeId = this.currentSession?.id;
       const conflict = result.conflicts.find((item) => item.session_id === activeId);
       const selectedId = conflict?.conflict_session_id ?? activeId;

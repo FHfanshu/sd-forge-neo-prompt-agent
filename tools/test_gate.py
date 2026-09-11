@@ -72,6 +72,7 @@ def parse_args() -> argparse.Namespace:
     preflight = subparsers.add_parser("preflight", help="Validate critical acceptance metadata and mappings.")
     preflight.add_argument("--mode", choices=("affected", "full"), default="affected")
     subparsers.add_parser("affected", help="Run acceptance preflight and tests affected by the current worktree diff.")
+    subparsers.add_parser("fast", help="Dev-loop gate: preflight plus affected Python and frontend tests, without build/e2e.")
     subparsers.add_parser("full", help="Run the complete local delivery gate.")
     release = subparsers.add_parser("release", help="Run the full gate plus coverage and real-Forge evidence.")
     release.add_argument("--allow-missing-forge", action="store_true")
@@ -280,41 +281,137 @@ def impacted_requirements(result: PreflightResult, files: list[str]) -> set[str]
     }
 
 
-def run_affected(result: PreflightResult) -> int:
-    files = changed_files()
-    if not files:
-        print("No worktree changes detected; acceptance preflight is complete.")
-        return 0
+def mapped_tests_for(result: PreflightResult, files: list[str]) -> tuple[set[str], set[str]]:
     impacted = impacted_requirements(result, files)
     mapped_tests = {
         mapping.path for mapping in result.mappings if mapping.requirement_id in impacted
     }
-    print(f"Changed files: {len(files)}")
-    print(f"Affected requirements: {', '.join(sorted(impacted)) or 'none'}")
-    print(f"Mapped acceptance test files: {', '.join(sorted(mapped_tests)) or 'none'}")
-    env = {**os.environ, "PROMPT_AGENT_TEST_MODE": "affected"}
-    env["npm_package_manager"] = ""
+    return impacted, mapped_tests
+
+
+def is_frontend_unit_test(path: str) -> bool:
+    return path.startswith("frontend/tests/") and path.endswith(".test.ts")
+
+
+def is_frontend_e2e_spec(path: str) -> bool:
+    return path.startswith("frontend/tests/") and "/e2e/" in path and path.endswith(".spec.ts")
+
+
+def frontend_type_or_config_changed(files: Iterable[str]) -> bool:
+    return any(
+        path.startswith("frontend/src/")
+        or path in {
+            "frontend/tsconfig.json",
+            "frontend/svelte.config.js",
+            "frontend/vite.config.ts",
+            "frontend/vitest.config.ts",
+            "frontend/tailwind.config.ts",
+            "frontend/package.json",
+            "frontend/pnpm-lock.yaml",
+            "frontend/components.json",
+        }
+        for path in files
+    )
+
+
+def frontend_suite_wide_change(files: Iterable[str]) -> bool:
+    return any(
+        path.startswith("frontend/")
+        and not is_frontend_unit_test(path)
+        and not is_frontend_e2e_spec(path)
+        for path in files
+    )
+
+
+def selected_frontend_vitest(files: list[str], mapped_tests: set[str]) -> list[str]:
+    selected = {
+        path.removeprefix("frontend/")
+        for path in mapped_tests
+        if is_frontend_unit_test(path)
+    }
+    if frontend_suite_wide_change(files):
+        return sorted(selected)
+    selected.update(
+        path.removeprefix("frontend/")
+        for path in files
+        if is_frontend_unit_test(path)
+    )
+    return sorted(selected)
+
+
+def affected_commands(
+    result: PreflightResult,
+    files: list[str],
+    *,
+    include_e2e: bool,
+    svelte_on_type_or_config: bool,
+) -> list[tuple[str, list[str], Path, str]]:
+    _, mapped_tests = mapped_tests_for(result, files)
     python_tests = sorted(path for path in mapped_tests if path.startswith("tests/") and path.endswith(".py"))
-    frontend_tests = sorted(path.removeprefix("frontend/") for path in mapped_tests if path.startswith("frontend/tests/") and path.endswith(".test.ts"))
-    e2e_tests = sorted(path.removeprefix("frontend/") for path in mapped_tests if "/e2e/" in path and path.endswith(".spec.ts"))
+    frontend_tests = selected_frontend_vitest(files, mapped_tests)
+    e2e_tests = sorted(path.removeprefix("frontend/") for path in mapped_tests if is_frontend_e2e_spec(path))
     commands: list[tuple[str, list[str], Path, str]] = []
     if python_tests:
         modules = [path[:-3].replace("/", ".") for path in python_tests]
         commands.append(("affected Python tests", [sys.executable, "-m", "unittest", *modules], ROOT, "implementation regression"))
     elif any(path.startswith(("backend/", "prompt_agent/", "scripts/")) for path in files):
         commands.append(("Python tests", [sys.executable, "tests/run_suite.py", "--max-skips", "20"], ROOT, "implementation regression"))
-    if any(path.startswith("frontend/src/") for path in files):
+    svelte_needed = (
+        frontend_type_or_config_changed(files)
+        if svelte_on_type_or_config
+        else any(path.startswith("frontend/src/") for path in files)
+    )
+    if svelte_needed:
         commands.append(("Svelte/type check", frontend_command("run", "check"), ROOT, "type or component contract"))
     if frontend_tests:
         commands.append(("affected frontend tests", frontend_command("exec", "vitest", "run", *frontend_tests), ROOT, "implementation regression"))
-    elif any(path.startswith("frontend/") for path in files):
+    elif frontend_suite_wide_change(files):
         commands.append(("frontend tests", frontend_command("run", "test"), ROOT, "implementation regression"))
-    if e2e_tests:
+    if include_e2e and e2e_tests:
         commands.append(("affected browser acceptance", frontend_command("exec", "playwright", "test", *e2e_tests), ROOT, "browser acceptance regression"))
+    return commands
+
+
+def run_selected(commands: list[tuple[str, list[str], Path, str]], env: dict[str, str]) -> int:
     for label, command, cwd, classification in commands:
         if run_command(label, command, cwd, env, classification):
             return 1
     return 0
+
+
+def print_affected_selection(result: PreflightResult, files: list[str]) -> None:
+    impacted, mapped_tests = mapped_tests_for(result, files)
+    print(f"Changed files: {len(files)}")
+    print(f"Affected requirements: {', '.join(sorted(impacted)) or 'none'}")
+    print(f"Mapped acceptance test files: {', '.join(sorted(mapped_tests)) or 'none'}")
+
+
+def run_affected(result: PreflightResult) -> int:
+    files = changed_files()
+    if not files:
+        print("No worktree changes detected; acceptance preflight is complete.")
+        return 0
+    print_affected_selection(result, files)
+    env = {**os.environ, "PROMPT_AGENT_TEST_MODE": "affected"}
+    env["npm_package_manager"] = ""
+    return run_selected(
+        affected_commands(result, files, include_e2e=True, svelte_on_type_or_config=False),
+        env,
+    )
+
+
+def run_fast(result: PreflightResult) -> int:
+    files = changed_files()
+    if not files:
+        print("No worktree changes detected; acceptance preflight is complete.")
+        return 0
+    print_affected_selection(result, files)
+    env = {**os.environ, "PROMPT_AGENT_TEST_MODE": "affected"}
+    env["npm_package_manager"] = ""
+    return run_selected(
+        affected_commands(result, files, include_e2e=False, svelte_on_type_or_config=True),
+        env,
+    )
 
 
 def frontend_command(*args: str) -> list[str]:
@@ -500,13 +597,17 @@ def main() -> int:
     args = parse_args()
     if args.command == "behavior-change":
         return behavior_change(args.requirement_id, args.bump)
-    mode = args.mode if args.command == "preflight" else "affected" if args.command == "affected" else "full"
+    mode = args.mode if args.command == "preflight" else "affected" if args.command in {"affected", "fast"} else "full"
     result = validate_preflight(mode)
     status = print_preflight(result, mode)
     if status or args.command == "preflight":
         return status
     if args.command == "affected":
         status = run_affected(result)
+        print_stage_timings()
+        return status
+    if args.command == "fast":
+        status = run_fast(result)
         print_stage_timings()
         return status
     if args.command == "full":

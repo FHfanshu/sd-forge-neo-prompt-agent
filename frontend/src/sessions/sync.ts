@@ -10,6 +10,9 @@ interface LocalSessionStore {
   deleteMessages(ids: string[]): Promise<number>;
   getPreference<T>(id: string): Promise<T | undefined>;
   putPreference(id: string, value: string): Promise<void>;
+  getSession?(id: string): Promise<PromptAgentSession | undefined>;
+  dirtySessionIds?(): string[] | undefined;
+  onSessionsSynced?(sessionIds: string[]): void;
 }
 
 interface SessionSnapshot {
@@ -39,8 +42,13 @@ export async function synchronizePromptAgentSessions(
   request: typeof fetch = fetch,
 ): Promise<SessionSyncResult> {
   const deviceId = await syncDeviceId(store);
+  const dirty = store.dirtySessionIds?.();
+  const dirtyIds = dirty ? new Set(dirty) : undefined;
   const sessions = await store.listSessions();
-  const snapshots = await Promise.all(sessions.map(async (session): Promise<SessionSnapshot> => {
+  const uploaded = dirtyIds === undefined
+    ? sessions
+    : sessions.filter((session) => dirtyIds.has(session.id) || session.syncRevision === undefined);
+  const snapshots = await Promise.all(uploaded.map(async (session): Promise<SessionSnapshot> => {
     const { syncRevision, syncHash, ...publicSession } = session;
     return {
       ...(syncRevision !== undefined ? { revision: syncRevision } : {}),
@@ -59,6 +67,11 @@ export async function synchronizePromptAgentSessions(
   const payload = await response.json() as unknown;
   if (!isSyncResponse(payload)) throw new Error("Session synchronization returned an invalid response");
   for (const snapshot of payload.sessions) await applySnapshot(store, snapshot);
+  // ponytail: best-effort dirty clearing; a local write racing this sync may be marked clean, but the next write re-dirties it.
+  store.onSessionsSynced?.([
+    ...uploaded.map((session) => session.id),
+    ...payload.sessions.map((snapshot) => snapshot.session.id),
+  ]);
   return { conflicts: payload.conflicts };
 }
 
@@ -66,6 +79,10 @@ async function applySnapshot(
   store: LocalSessionStore,
   snapshot: SessionSnapshot & { revision: number; content_hash: string },
 ): Promise<void> {
+  if (store.getSession) {
+    const local = await store.getSession(snapshot.session.id);
+    if (local?.syncHash === snapshot.content_hash) return;
+  }
   const localMessages = await store.getMessages(snapshot.session.id);
   const remoteIds = new Set(snapshot.messages.map((message) => message.id));
   const obsolete = localMessages.filter((message) => !remoteIds.has(message.id)).map((message) => message.id);

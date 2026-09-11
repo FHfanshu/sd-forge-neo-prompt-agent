@@ -109,4 +109,67 @@ describe("provider-facing context pruning", () => {
     const error = projected.find((message) => message.role === "toolResult" && message.toolCallId === "call-0") as ToolResultMessage;
     expect(error.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("verbose") });
   });
+
+  it("keeps the active tool protocol when a failed follow-up turn reuses recent tool results", () => {
+    const messages: AgentMessage[] = [
+      user(1, "first"),
+      assistant(2, [{ type: "text", text: "first answer" }]),
+      user(3, "inspect", true),
+      assistant(4, [
+        { type: "toolCall", id: "a", name: "read_image", arguments: {} },
+        { type: "toolCall", id: "b", name: "read_image", arguments: {} },
+      ], "toolUse"),
+      result(5, "a", "read_image"),
+      result(6, "b", "read_image"),
+      user(7, "continue"),
+    ];
+
+    const projected = pruneContextForModel(messages);
+
+    expect(projected.map((message) => message.role)).toEqual([
+      "user", "assistant", "user", "assistant", "toolResult", "toolResult", "user",
+    ]);
+    expect(JSON.stringify(projected[2])).toContain("large-base64");
+    expect((projected[3] as AssistantMessage).content.filter((block) => block.type === "toolCall")).toHaveLength(2);
+    expect((projected[4] as ToolResultMessage).toolCallId).toBe("a");
+    expect((projected[5] as ToolResultMessage).toolCallId).toBe("b");
+    expect(projected[6]).toMatchObject({ role: "user" });
+  });
+
+  it("compacts a failed turn and omits its tool chatter from the follow-up context", () => {
+    const failure = { ...assistant(8, [], "error"), errorMessage: "Provider request failed (HTTP 400)." } as AssistantMessage;
+    const messages: AgentMessage[] = [
+      user(1, "first"),
+      assistant(2, [{ type: "text", text: "first answer" }]),
+      user(3, "inspect", true),
+      assistant(4, [{ type: "toolCall", id: "a", name: "read_image", arguments: {} }], "toolUse"),
+      result(5, "a", "read_image"),
+      user(6, "continue"),
+      failure,
+    ];
+
+    const projected = pruneContextForModel(messages);
+
+    expect(projected).toHaveLength(5);
+    expect(projected.some((message) => message.role === "toolResult")).toBe(false);
+    expect(JSON.stringify(projected[2])).toContain(contextPruningConstants.oldImagePlaceholder);
+    expect(JSON.stringify(projected[2])).not.toContain("large-base64");
+    expect(projected[4]).toMatchObject({ role: "assistant" });
+  });
+
+  it("repairs an orphaned active tool call with an interrupted tool result", () => {
+    const messages: AgentMessage[] = [
+      user(1, "continue"),
+      assistant(2, [{ type: "toolCall", id: "orphan", name: "edit_prompt", arguments: {} }], "toolUse"),
+    ];
+
+    const projected = pruneContextForModel(messages);
+
+    expect(projected.map((message) => message.role)).toEqual(["user", "assistant", "toolResult"]);
+    const repaired = projected[2] as ToolResultMessage;
+    expect(repaired.toolCallId).toBe("orphan");
+    expect(repaired.toolName).toBe("edit_prompt");
+    expect(repaired.isError).toBe(true);
+    expect(repaired.content[0]).toMatchObject({ type: "text", text: contextPruningConstants.orphanToolResultPlaceholder });
+  });
 });

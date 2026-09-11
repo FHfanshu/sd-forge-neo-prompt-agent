@@ -6,7 +6,8 @@ and data integrity. Ordinary unit tests are intentionally outside this registry.
 
 ## Workflow
 
-- During development, run `python tools/test_gate.py affected`.
+- During development, run `python tools/test_gate.py fast` or
+  `python tools/test_gate.py affected`.
 - Before delivery, run `python tools/test_gate.py full`.
 - When product behavior intentionally changes, update the requirement revision
   and run `python tools/test_gate.py behavior-change <REQUIREMENT-ID>` before

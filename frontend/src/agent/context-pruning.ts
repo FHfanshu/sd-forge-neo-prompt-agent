@@ -5,6 +5,7 @@ const RECENT_TOOL_RESULTS = 6;
 const PROTECTED_ACTIVE_TOOLS = new Set(["load_skill", "load_tools", "edit_prompt", "apply_generation_parameters"]);
 const OLD_IMAGE_PLACEHOLDER = "[Earlier attached image omitted from the active model context.]";
 const TOOL_RESULT_PLACEHOLDER = "[Older tool result omitted from the active model context; newer steps are retained.]";
+const ORPHAN_TOOL_RESULT_PLACEHOLDER = "[Tool call was interrupted before it returned a result.]";
 
 function historicalUser(message: UserMessage): UserMessage {
   if (typeof message.content === "string") return message;
@@ -77,7 +78,7 @@ function activeTurn(messages: Message[]): Message[] {
     } satisfies ToolResultMessage;
   });
 
-  return projected.map((message) => {
+  const normalized = projected.map((message) => {
     if (message.role !== "assistant") return message;
     return {
       ...message,
@@ -87,6 +88,31 @@ function activeTurn(messages: Message[]): Message[] {
         : block),
     };
   });
+
+  // A run can be interrupted after a tool call is recorded but before its result is
+  // persisted. Synthesize an interrupted result so the provider never receives an
+  // assistant tool_calls message followed by an unrelated role (HTTP 400).
+  const answered = new Set(
+    normalized.filter((message) => message.role === "toolResult").map((message) => message.toolCallId),
+  );
+  const repaired: Message[] = [];
+  for (const message of normalized) {
+    repaired.push(message);
+    if (message.role !== "assistant") continue;
+    for (const block of message.content) {
+      if (block.type !== "toolCall" || answered.has(block.id)) continue;
+      answered.add(block.id);
+      repaired.push({
+        role: "toolResult",
+        toolCallId: block.id,
+        toolName: block.name,
+        isError: true,
+        content: [{ type: "text", text: ORPHAN_TOOL_RESULT_PLACEHOLDER }],
+        timestamp: message.timestamp,
+      });
+    }
+  }
+  return repaired;
 }
 
 /**
@@ -111,4 +137,5 @@ export const contextPruningConstants = {
   recentToolResults: RECENT_TOOL_RESULTS,
   oldImagePlaceholder: OLD_IMAGE_PLACEHOLDER,
   toolResultPlaceholder: TOOL_RESULT_PLACEHOLDER,
+  orphanToolResultPlaceholder: ORPHAN_TOOL_RESULT_PLACEHOLDER,
 } as const;

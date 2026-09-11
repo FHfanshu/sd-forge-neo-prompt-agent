@@ -153,14 +153,27 @@ def _messages(system_prompt: str, messages: list[dict[str, Any]]) -> list[dict[s
     result: list[dict[str, Any]] = []
     if system_prompt:
         result.append({"role": "system", "content": system_prompt})
+    # Images returned by tool results must not split a tool-call batch. Collect them
+    # across consecutive tool results and emit one trailing user message after the
+    # last tool message, so every assistant tool_calls is immediately answered by
+    # its tool messages before any other role appears.
+    pending_images: list[dict[str, Any]] = []
+
+    def flush_tool_images() -> None:
+        if pending_images:
+            result.append({"role": "user", "content": _content(pending_images)})
+            pending_images.clear()
+
     for message in messages:
         if not isinstance(message, dict):
             continue
         role = message.get("role")
         content = message.get("content")
         if role in {"system", "user"}:
+            flush_tool_images()
             result.append({"role": role, "content": _content(content)})
         elif role == "assistant":
+            flush_tool_images()
             blocks = content if isinstance(content, list) else []
             text = "".join(str(block.get("text") or "") for block in blocks if isinstance(block, dict) and block.get("type") == "text")
             reasoning = "".join(str(block.get("thinking") or "") for block in blocks if isinstance(block, dict) and block.get("type") == "thinking")
@@ -188,8 +201,8 @@ def _messages(system_prompt: str, messages: list[dict[str, Any]]) -> list[dict[s
                 "content": text_content(content),
             })
             image_blocks = [block for block in (content if isinstance(content, list) else []) if isinstance(block, dict) and block.get("type") == "image"]
-            if image_blocks:
-                result.append({"role": "user", "content": _content(image_blocks)})
+            pending_images.extend(image_blocks)
+    flush_tool_images()
     if not result or all(item["role"] == "system" for item in result):
         raise ValueError("messages must include user content")
     return result

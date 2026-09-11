@@ -100,11 +100,14 @@ to an older design.
 ### Fast local loop
 
 ```powershell
+python tools/test_gate.py fast
 python tools/test_gate.py affected
 ```
 
-`affected` first checks acceptance versions and then runs tests mapped to the
-changed boundaries. A stale acceptance test is reported and skipped during this
+`fast` is the inner-loop gate: acceptance preflight, affected Python tests, and
+mapped or changed frontend vitest files. It skips frontend build, bundle budget,
+Playwright, and generated-script syntax. `affected` adds mapped browser
+acceptance. A stale acceptance test is reported and skipped during this
 development loop instead of forcing an immediate production-code rollback.
 
 ### Frontend (when UI/source changes)

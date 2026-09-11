@@ -176,28 +176,39 @@ def _generate_url(endpoint: str, model: str) -> str:
 
 def _contents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    # One model function-call turn expects all of its function responses in the
+    # following user turn. Buffer consecutive tool results so a multi-call batch
+    # becomes a single user turn instead of one turn per result.
+    pending_parts: list[dict[str, Any]] = []
+
+    def flush_tool_parts() -> None:
+        if pending_parts:
+            result.append({"role": "user", "parts": list(pending_parts)})
+            pending_parts.clear()
+
     for message in messages:
         if not isinstance(message, dict):
             continue
         role = message.get("role")
         if role == "toolResult":
-            parts: list[dict[str, Any]] = [{"functionResponse": {
+            pending_parts.append({"functionResponse": {
                 "name": str(message.get("toolName") or "tool"),
                 "response": {"content": text_content(message.get("content"))},
-            }}]
+            }})
             for block in message.get("content") if isinstance(message.get("content"), list) else []:
                 if isinstance(block, dict) and block.get("type") == "image":
                     image = image_data(block)
                     if image:
                         mime_type, data = image
-                        parts.append({"inlineData": {"mimeType": mime_type, "data": data}})
-            result.append({"role": "user", "parts": parts})
+                        pending_parts.append({"inlineData": {"mimeType": mime_type, "data": data}})
             continue
+        flush_tool_parts()
         if role not in {"user", "assistant", "model"}:
             continue
         parts = _parts(message.get("content"))
         if parts:
             result.append({"role": "model" if role == "assistant" else role, "parts": parts})
+    flush_tool_parts()
     if not result or not any(item["role"] == "user" for item in result):
         raise ValueError("messages must include user content")
     return result

@@ -129,6 +129,45 @@ def request(*, tools: bool = False, request_id: str = "adapter-request", tool_ch
     })
 
 
+def tool_batch_request(*, with_images: bool = True):
+    def result(call_id: str, payload: str) -> list[dict]:
+        blocks: list[dict] = []
+        if with_images:
+            blocks.append({"type": "image", "mimeType": "image/png", "data": payload})
+        blocks.append({"type": "text", "text": call_id})
+        return blocks
+
+    return parse_stream_request({
+        "profile_id": "profile",
+        "request_id": "adapter-tool-batch",
+        "context": {
+            "systemPrompt": "system",
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "inspect"}]},
+                {"role": "assistant", "content": [
+                    {"type": "toolCall", "id": "call-a", "name": "read_image", "arguments": {}},
+                    {"type": "toolCall", "id": "call-b", "name": "read_image", "arguments": {}},
+                ]},
+                {"role": "toolResult", "toolCallId": "call-a", "toolName": "read_image", "content": result("call-a", "aW1hZ2UtYQ==")},
+                {"role": "toolResult", "toolCallId": "call-b", "toolName": "read_image", "content": result("call-b", "aW1hZ2UtYg==")},
+            ],
+            "tools": [],
+        },
+        "options": {"reasoning": "off"},
+    })
+
+
+def collected_body(request_value, provider: str) -> dict:
+    async def run() -> dict:
+        harness = UpstreamHarness(200, openai_frames())
+        with patch("backend.prompt_agent.providers.httpx.AsyncClient", new=harness.client_factory):
+            async for _frame in stream_profile(request_value, profile(provider)):
+                pass
+        return json.loads(harness.requests[0].content)
+
+    return asyncio.run(run())
+
+
 def profile(provider: str) -> dict:
     common = {
         "profile_id": "profile",
@@ -258,6 +297,27 @@ class ProviderAdapterContractTests(unittest.TestCase):
         tool_content = next(item for item in gemini_contents if item["parts"][0].get("functionResponse"))
         self.assertEqual("generate_image", tool_content["parts"][0]["functionResponse"]["name"])
         self.assertIn("inlineData", tool_content["parts"][1])
+
+    def test_tool_result_batch_keeps_images_after_all_tool_messages(self):
+        openai_messages = collected_body(tool_batch_request(), "openai-compatible")["messages"]
+        roles = [item["role"] for item in openai_messages]
+        tool_indexes = [index for index, role in enumerate(roles) if role == "tool"]
+        self.assertEqual(2, len(tool_indexes))
+        self.assertEqual(tool_indexes[0] + 1, tool_indexes[1])
+        trailing_user = openai_messages[tool_indexes[1] + 1]
+        self.assertEqual("user", trailing_user["role"])
+        self.assertEqual(2, len(trailing_user["content"]))
+        self.assertTrue(all(part["type"] == "image_url" for part in trailing_user["content"]))
+
+        gemini_contents = collected_body(tool_batch_request(), "gemini")["contents"]
+        function_turns = [item for item in gemini_contents if any("functionResponse" in part for part in item["parts"])]
+        self.assertEqual(1, len(function_turns))
+        self.assertEqual(2, len([part for part in function_turns[0]["parts"] if "functionResponse" in part]))
+        self.assertEqual(2, len([part for part in function_turns[0]["parts"] if "inlineData" in part]))
+
+    def test_tool_result_text_only_adds_no_user_message(self):
+        openai_messages = collected_body(tool_batch_request(with_images=False), "openai-compatible")["messages"]
+        self.assertEqual(["system", "user", "assistant", "tool", "tool"], [item["role"] for item in openai_messages])
 
     def test_each_adapter_sanitizes_terminal_http_errors(self):
         for provider in ("openai-compatible", "gemini"):
