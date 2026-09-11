@@ -14,6 +14,7 @@ export function mountSvelteUi(host: HTMLElement = document.body): ReturnType<typ
   mountTarget.id = "prompt-agent-svelte-mount";
   if (!mountTarget.isConnected) host.appendChild(mountTarget);
   app = mount(Shell, { target: mountTarget });
+  console.info("[prompt-agent] Svelte UI mounted");
   return app;
 }
 
@@ -64,6 +65,7 @@ export function installRuntimeContracts(globalWindow: Window): SvelteUiGlobal {
     },
   };
   namespace.ui = api;
+  console.info("[prompt-agent] UI bundle ready");
   globalWindow.dispatchEvent(new CustomEvent("prompt-agent:svelte-ready"));
   return api;
 }

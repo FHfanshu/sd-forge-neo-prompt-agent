@@ -368,4 +368,26 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   fell 126.7s -> 65.1s: Python tests 29.9s -> 2.5s, frontend tests 59.9s -> 26.2s,
   generated-script syntax ~10s of npx spawns -> 0.1s.
 
+## 2026-09-11 Launcher off-screen recovery and info-level load logging
+- Root cause: the floating launcher persisted `launcherPosition` in localStorage
+  but was never clamped on load or on viewport change, so a position saved on a
+  larger monitor or higher browser zoom could land fully off-screen and become
+  unreachable. The extension also logged nothing on a healthy load, making a
+  successful mount indistinguishable from a silent no-op.
+- Changed `frontend/src/window-interactions.ts` to add `clampLauncherPosition`
+  and use it while dragging, and `frontend/src/components/Surface.svelte` to
+  clamp the stored launcher position on mount and on every viewport change.
+- Added info-level load logging: `scripts/prompt_agent.py` logs extension load
+  and API registration at INFO on the `prompt_agent` logger; the browser scripts
+  log `[prompt-agent] Forge adapter ready`, `host bridge ready`, and `boot script
+  loaded...`; `frontend/src/bootstrap.ts` logs `UI bundle ready` and `Svelte UI
+  mounted`; boot failures log via `console.error`.
+- Added a `window-interactions` regression for off-screen recovery and taught
+  `tests/test_host_bridge.py` to ignore the new `[prompt-agent]` console lines
+  when parsing host stdout; kept `javascript/prompt_agent.js` under the
+  1000-line limit. Rebuilt `javascript/prompt_agent_90_ui.js` via
+  `pnpm --dir frontend run build`.
+- Verification: `python tools/test_gate.py full` passed (exit 0), total stage
+  time 63.9s.
+
 

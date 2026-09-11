@@ -9,6 +9,12 @@ from pathlib import Path
 from quality.acceptance import acceptance
 
 
+def _without_boot_logs(completed: subprocess.CompletedProcess) -> str:
+    return "".join(
+        line for line in completed.stdout.splitlines(keepends=True) if not line.startswith("[prompt-agent] ")
+    )
+
+
 @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
 class HostBridgeTests(unittest.TestCase):
     @acceptance("PROMPT-SKILL-001@3", "host-cache")
@@ -52,7 +58,7 @@ tools.executeResourceTool({ tool: "load_skill", arguments: { name: "forge_couple
             capture_output=True,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
-        result = json.loads(completed.stdout)
+        result = json.loads(_without_boot_logs(completed))
         self.assertEqual(["forge_couple"], result["loaded"])
         self.assertEqual("forge_couple", result["results"][0]["name"])
         self.assertEqual(1, len(result["calls"]))
@@ -99,7 +105,7 @@ process.stdout.write("ok");
             capture_output=True,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
-        self.assertEqual("ok", completed.stdout)
+        self.assertEqual("ok", _without_boot_logs(completed))
 
     def test_boot_mounts_when_loaded_after_the_forge_ui_event(self):
         root = Path(__file__).resolve().parents[1]
@@ -133,7 +139,7 @@ process.stdout.write("ok");
             capture_output=True,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
-        self.assertEqual("ok", completed.stdout)
+        self.assertEqual("ok", _without_boot_logs(completed))
 
     def test_i18n_does_not_preload_unused_bundles(self):
         root = Path(__file__).resolve().parents[1]
@@ -156,7 +162,7 @@ setTimeout(() => process.stdout.write(String(fetches)), 0);
             capture_output=True,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
-        self.assertEqual("0", completed.stdout)
+        self.assertEqual("0", _without_boot_logs(completed))
 
     def test_replace_rejects_ambiguous_allow_multiple_flag(self):
         root = Path(__file__).resolve().parents[1]
@@ -177,7 +183,7 @@ process.stdout.write(JSON.stringify(result));
             capture_output=True,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
-        result = json.loads(completed.stdout)
+        result = json.loads(_without_boot_logs(completed))
         self.assertFalse(result["ok"])
         self.assertIn("replace_all", result["error"])
 
@@ -221,7 +227,7 @@ process.stdout.write(JSON.stringify({
             capture_output=True,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
-        result = json.loads(completed.stdout)
+        result = json.loads(_without_boot_logs(completed))
         self.assertEqual("prompt-agent-host", result["name"])
         self.assertEqual("1.0.0", result["version"])
         self.assertEqual(1, result["apiVersion"])
@@ -259,7 +265,7 @@ window.__SD_FORGE_NEO_PROMPT_AGENT__.executeAssistantTool({ tool: "read_prompt",
             capture_output=True,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
-        result = json.loads(completed.stdout)
+        result = json.loads(_without_boot_logs(completed))
         self.assertEqual("/prompt-agent/api/forge-tools/validate", result["calls"][0]["url"])
         self.assertEqual("read_prompt", result["calls"][0]["body"]["tool"])
         self.assertEqual("txt2img", result["result"]["target"])
@@ -332,7 +338,7 @@ process.stdout.write(JSON.stringify({ rejected, stale, accepted, positive: posit
             capture_output=True,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
-        result = json.loads(completed.stdout)
+        result = json.loads(_without_boot_logs(completed))
         self.assertFalse(result["rejected"]["ok"])
         self.assertIn("only when the current field is empty", result["rejected"]["error"])
         self.assertFalse(result["stale"]["ok"])

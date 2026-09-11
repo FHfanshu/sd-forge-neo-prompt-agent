@@ -6,6 +6,11 @@
     var attempts = 0;
     var MAX_ATTEMPTS = 200;
 
+    function log(message, detail) {
+        if (detail === undefined) console.info("[prompt-agent] " + message);
+        else console.info("[prompt-agent] " + message, detail);
+    }
+
     function forgeUiIsPresent() {
         try {
             var root = typeof window.gradioApp === "function" ? window.gradioApp() : document;
@@ -16,6 +21,7 @@
     }
 
     function showFatalError(message) {
+        console.error("[prompt-agent] " + message);
         var existing = document.getElementById("prompt-agent-boot-error");
         if (existing) {
             existing.querySelector("span").textContent = message;
@@ -93,4 +99,5 @@
     });
     registerUiLoaded();
     if (!mountUi()) schedule();
+    log("boot script loaded; waiting for Forge UI and Svelte bundle");
 })();

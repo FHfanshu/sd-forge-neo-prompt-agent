@@ -87,6 +87,21 @@ interface PointerPositionOptions {
   moved?(moved: boolean): void;
 }
 
+export function clampLauncherPosition(
+  position: FloatingPosition,
+  viewport = readViewportRect(),
+  size: { width: number; height: number } = { width: 0, height: 0 },
+): FloatingPosition {
+  const minLeft = viewport.left + 8;
+  const minTop = viewport.top + 8;
+  const maxLeft = Math.max(minLeft, viewport.left + viewport.width - size.width - 8);
+  const maxTop = Math.max(minTop, viewport.top + viewport.height - size.height - 8);
+  return {
+    left: Math.max(minLeft, Math.min(position.left, maxLeft)),
+    top: Math.max(minTop, Math.min(position.top, maxTop)),
+  };
+}
+
 export function pointerPosition(node: HTMLElement, options: PointerPositionOptions) {
   let current = options;
   let activePointerId: number | null = null;
@@ -95,8 +110,6 @@ export function pointerPosition(node: HTMLElement, options: PointerPositionOptio
   let startLeft = 0;
   let startTop = 0;
   let moved = false;
-
-  const clamp = (value: number, minimum: number, maximum: number): number => Math.max(minimum, Math.min(value, maximum));
 
   const finish = (event: PointerEvent) => {
     if (activePointerId === null || event.pointerId !== activePointerId) return;
@@ -126,13 +139,11 @@ export function pointerPosition(node: HTMLElement, options: PointerPositionOptio
     const deltaY = event.clientY - startY;
     if (!moved && Math.hypot(deltaX, deltaY) < 4) return;
     moved = true;
-    const viewport = readViewportRect();
-    const maxLeft = Math.max(viewport.left + 8, viewport.left + viewport.width - node.offsetWidth - 8);
-    const maxTop = Math.max(viewport.top + 8, viewport.top + viewport.height - node.offsetHeight - 8);
-    current.update({
-      left: clamp(startLeft + deltaX, viewport.left + 8, maxLeft),
-      top: clamp(startTop + deltaY, viewport.top + 8, maxTop),
-    });
+    current.update(clampLauncherPosition(
+      { left: startLeft + deltaX, top: startTop + deltaY },
+      readViewportRect(),
+      { width: node.offsetWidth, height: node.offsetHeight },
+    ));
     current.moved?.(true);
     event.preventDefault();
   };

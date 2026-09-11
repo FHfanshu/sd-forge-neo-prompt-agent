@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import gradio as gr
 
@@ -20,9 +21,18 @@ from prompt_agent.reference_image import analyze_reference_image
 from modules import call_queue, script_callbacks
 
 
+_LOGGER = logging.getLogger("prompt_agent")
+
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+_LOGGER.info("Prompt Agent Python extension loaded")
+
+
 def _assistant_api(_: gr.Blocks, app):
     from fastapi import Body, HTTPException
     register_prompt_agent_api(app)
+    _LOGGER.info("Prompt Agent API registered under /prompt-agent/api")
 
     @app.post("/prompt-agent/api/analyze-image")
     async def prompt_agent_reference_image(payload: dict = Body(...)):

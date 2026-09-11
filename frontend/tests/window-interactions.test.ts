@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { clampWindowLayout, minimumForViewport, readLayoutViewportRect, readViewportRect, resolveViewportAfterKeyboard, viewportKind } from "../src/window-interactions";
+import { clampLauncherPosition, clampWindowLayout, minimumForViewport, readLayoutViewportRect, readViewportRect, resolveViewportAfterKeyboard, viewportKind } from "../src/window-interactions";
 
 describe("window viewport boundaries", () => {
   it.each([
@@ -88,5 +88,14 @@ describe("window viewport boundaries", () => {
     expect(css).toMatch(/\.pa-message-actions \{[^}]*flex-wrap: nowrap;/);
     expect(css).toMatch(/\.pa-message-action \{[^}]*white-space: nowrap;/);
     expect(css).toMatch(/@media \(hover: hover\) and \(pointer: fine\)[\s\S]*?\.pa-message-user \.pa-message-footer \{[^}]*left: auto;[^}]*width: max-content;/);
+  });
+
+  it("recovers a launcher saved off-screen by a larger monitor", () => {
+    const viewport = { left: 0, top: 0, width: 1000, height: 800 };
+    const size = { width: 120, height: 32 };
+
+    expect(clampLauncherPosition({ left: -400, top: -300 }, viewport, size)).toEqual({ left: 8, top: 8 });
+    expect(clampLauncherPosition({ left: 3000, top: 2000 }, viewport, size)).toEqual({ left: 872, top: 760 });
+    expect(clampLauncherPosition({ left: 200, top: 150 }, viewport, size)).toEqual({ left: 200, top: 150 });
   });
 });

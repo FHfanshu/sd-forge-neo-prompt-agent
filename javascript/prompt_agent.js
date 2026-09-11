@@ -996,4 +996,5 @@
         applyGenerationParametersTool,
         executeAssistantTool
     });
+    console.info("[prompt-agent] Forge adapter ready");
 })();

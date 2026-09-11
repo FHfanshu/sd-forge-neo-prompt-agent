@@ -32,7 +32,7 @@
   import { useProfileStore } from "../stores/profiles";
   import { useRuntimeStore } from "../stores/runtime";
   import { useUiStore } from "../stores/ui";
-  import { clampWindowLayout, minimumForViewport, pointerPosition, pointerWindow, readViewportRect, resolveViewportAfterKeyboard, viewportKind, type FloatingPosition, type LayoutViewport } from "../window-interactions";
+  import { clampLauncherPosition, clampWindowLayout, minimumForViewport, pointerPosition, pointerWindow, readViewportRect, resolveViewportAfterKeyboard, viewportKind, type FloatingPosition, type LayoutViewport } from "../window-interactions";
   import Markdown from "./Markdown.svelte";
   import ContextMeter from "./ContextMeter.svelte";
   import ModelPicker from "./ModelPicker.svelte";
@@ -75,6 +75,7 @@
   let kind = $state<LayoutViewport>(viewportKind(stableViewport));
   let viewport = $state(stableViewport);
   let fileInput = $state<HTMLInputElement>();
+  let launcherButton = $state<HTMLButtonElement | null>(null);
   let composerInput = $state<HTMLTextAreaElement>();
   let composerFocused = $state(false);
   let replacementInput = $state<HTMLInputElement>();
@@ -229,6 +230,14 @@
     $useUiStore.setLauncherPosition(next);
   }
 
+  function recoverLauncherPosition(): void {
+    const stored = $useUiStore.launcherPosition;
+    const element = launcherButton;
+    if (!stored || !element || !element.offsetWidth) return;
+    const next = clampLauncherPosition(stored, readViewportRect(), { width: element.offsetWidth, height: element.offsetHeight });
+    if (next.left !== stored.left || next.top !== stored.top) $useUiStore.setLauncherPosition(next);
+  }
+
   function openLauncher(): void {
     if (launcherDragged) {
       launcherDragged = false;
@@ -254,6 +263,7 @@
     viewportRecovering = next.recovering;
     viewport = next.viewport;
     if (!focused) kind = viewportKind(viewport);
+    recoverLauncherPosition();
   }
 
   async function ensureControllerReady(): Promise<PromptAgentController | null> {
@@ -624,6 +634,7 @@
     if (initialOpen) $useUiStore.setShellOpen(true);
     void ensureControllerReady().catch(() => undefined);
     window.addEventListener("resize", refreshViewport);
+    requestAnimationFrame(recoverLauncherPosition);
     window.visualViewport?.addEventListener("resize", refreshViewport);
     window.visualViewport?.addEventListener("scroll", refreshViewport);
     document.addEventListener("focusin", refreshViewport);
@@ -670,6 +681,7 @@
       class:pa-launcher-active={$useUiStore.shellOpen || $useUiStore.profileSettingsOpen}
       class="pa-launcher"
       type="button"
+      bind:this={launcherButton}
        aria-label={t("assistant.open", "Open Prompt Agent")}
       aria-expanded={$useUiStore.shellOpen}
       title={t("assistant.drag", "Drag to move")}

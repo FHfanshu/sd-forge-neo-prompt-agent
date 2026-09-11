@@ -54,4 +54,5 @@
     });
 
     if (!tools.hostApi || tools.hostApi.name !== HOST_API_NAME || tools.hostApi.apiVersion !== API_VERSION) tools.hostApi = hostApi;
+    console.info("[prompt-agent] host bridge ready", { version: VERSION, apiVersion: API_VERSION });
 })();
