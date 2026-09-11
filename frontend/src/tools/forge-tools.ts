@@ -1,6 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type, type Static, type TSchema } from "typebox";
 import { getHostApi, promptAgentNamespace, type PromptAgentHostApi } from "../bridge";
+import type { WireAttachment } from "../contracts";
 
 const targetSchema = Type.Optional(Type.Union([
   Type.Literal("active"),
@@ -142,7 +143,7 @@ const pnginfoFieldSchema = Type.Union([
 ]);
 
 const readPnginfoSchema = Type.Object({
-  image_id: Type.String({ pattern: "^gen-\\d+-\\d+$" }),
+  image_id: Type.String({ pattern: "^(?:gen-\\d+-\\d+|attachment-\\d+)$" }),
   fields: Type.Optional(Type.Array(pnginfoFieldSchema, { minItems: 1, maxItems: 5 })),
 }, { additionalProperties: false });
 
@@ -152,7 +153,7 @@ const readImageDetailSchema = Type.Union([
 ]);
 
 const readImageSchema = Type.Object({
-  image_id: Type.String({ pattern: "^gen-\\d+-\\d+$" }),
+  image_id: Type.String({ pattern: "^(?:gen-\\d+-\\d+|attachment-\\d+)$" }),
   detail: Type.Optional(readImageDetailSchema),
 }, { additionalProperties: false });
 
@@ -211,6 +212,7 @@ export interface ForgeToolFactoryOptions {
   allowWrites?: () => boolean;
   allowGeneration?: () => boolean;
   supportsVision?: () => boolean;
+  attachments?: () => WireAttachment[];
 }
 
 export interface ForgeAgentTool<TSchemaValue extends TSchema = TSchema> extends AgentTool<TSchemaValue, unknown> {
@@ -269,6 +271,45 @@ function isFailedResult(result: unknown): boolean {
   return Boolean(result && typeof result === "object" && (result as Record<string, unknown>).ok === false);
 }
 
+const ATTACHMENT_IMAGE_ID = /^attachment-(\d+)$/;
+
+function resolveTurnAttachment(options: ForgeToolFactoryOptions, imageId: string): WireAttachment | null {
+  const match = ATTACHMENT_IMAGE_ID.exec(imageId);
+  if (!match) return null;
+  return (options.attachments ?? (() => []))()[Number(match[1]) - 1] ?? null;
+}
+
+function attachmentPnginfoResult(attachment: WireAttachment, args: Record<string, unknown>): Record<string, unknown> {
+  const metadata = attachment.metadata ?? null;
+  return {
+    ok: true,
+    image_id: args.image_id,
+    target: "attachment",
+    source: "attachment",
+    metadata_status: metadata?.metadata_status ?? "unsupported",
+    parser_format: metadata?.parser_format ?? null,
+    requested_fields: Array.isArray(args.fields) ? args.fields : ["summary"],
+    width: metadata?.width ?? null,
+    height: metadata?.height ?? null,
+    infotext: metadata?.infotext ?? null,
+    data: metadata?.data ?? {},
+    missing_fields: metadata?.missing_fields ?? [],
+    warnings: metadata?.warnings ?? [],
+    truncated: false,
+    result_id: null,
+  };
+}
+
+function attachmentImageResult(attachment: WireAttachment, imageId: string): Record<string, unknown> {
+  return {
+    ok: true,
+    image_id: imageId,
+    target: "attachment",
+    image_mime_type: attachment.mimeType || "image/png",
+    image_base64: attachment.dataUrl.split(",", 2)[1] ?? "",
+  };
+}
+
 async function invokeForgeTool(
   name: ForgeToolName,
   args: Record<string, unknown>,
@@ -277,6 +318,17 @@ async function invokeForgeTool(
   options: ForgeToolFactoryOptions,
 ): Promise<unknown> {
   if (signal?.aborted) throw abortException();
+  if ((name === "read_pnginfo" || name === "read_image") && typeof args.image_id === "string" && ATTACHMENT_IMAGE_ID.test(args.image_id)) {
+    const attachment = resolveTurnAttachment(options, args.image_id);
+    if (!attachment) throw new ForgeToolError("unknown_attachment", "No current-turn attachment matches that id. Attached images are addressed as attachment-1, attachment-2, and so on in attachment order.", false);
+    if (name === "read_image") {
+      if (options.supportsVision && !options.supportsVision()) {
+        throw new ForgeToolError("vision_unsupported", "The active model cannot view images, so read_image is unavailable. Use read_pnginfo to read this image's prompt and parameters instead.", false);
+      }
+      return attachmentImageResult(attachment, args.image_id);
+    }
+    return attachmentPnginfoResult(attachment, args);
+  }
   const host = (options.host ?? defaultHost)();
   if (!host || !host.isForgeAvailable()) {
     throw new ForgeToolError("forge_unavailable", "Forge is not ready, so this tool cannot run.", true);
@@ -452,7 +504,7 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
     createForgeTool(
       "read_pnginfo",
       "Read PNGInfo",
-      "Read the generation metadata (parsed prompt and parameters) of a previously completed host generation, addressed by its image_id from list_recent_generations. Optionally select which fields to read; the default is a short summary. Read-only; filenames and filesystem paths are never returned.",
+      "Read the generation metadata (parsed prompt and parameters) of an image, addressed by its image_id. Use an id from list_recent_generations for a completed host generation, or attachment-1, attachment-2, and so on for an image attached in the current turn (in attachment order). Optionally select which fields to read; the default is a short summary. Works without host access or model vision, so metadata stays readable even for a non-vision model. Read-only; filenames and filesystem paths are never returned.",
       FORGE_TOOL_SCHEMAS.read_pnginfo,
       "read",
       options,
@@ -460,7 +512,7 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
     createForgeTool(
       "read_image",
       "Read image",
-      "Return the pixels of a previously completed host generation as image content, addressed by its image_id from list_recent_generations, so you can inspect it directly. Optional detail: \"preview\" (default) returns a bounded render for quick inspection, \"standard\" returns the stored original. Only usable when the active model supports vision; if it does not, this tool is unavailable and read_pnginfo reports the prompt and parameters instead. Read-only; filenames and filesystem paths are never returned.",
+      "Return an image as image content so you can inspect it directly, addressed by its image_id: an id from list_recent_generations for a completed host generation, or attachment-1, attachment-2, and so on for an image attached in the current turn (in attachment order). Optional detail: \"preview\" (default) returns a bounded render for quick inspection, \"standard\" returns the stored original. Only usable when the active model supports vision; if it does not, this tool is unavailable and read_pnginfo reports the prompt and parameters instead. Read-only; filenames and filesystem paths are never returned.",
       FORGE_TOOL_SCHEMAS.read_image,
       "read",
       options,

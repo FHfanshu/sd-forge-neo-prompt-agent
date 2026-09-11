@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ImageMetadata } from "./image-metadata";
 
 export const localeCodes = ["en", "zh-CN"] as const;
 export const localeCodeSchema = z.enum(localeCodes);
@@ -107,7 +108,7 @@ export type ChatMessageInput = z.input<typeof chatMessageSchema>;
 
 export const attachmentSchema = chatAttachmentSchema;
 export type ChatAttachment = z.infer<typeof attachmentSchema>;
-export type WireAttachment = ChatAttachment & { dataUrl: string };
+export type WireAttachment = ChatAttachment & { dataUrl: string; metadata?: ImageMetadata | null };
 
 export const historyRowSchema = z.object({
   id: z.string().min(1),

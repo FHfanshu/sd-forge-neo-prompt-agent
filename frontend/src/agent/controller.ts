@@ -10,6 +10,7 @@ import type {
   QueuedFollowUp,
   SendMessageInput,
   PromptMutationEvidence,
+  WireAttachment,
 } from "../contracts";
 import { providerRegistry } from "../providers/registry";
 import { supportsAgentChat } from "../providers/profile-capabilities";
@@ -30,6 +31,8 @@ const LAST_SESSION_PREFERENCE = "last-session-id";
 export const FORGE_AGENT_SYSTEM_PROMPT = [
   "You are the SD Forge Neo Prompt Agent.",
   "For every task with attached images, inspect every image before proposing or applying any prompt change. First build a factual visual inventory for each image covering visible content, visual style, and composition. Separate directly visible evidence from uncertain interpretation; do not invent identities, relationships, off-frame details, intent, or symbolism. With multiple images, keep their evidence separate, then state relevant similarities and differences. Treat this visual inventory as the source of truth for the rest of the task. Do not start rewriting or editing a Forge prompt until the inventory is complete.",
+  "An image attached in the current turn is addressed as attachment-1, attachment-2, and so on in attachment order. To read an attached image's own prompt and generation parameters, call read_pnginfo with that attachment id; this works even when the active model cannot view images. To inspect an attached image's pixels with a vision model, call read_image with the id.",
+  "Never present pixel-based reconstruction as an image's original parameters. When a task reconstructs a style or parameters from an attached image and that attachment's PNG metadata could not be read (metadata_status is absent, unsupported, error, or missing the needed fields), say plainly in the user's language that the attachment's PNG metadata could not be read, so the result is reconstructed from the visible pixels rather than copied from the original parameters.",
   "When the user asks to caption or describe an image, output exactly two substantive versions unless they request another format. Version 1 is detailed, objective, neutral English natural language. Organize its information in the continuous order of image content, visual style, then composition, and write it as one coherent context whose sentences support and refer consistently to one another. Short category cues such as Content, Style, and Composition are allowed, but do not turn the result into disconnected bullets, tag fragments, or independent captions. Version 2 conveys the same evidence, order, continuity, and detail in natural, purely Chinese language. Detailed and complete does not mean verbose: make nearly every token carry visual meaning, while retaining the words required for grammatical correctness. Do not add unsupported aesthetic judgments or speculation.",
   "The target image model accepts hybrid prompts: natural-language descriptions and Danbooru-style tags are both first-class and may be combined. Keep natural-language blocks, tags, special syntax, and unknown fragments independent; do not force natural language into tags or split coherent prose at every comma. Use natural language for relationships, spatial detail, scene intent, and atmosphere; use tags for precise visual attributes and concise controls. Do not convert between pools unless the user asks.",
   "When the user asks for NL, natural language, prose, complete sentences, or an attached-image style transfer without explicitly requesting tags only, the actual prompt edit must add a substantive English natural-language block derived from the request and visual inventory. Normally write two to four short, concrete sentences covering the important content, style, and composition while preserving useful tags, LoRAs, wildcards, and special syntax separately. Do not merely print prose in the chat while writing tags to Forge. A tag-only edit does not satisfy a natural-language request.",
@@ -61,6 +64,7 @@ export class PromptAgentController {
   private currentSession: PromptAgentSession | null = null;
   private interruptedRecords: PromptAgentMessage[] = [];
   private requestId: string | null = null;
+  private currentAttachments: WireAttachment[] = [];
   private localRuntimeProfileId: string | null = null;
   private localRuntimeStartController: AbortController | null = null;
   private forceLocalRuntimeStop = false;
@@ -197,6 +201,7 @@ export class PromptAgentController {
       await this.refreshRuntimeProfile();
       if (!this.currentSession || !this.runtime) throw new Error("Prompt Agent is not ready.");
       if (this.forceLocalRuntimeStop) return { kind: "local", id: requestId };
+      this.currentAttachments = input.attachments;
       const images = input.attachments.map(toImageContent);
       const reasoningLevel = input.reasoning === "none" || input.reasoning === "max" ? (input.reasoning === "none" ? "off" : "xhigh") : input.reasoning;
       profile = profileById(this.currentSession.profileId) ?? activeProfile();
@@ -233,6 +238,7 @@ export class PromptAgentController {
       if (profile && this.localRuntimeProfileId === profile.id) this.localRuntimeProfileId = null;
       this.forceLocalRuntimeStop = false;
       this.requestId = null;
+      this.currentAttachments = [];
       useChatStore.getState().setActiveRequest(null);
       useRuntimeStore.getState().setWorking("idle");
       await this.persistenceQueue.catch(() => undefined);
@@ -346,6 +352,7 @@ export class PromptAgentController {
       allowWrites: this.options.allowForgeWrites ?? (() => true),
       allowGeneration: this.options.allowGeneration ?? (() => true),
       supportsVision: () => provider.effectiveCapabilities(profile).vision,
+      attachments: () => this.currentAttachments,
     });
     const model = provider.toPiModel({
       id: profile.modelId,

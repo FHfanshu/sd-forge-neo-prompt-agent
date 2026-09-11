@@ -3,6 +3,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { PiPromptAgentRuntime } from "../src/agent/agent-runtime";
 import { FORGE_TOOL_SCHEMAS, ForgeToolError, createForgeAgentTools } from "../src/tools/forge-tools";
+import type { WireAttachment } from "../src/contracts";
 import { toPromptAgentModel } from "../src/providers/proxy-model";
 
 const TOOL_NAMES = [
@@ -80,6 +81,8 @@ describe("Forge Agent Tools", () => {
     }
     expect(Compile(FORGE_TOOL_SCHEMAS.read_prompt).Check({})).toBe(false);
     expect(Compile(FORGE_TOOL_SCHEMAS.edit_prompt).Check({ base_hash: "hash" })).toBe(false);
+    expect(Compile(FORGE_TOOL_SCHEMAS.read_pnginfo).Check({ image_id: "attachment-2" })).toBe(true);
+    expect(Compile(FORGE_TOOL_SCHEMAS.read_image).Check({ image_id: "attachment-2" })).toBe(true);
     expect(tools.filter((tool) => tool.permission === "write").map((tool) => tool.name)).toEqual([
       "edit_prompt",
       "apply_generation_parameters",
@@ -179,6 +182,59 @@ describe("Forge Agent Tools", () => {
 
     await readPnginfo.execute("png-1", { image_id: "gen-2-1" }, new AbortController().signal);
     expect(fake.calls[0]).toMatchObject({ tool: "read_pnginfo", arguments: { image_id: "gen-2-1" } });
+  });
+
+  it("reads a current-turn attachment's PNGInfo locally without a host call", async () => {
+    const fake = host();
+    const attachments: WireAttachment[] = [{
+      id: "attachment-1",
+      name: "reference.png",
+      previewUrl: "",
+      mimeType: "image/png",
+      size: 16,
+      dataUrl: "data:image/png;base64,aW1hZ2U=",
+      metadata: {
+        metadata_status: "available",
+        parser_format: "a1111",
+        width: 512,
+        height: 512,
+        infotext: "masterpiece, steps: 20",
+        data: { steps: 20 },
+        missing_fields: [],
+        warnings: [],
+      },
+    }];
+    const tools = createForgeAgentTools({ host: () => fake.api, attachments: () => attachments, supportsVision: () => false });
+    const readPnginfo = tools.find((tool) => tool.name === "read_pnginfo")!;
+    const readImage = tools.find((tool) => tool.name === "read_image")!;
+
+    const result = await readPnginfo.execute("png-1", { image_id: "attachment-1" }, new AbortController().signal);
+    const payload = JSON.parse((result.content[0] as { text: string }).text);
+    expect(payload).toMatchObject({ ok: true, image_id: "attachment-1", source: "attachment", metadata_status: "available", infotext: "masterpiece, steps: 20" });
+
+    await expect(readImage.execute("read-1", { image_id: "attachment-1" }, new AbortController().signal))
+      .rejects.toMatchObject({ code: "vision_unsupported" });
+    await expect(readPnginfo.execute("png-2", { image_id: "attachment-9" }, new AbortController().signal))
+      .rejects.toMatchObject({ code: "unknown_attachment" });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("returns an attached image's pixels as an image block when vision is supported", async () => {
+    const fake = host();
+    const attachments: WireAttachment[] = [{
+      id: "attachment-1",
+      name: "reference.png",
+      previewUrl: "",
+      mimeType: "image/webp",
+      size: 16,
+      dataUrl: "data:image/webp;base64,aW1hZ2U=",
+    }];
+    const tool = createForgeAgentTools({ host: () => fake.api, attachments: () => attachments, supportsVision: () => true }).find((item) => item.name === "read_image")!;
+
+    const result = await tool.execute("read-1", { image_id: "attachment-1" }, new AbortController().signal);
+    const blocks = result.content as Array<{ type: string; data?: string; mimeType?: string }>;
+    expect(blocks[0]).toEqual({ type: "image", data: "aW1hZ2U=", mimeType: "image/webp" });
+    expect(fake.calls).toHaveLength(0);
   });
 
   it("sends compact search candidates to the model while keeping the full host result in details", async () => {

@@ -28,7 +28,7 @@ The generated requirement table is verified by `tools/test_gate.py preflight`.
 | Requirement | Rev | Area | Title | Required scenarios |
 | --- | ---: | --- | --- | --- |
 | AGENT-LOOKUP-001 | 2 | agent | Verified named-entity background lookup | style-first, fallback, unverified-hidden |
-| AGENT-TOOLS-001 | 11 | agent | Forge tool authority and freshness | surface, revalidation, freshness, parallel-reads, serialized-writes, danbooru-wiki-default, wiki-navigation, context-pruning |
+| AGENT-TOOLS-001 | 12 | agent | Forge tool authority and freshness | surface, revalidation, freshness, parallel-reads, serialized-writes, danbooru-wiki-default, wiki-navigation, context-pruning |
 | DATA-INTEGRITY-001 | 1 | data | Stale writes and replay are prevented | freshness, stale-recovery, no-replay |
 | IMAGE-INPUT-001 | 2 | agent | Grounded image analysis and multi-image input | visual-grounding, bilingual-caption, multi-select |
 | LOCAL-RUNTIME-001 | 1 | lifecycle | On-demand llama.cpp lifecycle | loading, abort, privacy |

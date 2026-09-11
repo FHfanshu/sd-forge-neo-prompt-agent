@@ -21,7 +21,7 @@ FORGE_TOOL_NAMES = (
     "search_danbooru_wikis",
     "inspect_danbooru_wikis",
 )
-_IMAGE_ID_RE = re.compile(r"gen-\d+-\d+\Z")
+_IMAGE_ID_RE = re.compile(r"(?:gen-\d+-\d+|attachment-\d+)\Z")
 PNGINFO_FIELDS = ("summary", "positive_prompt", "negative_prompt", "generation_parameters", "extra_metadata")
 _FORBIDDEN_KEYS = frozenset({
     "api_key",

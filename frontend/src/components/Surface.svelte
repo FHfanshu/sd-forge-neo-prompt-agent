@@ -1,11 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
-    AlertTriangle, Bot, Check, ChevronDown, ChevronLeft, ChevronRight,
-    CircleStop, Clipboard, Clock3, Copy, FileCog, Grip, History,
-    ImagePlus, Pencil, Plus, RefreshCw, Search, Send, Settings2,
-    Sparkles, SquarePen, Trash2, UserRound, X,
-    XCircle,
+    AlertTriangle, ChevronLeft, ChevronRight, Grip, RefreshCw, Sparkles, X,
   } from "lucide-svelte";
   import type {
     ChatAttachment, ChatMessage, HistoryRow, PromptAgentActionHandlers, MessageSubmission,
@@ -34,14 +30,10 @@
   import { useUiStore } from "../stores/ui";
   import { clampLauncherPosition, clampWindowLayout, minimumForViewport, pointerPosition, pointerWindow, readViewportRect, resolveViewportAfterKeyboard, viewportKind, type FloatingPosition, type LayoutViewport } from "../window-interactions";
   import { windowIn, windowOut } from "../motion";
-  import Markdown from "./Markdown.svelte";
-  import ContextMeter from "./ContextMeter.svelte";
-  import ModelPicker from "./ModelPicker.svelte";
   import ProfileSettings from "./ProfileSettings.svelte";
-  import ProcessDrawer from "./ProcessDrawer.svelte";
-  import ReasoningPicker from "./ReasoningPicker.svelte";
-  import ToolCard from "./ToolCard.svelte";
-  import WorkingIndicator from "./WorkingIndicator.svelte";
+  import ChatHeader from "./chat/ChatHeader.svelte";
+  import ChatTranscript from "./chat/ChatTranscript.svelte";
+  import ChatComposer from "./chat/ChatComposer.svelte";
 
   interface Props {
     messages?: ChatMessage[];
@@ -62,7 +54,6 @@
   let draft = $state("");
   let attachments = $state<PreparedImageAttachment[]>([]);
   let reasoning = $state<ReasoningEffort>("low");
-  let historySearch = $state("");
   let lightbox = $state<{ attachments: PreparedImageAttachment[]; index: number } | null>(null);
   let copiedId = $state<string | null>(null);
   let collapsedMessageIds = $state<Set<string>>(new Set());
@@ -75,13 +66,11 @@
   let viewportRecovering = $state(false);
   let kind = $state<LayoutViewport>(viewportKind(stableViewport));
   let viewport = $state(stableViewport);
-  let fileInput = $state<HTMLInputElement>();
   let launcherButton = $state<HTMLButtonElement | null>(null);
-  let composerInput = $state<HTMLTextAreaElement>();
+  let composerRef = $state<ReturnType<typeof ChatComposer>>();
+  let transcriptRef = $state<ReturnType<typeof ChatTranscript>>();
   let composerFocused = $state(false);
-  let replacementInput = $state<HTMLInputElement>();
   let replacementId = $state<string | null>(null);
-  let attachmentMenuId = $state<string | null>(null);
   let notice = $state<string | null>(null);
   let editingMessageId = $state<string | null>(null);
   let preEditDraft = $state<{ text: string; attachments: PreparedImageAttachment[] } | null>(null);
@@ -94,17 +83,12 @@
   let sessionTransition: Promise<void> | null = null;
   let submissionInFlight = $state(false);
   let queueSubmissionInFlight = $state(false);
-  let messageScroll = $state<HTMLDivElement>();
   let followLatest = $state(true);
   let wasShellOpen = false;
 
   const visibleMessages = $derived(providedMessages ?? $useChatStore.messages);
   const runtimeUnavailable = $derived(connectionState === "failed" && !Object.keys(actionOverrides).length);
   const visibleHistory = $derived(providedHistory ?? (controller ? $useRuntimeStore.history : []));
-  const filteredHistory = $derived(visibleHistory.filter((row) => {
-    const query = historySearch.trim().toLowerCase();
-    return !query || `${row.title} ${row.preview}`.toLowerCase().includes(query);
-  }));
   const windowMinimum = $derived(minimumForViewport(kind));
   const currentLayout = $derived(clampWindowLayout($useUiStore.layouts[kind], viewport, windowMinimum));
   const activeProfile = $derived($useProfileStore.profiles.find((profile) => profile.id === $useProfileStore.activeProfileId && profile.enabled));
@@ -156,22 +140,6 @@
     );
   }
 
-  function roleLabel(message: ChatMessage): string {
-    if (message.role === "tool") return message.tool?.name ?? t("chat.role.tool", "Tool");
-    return t(`chat.role.${message.role}`, message.role);
-  }
-
-  function reasoningPreview(value: string): string {
-    const compact = value.replace(/\s+/g, " ").trim();
-    return compact.length > 160 ? `${compact.slice(0, 157)}…` : compact;
-  }
-
-  function groupHasProcess(processMessages: ChatMessage[], finalMessage: ChatMessage): boolean {
-    return processMessages.some((message) => message.role === "tool"
-      || Boolean(message.reasoning)
-      || (message.role === "assistant" && message.id !== finalMessage.id && Boolean(message.content.trim())));
-  }
-
   function toggleMessage(messageId: string): void {
     const next = new Set(collapsedMessageIds);
     if (next.has(messageId)) next.delete(messageId); else next.add(messageId);
@@ -198,14 +166,17 @@
   }
 
   function scrollToLatest(force = false): void {
+    const messageScroll = transcriptRef?.getScrollElement();
     if (!messageScroll || (!force && !followLatest)) return;
     requestAnimationFrame(() => {
-      if (!messageScroll) return;
-      messageScroll.scrollTop = messageScroll.scrollHeight;
+      const el = transcriptRef?.getScrollElement();
+      if (!el) return;
+      el.scrollTop = el.scrollHeight;
     });
   }
 
   function updateFollowLatest(): void {
+    const messageScroll = transcriptRef?.getScrollElement();
     if (!messageScroll) return;
     followLatest = messageScroll.scrollHeight - messageScroll.scrollTop - messageScroll.clientHeight < 72;
   }
@@ -246,7 +217,7 @@
     $useUiStore.setShellOpen(true);
     $useUiStore.bringToFront("chat");
     void ensureControllerReady().catch(() => undefined);
-    requestAnimationFrame(() => composerInput?.focus());
+    requestAnimationFrame(() => composerRef?.focusComposer());
   }
 
   function isTextEntryFocused(): boolean {
@@ -342,7 +313,7 @@
     const submittedAttachments = [...attachments];
     draft = "";
     attachments = [];
-    requestAnimationFrame(() => resizeComposer());
+    requestAnimationFrame(() => composerRef?.resizeComposer());
     try {
       await sessionTransition;
       assertAttachmentTotal(submittedAttachments);
@@ -361,11 +332,11 @@
         editingMessageId = null;
         preEditDraft = null;
       }
-      requestAnimationFrame(() => resizeComposer());
+      requestAnimationFrame(() => composerRef?.resizeComposer());
     } catch (error) {
       if (!draft) draft = submittedDraft;
       if (!attachments.length) attachments = submittedAttachments;
-      requestAnimationFrame(() => resizeComposer());
+      requestAnimationFrame(() => composerRef?.resizeComposer());
       if (error instanceof DOMException && error.name === "AbortError") return;
       notice = attachmentErrorText(error) || t("assistant.error.send", "Message could not be sent. Check the active model and try again.");
     } finally {
@@ -374,10 +345,10 @@
     }
   }
 
-  async function removeQueuedMessage(id: string): Promise<void> {
+  async function removeQueuedMessage(queueId: string): Promise<void> {
     notice = null;
     try {
-      await action("removeQueuedMessage")(id);
+      await action("removeQueuedMessage")(queueId);
     } catch (error) {
       notice = errorText(error);
     }
@@ -390,17 +361,6 @@
     } catch (error) {
       notice = errorText(error);
     }
-  }
-
-  function resizeComposer(element = composerInput): void {
-    if (!element) return;
-    element.style.height = "0px";
-    const styles = getComputedStyle(element);
-    const minimum = Number.parseFloat(styles.minHeight) || 42;
-    const maximum = Number.parseFloat(styles.maxHeight) || 132;
-    const contentHeight = element.scrollHeight;
-    element.style.height = `${Math.min(maximum, Math.max(minimum, contentHeight))}px`;
-    element.style.overflowY = contentHeight > maximum ? "auto" : "hidden";
   }
 
   function keepComposerFocus(event: PointerEvent): void {
@@ -416,9 +376,10 @@
     retainImageAttachments(attachments);
     notice = null;
     requestAnimationFrame(() => {
-      resizeComposer();
-      composerInput?.focus();
-      composerInput?.setSelectionRange(draft.length, draft.length);
+      composerRef?.resizeComposer();
+      composerRef?.focusComposer();
+      const el = composerRef?.getComposerInput();
+      el?.setSelectionRange(draft.length, draft.length);
     });
   }
 
@@ -428,7 +389,7 @@
     attachments = [...(preEditDraft?.attachments ?? [])];
     editingMessageId = null;
     preEditDraft = null;
-    requestAnimationFrame(() => resizeComposer());
+    requestAnimationFrame(() => composerRef?.resizeComposer());
   }
 
   function stop(): void {
@@ -451,16 +412,17 @@
       returnToChatAfterSettings = false;
       $useUiStore.setShellOpen(true);
       $useUiStore.bringToFront("chat");
-      requestAnimationFrame(() => composerInput?.focus());
+      requestAnimationFrame(() => composerRef?.focusComposer());
     }
   }
 
   function useSuggestion(text: string): void {
     draft = text;
     requestAnimationFrame(() => {
-      resizeComposer();
-      composerInput?.focus();
-      composerInput?.setSelectionRange(draft.length, draft.length);
+      composerRef?.resizeComposer();
+      composerRef?.focusComposer();
+      const el = composerRef?.getComposerInput();
+      el?.setSelectionRange(draft.length, draft.length);
     });
   }
 
@@ -522,6 +484,14 @@
   }
 
   async function addFiles(files: File[]): Promise<void> {
+    if (replacementId && files.length === 1) {
+      try {
+        await replaceAttachment(files[0]);
+      } catch (error) {
+        notice = attachmentErrorText(error) || t("assistant.error.attach", "The images could not be attached. Try them again.");
+      }
+      return;
+    }
     const images = files.filter((file) => file.type.startsWith("image/"));
     if (!images.length) {
       notice = t("assistant.error.image_only", "Only image files can be attached.");
@@ -559,7 +529,7 @@
     };
     const picker = (window as ImagePickerWindow).showOpenFilePicker;
     if (!picker) {
-      fileInput?.click();
+      composerRef?.triggerFileInput();
       return;
     }
     try {
@@ -571,7 +541,7 @@
       await addFiles(await Promise.all(handles.map((handle) => handle.getFile())));
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      fileInput?.click();
+      composerRef?.triggerFileInput();
     }
   }
 
@@ -676,25 +646,25 @@
 </script>
 
 <div class="pa-surface pa-viewport-{kind}" data-prompt-agent-surface="true">
-    <button
-      class:pa-launcher-interacting={launcherInteracting}
-      class:pa-launcher-active={$useUiStore.shellOpen || $useUiStore.profileSettingsOpen}
-      class="pa-launcher"
-      type="button"
-      bind:this={launcherButton}
-       aria-label={t("assistant.open", "Open Prompt Agent")}
-      aria-expanded={$useUiStore.shellOpen}
-      title={t("assistant.drag", "Drag to move")}
-      style:left={$useUiStore.launcherPosition ? `${$useUiStore.launcherPosition.left}px` : undefined}
-      style:top={$useUiStore.launcherPosition ? `${$useUiStore.launcherPosition.top}px` : undefined}
-      style:right={$useUiStore.launcherPosition ? "auto" : undefined}
-      style:bottom={$useUiStore.launcherPosition ? "auto" : undefined}
-      use:pointerPosition={{ position: () => $useUiStore.launcherPosition, update: updateLauncherPosition, interacting: (active) => launcherInteracting = active, moved: (moved) => launcherDragged = moved }}
-      onclick={openLauncher}
-    >
-      <Sparkles size={15} />
-       <span>{t("assistant.launcher", "Prompt Agent")}</span>
-    </button>
+  <button
+    class:pa-launcher-interacting={launcherInteracting}
+    class:pa-launcher-active={$useUiStore.shellOpen || $useUiStore.profileSettingsOpen}
+    class="pa-launcher"
+    type="button"
+    bind:this={launcherButton}
+    aria-label={t("assistant.open", "Open Prompt Agent")}
+    aria-expanded={$useUiStore.shellOpen}
+    title={t("assistant.drag", "Drag to move")}
+    style:left={$useUiStore.launcherPosition ? `${$useUiStore.launcherPosition.left}px` : undefined}
+    style:top={$useUiStore.launcherPosition ? `${$useUiStore.launcherPosition.top}px` : undefined}
+    style:right={$useUiStore.launcherPosition ? "auto" : undefined}
+    style:bottom={$useUiStore.launcherPosition ? "auto" : undefined}
+    use:pointerPosition={{ position: () => $useUiStore.launcherPosition, update: updateLauncherPosition, interacting: (active) => launcherInteracting = active, moved: (moved) => launcherDragged = moved }}
+    onclick={openLauncher}
+  >
+    <Sparkles size={15} />
+    <span>{t("assistant.launcher", "Prompt Agent")}</span>
+  </button>
 
   {#if $useUiStore.shellOpen}
     <div
@@ -710,101 +680,131 @@
       style:z-index={$useUiStore.frontWindow === "chat" ? 1002 : 1000}
       role="dialog"
       aria-modal="false"
-       aria-label={t("assistant.chat_dialog", "Prompt Agent chat")}
+      aria-label={t("assistant.chat_dialog", "Prompt Agent chat")}
       tabindex="-1"
       data-prompt-agent-pending="false"
       onpointerdown={() => $useUiStore.bringToFront("chat")}
       onkeydown={(event) => { if (event.key === "Escape") $useUiStore.setShellOpen(false); }}
     >
-       <header class="pa-window-header" use:pointerWindow={{ mode: "drag", layout: () => currentLayout, update: updateLayout, minimum: windowMinimum, interacting: (active) => interacting = active }}>
-         <div class="pa-chat-title"><strong>{t("assistant.title", "Prompt Agent")}</strong></div>
-         <div class="pa-header-controls">
-           <div class="pa-history-anchor">
-             <button type="button" class="pa-header-icon" aria-label={t("history.open", "Open chat history")} aria-expanded={$useUiStore.historyOpen} onclick={toggleHistory}><History size={16} /></button>
-            {#if $useUiStore.historyOpen}
-               <div class="pa-history-popover" role="dialog" tabindex="-1" aria-label={t("history.title", "Chat history")} onkeydown={(event) => { if (event.key === "Escape") { event.stopPropagation(); $useUiStore.setHistoryOpen(false); } }}>
-                 <div class="pa-history-heading"><div><span class="pa-eyebrow">{t("history.archive", "Archive")}</span><strong>{t("history.title", "Chat history")}</strong></div><span class="pa-history-count">{filteredHistory.length}</span></div>
-                 <label class="pa-history-search"><Search size={14} /><input bind:value={historySearch} placeholder={t("history.search", "Search sessions")} aria-label={t("history.search_label", "Search chat history")} /></label>
-                 <div class="pa-history-list" role="listbox" aria-label={t("history.sessions", "Chat history sessions")}>
-                   {#if runtimeUnavailable}<p class="pa-history-empty" role="status">{t("assistant.runtime.disconnected", "The Prompt Agent runtime is not connected. Open Model profiles and retry the connection.")}</p>{:else}{#if $useRuntimeStore.loading}<p class="pa-history-empty" role="status">{t("history.loading", "Loading chat history…")}</p>{/if}{#each filteredHistory as row (row.id)}
-                     <button type="button" class="pa-history-row" aria-label={row.title} role="option" aria-selected="false" onclick={() => { void action("selectHistory")(row); $useUiStore.setHistoryOpen(false); }}>
-                       <span class="pa-history-source pa-history-source-{row.source.toLowerCase()}"><Clock3 size={12} />{row.source}</span>
-                       <span class="pa-history-row-main"><strong>{row.title}</strong><small>{row.preview || t("history.no_preview", "No preview")}</small></span>
-                       <span class="pa-history-row-meta"><time>{row.updatedAt}</time><small>{tf("history.message_count", "{count} messages", { count: row.messageCount })}</small></span>
-                    </button>
-                   {:else}<p class="pa-history-empty">{t("history.empty_search", "No sessions match that search.")}</p>{/each}{/if}
-                </div>
-              </div>
-            {/if}
-          </div>
-           <button type="button" class="pa-header-icon" onclick={() => void newSession()} aria-label={t("assistant.new_chat", "Start a new chat")} title={t("assistant.new_chat", "Start a new chat")} disabled={Boolean($useChatStore.activeRequestId)}><SquarePen size={16} /></button>
-           <button type="button" class="pa-header-icon" onclick={openSettings} aria-label={t("assistant.open_settings", "Open settings")}><Settings2 size={16} /></button>
-           <button type="button" class="pa-header-icon pa-header-close" onclick={() => $useUiStore.setShellOpen(false)} aria-label={t("assistant.close_window", "Close Prompt Agent")}><X size={16} /></button>
-        </div>
-      </header>
+      <ChatHeader
+        filteredHistory={visibleHistory}
+        {runtimeUnavailable}
+        dragAction={pointerWindow}
+        dragParams={{ mode: "drag", layout: () => currentLayout, update: updateLayout, minimum: windowMinimum, interacting: (active: boolean) => interacting = active }}
+        ontogglehistory={toggleHistory}
+        onselecthistory={(row) => { void action("selectHistory")(row); }}
+        onnewsession={() => void newSession()}
+        onopensettings={openSettings}
+        onclose={() => $useUiStore.setShellOpen(false)}
+      />
 
-        <div class="pa-window-body">
-        {#if connectionState === "connecting"}<div class="pa-inline-alert" role="status" aria-live="polite"><RefreshCw size={15} /><span>Connecting to Forge runtime…</span></div>{:else if connectionState === "failed"}<div class="pa-inline-alert" role="alert"><AlertTriangle size={15} /><span>{connectionError}</span><button type="button" onclick={() => void ensureControllerReady().catch(() => undefined)}>Retry</button></div>{:else if runtimeStarting}<div class="pa-inline-alert" role="status" aria-live="polite"><RefreshCw size={15} /><span>{t("assistant.runtime.retry", "Prompt Agent is starting or unavailable. Retry or check Model profiles.")}</span></div>{/if}
-        {#if visibleAlert}<div class="pa-inline-alert" role="alert"><AlertTriangle size={15} /><span>{runtimeErrorText(visibleAlert)}</span>{#if notice}<button type="button" onclick={() => notice = null} aria-label={t("common.dismiss_message", "Dismiss message")}><X size={14} /></button>{/if}</div>{/if}
-        <div bind:this={messageScroll} class="pa-message-scroll" role="log" aria-live="polite" aria-busy={Boolean($useChatStore.activeRequestId)} onscroll={updateFollowLatest}>
-           {#if visibleMessages.length > 0}
-             {#each renderMessages.groups as group (group.message.id)}
-               {@const message = group.message}
-              <article
-                class:pa-message-user={message.role === "user"}
-                class:pa-message-assistant={message.role === "assistant"}
-                class:pa-message-error={message.role === "error"}
-                class:pa-message-system={message.role === "system"}
-                class:pa-message-streaming={message.status === "streaming"}
-                class:pa-message-cancelled={message.status === "cancelled"}
-                class="pa-message-card"
-                data-prompt-agent-message-id={message.id}
-              >
-                <div class="pa-message-heading"><span class="pa-message-role">
-                   {#if message.role === "user"}<UserRound size={15} />{:else if message.role === "error"}<XCircle size={15} />{:else if message.role === "assistant"}<Bot size={15} />{:else}<FileCog size={15} />{/if}
-                  {roleLabel(message)}
-                </span><span class="pa-message-meta">
-                  {#if message.status === "cancelled"}<span class="pa-status-marker pa-status-cancelled"><XCircle size={12} /> {t("chat.status.cancelled", "Cancelled")}</span>{:else if message.status === "error"}<span class="pa-status-marker pa-status-error">{t("chat.status.error", "Error")}</span>{/if}
-                  {#if message.usage && (message.role !== "assistant" || !groupHasProcess(group.processMessages, message))}<span class="pa-usage"><Clipboard size={11} /> {[message.usage.inputTokens !== undefined ? `${message.usage.inputTokens} in` : "", message.usage.outputTokens !== undefined ? `${message.usage.outputTokens} out` : "", message.usage.cacheReadTokens !== undefined ? `${message.usage.cacheReadTokens} cache` : "", message.usage.latencyMs !== undefined ? `${(message.usage.latencyMs / 1000).toFixed(1)}s` : ""].filter(Boolean).join(" · ")}</span>{/if}
-                  {#if message.role !== "tool"}<button type="button" class="pa-message-collapse" onclick={() => void copyMessage(message)} aria-label={copiedId === message.id ? t("chat.copied", "Copied") : t("chat.copy", "Copy")}>{#if copiedId === message.id}<Check size={13} />{:else}<Copy size={13} />{/if}</button>{/if}{#if message.role === "assistant" && message.status !== "streaming"}<button type="button" class="pa-message-collapse" onclick={() => toggleMessage(message.id)} aria-label={collapsedMessageIds.has(message.id) ? t("chat.expand", "Expand response") : t("chat.collapse", "Collapse response")}>{#if collapsedMessageIds.has(message.id)}<ChevronRight size={14} />{:else}<ChevronDown size={14} />{/if}</button>{/if}
-                </span></div>
-                  {#if collapsedMessageIds.has(message.id)}<button type="button" class="pa-message-collapsed-preview" onclick={() => toggleMessage(message.id)}>{reasoningPreview(message.content)}</button>{:else}
-                    {#if message.role === "assistant"}<ProcessDrawer finalMessage={message} processMessages={group.processMessages} active={message.status === "streaming" && (submissionInFlight || requestActive)} workingPhase={visibleWorkingPhase} workingTool={$useRuntimeStore.workingTool} workingDetail={$useRuntimeStore.workingDetail} onundo={undoToolMutation} />{/if}
-                    <Markdown content={message.content} streaming={message.status === "streaming"} smoothStreaming={message.role === "assistant"} />
-                  {/if}
-                {#if message.attachments.length && !collapsedMessageIds.has(message.id)}<div class="pa-message-attachments" aria-label={tf("assistant.reference_images", "{count} reference images", { count: message.attachments.length })}>{#each message.attachments as attachment, index (attachment.id)}<button type="button" class="pa-message-attachment" onclick={() => lightbox = { attachments: message.attachments, index }} aria-label={tf("assistant.preview_named", "Preview {name}", { name: attachment.name })}><img src={attachmentPreviewUrl(attachment)} alt={attachment.name} width="58" height="48" loading="lazy" /></button>{/each}</div>{/if}
-                {#if message.role === "user"}<div class="pa-message-footer"><div class="pa-message-actions"><button type="button" class="pa-message-action" disabled={Boolean($useChatStore.activeRequestId)} onclick={() => beginEdit(message)}><Pencil size={13} /> {t("assistant.rewind", "Edit and resend")}</button></div></div>{/if}
-               </article>
-             {/each}
-              {#each renderMessages.pendingTools as tool (tool.id)}<div class="pa-orphan-tools"><ToolCard message={tool} onundo={undoToolMutation} /></div>{/each}
-          {:else}
-             <div class="pa-empty-state"><Sparkles size={20} aria-hidden="true" /><strong>{t("assistant.empty.title", "Start with the current prompt")}</strong><p>{t("assistant.empty.hint", "Ask Prompt Agent to review composition, rewrite a prompt, inspect installed resources, or attach reference images.")}</p><div><button type="button" onclick={() => useSuggestion(t("assistant.quick.review_prompt", "Read the current prompt and suggest the highest-impact improvement."))}>{t("assistant.quick.review", "Review current prompt")}</button><button type="button" onclick={() => void chooseAttachments()}>{t("assistant.quick.reference", "Analyze reference images")}</button></div></div>
-          {/if}
-          {#if (submissionInFlight || requestActive) && visibleWorkingPhase !== "idle" && !visibleMessages.some((message) => message.role === "assistant" && message.status === "streaming")}<WorkingIndicator phase={visibleWorkingPhase} tool={$useRuntimeStore.workingTool} statusDetail={$useRuntimeStore.workingDetail} />{/if}
-        </div>
+      <div class="pa-window-body">
+        {#if connectionState === "connecting"}
+          <div class="pa-inline-alert" role="status" aria-live="polite"><RefreshCw size={15} /><span>Connecting to Forge runtime…</span></div>
+        {:else if connectionState === "failed"}
+          <div class="pa-inline-alert" role="alert"><AlertTriangle size={15} /><span>{connectionError}</span><button type="button" onclick={() => void ensureControllerReady().catch(() => undefined)}>Retry</button></div>
+        {:else if runtimeStarting}
+          <div class="pa-inline-alert" role="status" aria-live="polite"><RefreshCw size={15} /><span>{t("assistant.runtime.retry", "Prompt Agent is starting or unavailable. Retry or check Model profiles.")}</span></div>
+        {/if}
+        {#if visibleAlert}
+          <div class="pa-inline-alert" role="alert"><AlertTriangle size={15} /><span>{runtimeErrorText(visibleAlert)}</span>{#if notice}<button type="button" onclick={() => notice = null} aria-label={t("common.dismiss_message", "Dismiss message")}><X size={14} /></button>{/if}</div>
+        {/if}
 
-        <form class:pa-composer-drop-active={dropActive} class="pa-composer" onsubmit={(event) => { event.preventDefault(); void submit(); }} ondragover={(event) => { event.preventDefault(); dropActive = true; }} ondragleave={() => dropActive = false} ondrop={(event) => { event.preventDefault(); dropActive = false; void addFiles(Array.from(event.dataTransfer?.files ?? [])); }}>
-          {#if editingMessageId}<div class="pa-editing-banner" role="status"><span><Pencil size={13} /> {t("chat.editing", "Editing message")}</span><button type="button" onclick={cancelEdit}>{t("chat.cancel_edit", "Cancel")}</button></div>{/if}
-          {#if queuedFollowUps.length}<section class="pa-followup-queue" aria-label={t("assistant.queue.label", "Queued follow-ups")}><div class="pa-followup-heading"><span><Clock3 size={13} /> {tf("assistant.queue.next", "Next · {count}", { count: queuedFollowUps.length })}</span>{#if !requestActive}<span class="pa-followup-paused">{t("assistant.queue.paused", "Paused")}</span><button type="button" onclick={() => void resumeQueuedMessages()}>{t("assistant.queue.continue", "Continue")}</button>{/if}</div><ol>{#each queuedFollowUps as item, index (item.id)}<li><span class="pa-followup-index">{index + 1}</span><span class="pa-followup-text">{item.text.trim() || tf("assistant.queue.attachments_only", "{count} attached image(s)", { count: item.attachmentCount })}</span>{#if item.attachmentCount > 0 && item.text.trim()}<span class="pa-followup-attachments">+{item.attachmentCount} <ImagePlus size={11} /></span>{/if}<button type="button" onclick={() => void removeQueuedMessage(item.id)} aria-label={t("assistant.queue.remove", "Remove queued follow-up")}><X size={13} /></button></li>{/each}</ol></section>{/if}
-          {#if attachments.length}<div class="pa-filmstrip" aria-label={t("assistant.attached_images", "Attached reference images")}>{#each attachments as attachment, index (attachment.id)}<div class="pa-filmstrip-item"><button type="button" class="pa-filmstrip-preview" onclick={() => lightbox = { attachments, index }} oncontextmenu={(event) => { event.preventDefault(); attachmentMenuId = attachment.id; }} aria-label={tf("assistant.preview_named", "Preview {name}", { name: attachment.name })}><img src={attachmentPreviewUrl(attachment)} alt={attachment.name} width="58" height="54" /><span class="pa-filmstrip-name">{attachment.name}</span></button><button type="button" class="pa-filmstrip-remove" onclick={() => void removeAttachment(attachment.id)} aria-label={tf("assistant.remove_named", "Remove {name}", { name: attachment.name })}><X size={12} /></button><button type="button" class="pa-filmstrip-more" onclick={() => attachmentMenuId = attachmentMenuId === attachment.id ? null : attachment.id} aria-label={tf("assistant.edit_named", "Edit {name}", { name: attachment.name })}>•••</button>{#if attachmentMenuId === attachment.id}<div class="pa-attachment-menu" role="menu"><button type="button" role="menuitem" onclick={() => { replacementId = attachment.id; replacementInput?.click(); attachmentMenuId = null; }}><Pencil size={13} /> {t("common.replace", "Replace")}</button><button type="button" role="menuitem" onclick={() => { void removeAttachment(attachment.id); attachmentMenuId = null; }}><Trash2 size={13} /> {t("common.remove", "Remove")}</button></div>{/if}</div>{/each}<button type="button" class="pa-filmstrip-add" onclick={() => void chooseAttachments()} aria-label={t("assistant.attach_another", "Attach another image")}><Plus size={17} /></button></div>{/if}
-            <textarea name="prompt-agent-message" autocomplete="off" bind:this={composerInput} bind:value={draft} rows="1" placeholder={requestActive ? t("assistant.input.follow_up", "Add a follow-up for after this response…") : t("assistant.input.placeholder", "Ask about or change the current prompt…")} aria-label={t("assistant.input.label", "Message Prompt Agent")} onfocus={() => { composerFocused = true; $useUiStore.bringToFront("chat"); }} onblur={() => composerFocused = false} oninput={(event) => resizeComposer(event.currentTarget)} onkeydown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) { event.preventDefault(); void submit(); } }}></textarea>
-          <div class="pa-composer-bottom"><div class="pa-composer-tools"><button type="button" class="pa-composer-icon" onclick={() => void chooseAttachments()} aria-label={t("assistant.attach", "Attach reference images")}><ImagePlus size={16} /></button></div>
-              <div class="pa-composer-tools"><ContextMeter tokens={contextTokens} limit={contextLimit} label={t("assistant.context_usage", "Context")} /><div class="pa-composer-picker-row" aria-label={t("assistant.model_controls", "Model controls")}><ModelPicker /><ReasoningPicker /></div>{#if requestActive}<button type="button" class="pa-stop-button" onclick={stop} disabled={$useRuntimeStore.workingPhase === "cancelling"} aria-label={t("assistant.stop", "Stop response")}><CircleStop size={17} /></button>{/if}<button type="submit" class="pa-send-button" onpointerdown={keepComposerFocus} disabled={(requestActive || queuedFollowUps.length ? queueSubmissionInFlight : submissionInFlight) || (!draft.trim() && !attachments.length)} aria-busy={submissionPending} aria-label={requestActive || queuedFollowUps.length ? t("assistant.queue.send", "Queue follow-up") : t("assistant.send", "Send message")}>{#if submissionPending}<RefreshCw class="pa-send-pending-icon" size={17} />{:else if requestActive || queuedFollowUps.length}<Clock3 size={17} />{:else}<Send size={17} />{/if}</button></div>
-           </div>
-          <input bind:this={fileInput} type="file" accept="image/*" multiple hidden onchange={(event) => { void addFiles(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} />
-          <input bind:this={replacementInput} type="file" accept="image/*" hidden onchange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void replaceAttachment(file); event.currentTarget.value = ""; }} />
-        </form>
-       </div>
-        {#if !composerFocused}<button type="button" class="pa-resize-handle" data-prompt-agent-interaction-handle="true" use:pointerWindow={{ mode: "resize", layout: () => currentLayout, update: updateLayout, minimum: windowMinimum, interacting: (active) => interacting = active }} onkeydown={resizeKey} aria-label={t("assistant.resize", "Resize chat window")}><Grip size={15} /></button>{/if}
-    {#if kind !== "desktop" && !$useUiStore.hasSeenMobileResizeHint && !mobileHintDismissed}<div class="pa-mobile-resize-hint" role="status"><Grip size={14} /> {t("assistant.resize_hint", "Drag the corner to resize")}<button type="button" onclick={() => { mobileHintDismissed = true; $useUiStore.markMobileResizeHintSeen(); }}>{t("common.dismiss", "Dismiss")}</button></div>{/if}
+        <ChatTranscript
+          bind:this={transcriptRef}
+          {visibleMessages}
+          {renderMessages}
+          {collapsedMessageIds}
+          {copiedId}
+          {submissionInFlight}
+          {requestActive}
+          {visibleWorkingPhase}
+          onscroll={updateFollowLatest}
+          ontogglecollapse={toggleMessage}
+          oncopy={(msg) => void copyMessage(msg)}
+          onbeginedit={beginEdit}
+          onundo={undoToolMutation}
+          onpreviewattachments={(att, idx) => lightbox = { attachments: att, index: idx }}
+          onusesuggestion={useSuggestion}
+          onchooseattachments={() => void chooseAttachments()}
+        />
+
+        <ChatComposer
+          bind:this={composerRef}
+          bind:draft
+          bind:attachments
+          {editingMessageId}
+          {dropActive}
+          {submissionPending}
+          {queueSubmissionInFlight}
+          {submissionInFlight}
+          {requestActive}
+          {contextTokens}
+          {contextLimit}
+          onsubmit={() => void submit()}
+          onaddfiles={(files) => void addFiles(files)}
+          oncanceledit={cancelEdit}
+          onresumequeued={() => void resumeQueuedMessages()}
+          onremovequeued={(queueId) => void removeQueuedMessage(queueId)}
+          onchooseattachments={() => void chooseAttachments()}
+          onreplacerequest={(attId) => replacementId = attId}
+          onremoveattachment={(attId) => void removeAttachment(attId)}
+          onpreviewattachment={(idx) => lightbox = { attachments, index: idx }}
+          onstop={stop}
+          onkeepcomposerfocus={keepComposerFocus}
+          onfocus={() => { composerFocused = true; $useUiStore.bringToFront("chat"); }}
+          onblur={() => composerFocused = false}
+        />
+      </div>
+
+      {#if !composerFocused}
+        <button
+          type="button"
+          class="pa-resize-handle"
+          data-prompt-agent-interaction-handle="true"
+          use:pointerWindow={{ mode: "resize", layout: () => currentLayout, update: updateLayout, minimum: windowMinimum, interacting: (active) => interacting = active }}
+          onkeydown={resizeKey}
+          aria-label={t("assistant.resize", "Resize chat window")}
+        >
+          <Grip size={15} />
+        </button>
+      {/if}
+      {#if kind !== "desktop" && !$useUiStore.hasSeenMobileResizeHint && !mobileHintDismissed}
+        <div class="pa-mobile-resize-hint" role="status">
+          <Grip size={14} /> {t("assistant.resize_hint", "Drag the corner to resize")}
+          <button type="button" onclick={() => { mobileHintDismissed = true; $useUiStore.markMobileResizeHintSeen(); }}>{t("common.dismiss", "Dismiss")}</button>
+        </div>
+      {/if}
     </div>
   {/if}
 
   <ProfileSettings open={$useUiStore.profileSettingsOpen} onclose={closeSettings} />
 
   {#if lightbox && lightbox.attachments[lightbox.index]}
-    <div class="pa-lightbox" role="dialog" tabindex="-1" aria-modal="true" aria-label={t("lightbox.title", "Image preview")} onclick={() => lightbox = null} onkeydown={(event) => { if (event.key === "Escape") lightbox = null; }}>
-      <div class="pa-lightbox-panel" onclick={(event) => event.stopPropagation()} role="presentation"><button type="button" class="pa-lightbox-close" onclick={() => lightbox = null} aria-label={t("lightbox.close", "Close preview")}><X size={18} /></button><img src={attachmentPreviewUrl(lightbox.attachments[lightbox.index])} alt={lightbox.attachments[lightbox.index].name} width="900" height="900" />{#if lightbox.attachments.length > 1}<button type="button" class="pa-lightbox-nav pa-lightbox-prev" disabled={lightbox.index === 0} onclick={() => lightbox && (lightbox = { ...lightbox, index: Math.max(0, lightbox.index - 1) })} aria-label={t("lightbox.previous", "Previous image")}><ChevronLeft size={22} /></button><button type="button" class="pa-lightbox-nav pa-lightbox-next" disabled={lightbox.index === lightbox.attachments.length - 1} onclick={() => lightbox && (lightbox = { ...lightbox, index: Math.min(lightbox.attachments.length - 1, lightbox.index + 1) })} aria-label={t("lightbox.next", "Next image")}><ChevronRight size={22} /></button><span class="pa-lightbox-count">{lightbox.index + 1} / {lightbox.attachments.length}</span>{/if}</div>
+    <div
+      class="pa-lightbox"
+      role="dialog"
+      tabindex="-1"
+      aria-modal="true"
+      aria-label={t("lightbox.title", "Image preview")}
+      onclick={() => lightbox = null}
+      onkeydown={(event) => { if (event.key === "Escape") lightbox = null; }}
+    >
+      <div class="pa-lightbox-panel" onclick={(event) => event.stopPropagation()} role="presentation">
+        <button type="button" class="pa-lightbox-close" onclick={() => lightbox = null} aria-label={t("lightbox.close", "Close preview")}>
+          <X size={18} />
+        </button>
+        <img src={attachmentPreviewUrl(lightbox.attachments[lightbox.index])} alt={lightbox.attachments[lightbox.index].name} width="900" height="900" />
+        {#if lightbox.attachments.length > 1}
+          <button type="button" class="pa-lightbox-nav pa-lightbox-prev" disabled={lightbox.index === 0} onclick={() => lightbox && (lightbox = { ...lightbox, index: Math.max(0, lightbox.index - 1) })} aria-label={t("lightbox.previous", "Previous image")}>
+            <ChevronLeft size={22} />
+          </button>
+          <button type="button" class="pa-lightbox-nav pa-lightbox-next" disabled={lightbox.index === lightbox.attachments.length - 1} onclick={() => lightbox && (lightbox = { ...lightbox, index: Math.min(lightbox.attachments.length - 1, lightbox.index + 1) })} aria-label={t("lightbox.next", "Next image")}>
+            <ChevronRight size={22} />
+          </button>
+          <span class="pa-lightbox-count">{lightbox.index + 1} / {lightbox.attachments.length}</span>
+        {/if}
+      </div>
     </div>
   {/if}
 </div>

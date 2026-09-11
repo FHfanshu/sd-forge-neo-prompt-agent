@@ -623,6 +623,41 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   javascript/prompt_agent_02_resources.js` passed. One surface preview test was
   flaky under load; it passed on isolated rerun both with and without this change.
 
+## 2026-09-11 Chat refactor and attachment PNGInfo
+- Goal: the agent could not read an attached image's PNGInfo. The browser already
+  extracted it (`frontend/src/image-metadata.ts`) but `materializeImageAttachment`
+  dropped the result and no tool could address an upload, so a "restore this
+  image's parameters" request was silently pixel-only; the chat page also repeated
+  status and control visuals that an audit itemized.
+- Attachment path (browser-local, no backend store): `WireAttachment` now carries
+  optional `metadata` (`frontend/src/contracts.ts`, `frontend/src/attachments.ts`).
+  `frontend/src/tools/forge-tools.ts` addresses a current-turn attachment as
+  `attachment-N` and resolves `read_pnginfo`/`read_image` for it without a host
+  call; `read_pnginfo` works without vision, `read_image` keeps the
+  `vision_unsupported` gate, and an unknown id raises `unknown_attachment`.
+  `frontend/src/agent/controller.ts` holds the active turn's attachments and adds a
+  system-prompt rule: when an attachment's PNG metadata could not be read, say so
+  and never present pixel reconstruction as the original parameters.
+  `backend/prompt_agent/forge_tools.py` accepts the `attachment-N` id shape at the
+  Python boundary.
+- Chat and settings refactor: split `frontend/src/components/Surface.svelte` (810
+  to 650 lines) into
+  `components/chat/{ChatHeader,ChatHistoryPanel,ChatTranscript,MessageCard,ChatComposer,ModelPickerContent}.svelte`;
+  removed duplicated tab headings, model-picker noninteractive chevrons and
+  active-row thinking badge, the repeated reasoning readout, per-field settings
+  card borders, and dead `.pa-profile-sidebar-actions` / `.pa-brand-lockup h1` CSS.
+  DOM hooks, ARIA, and the `prompt-agent-message` textarea name are unchanged.
+- Tests: `frontend/tests/forge-tools.test.ts` (attachment PNGInfo without a host
+  call, attachment read_image vision gate, unknown id, attachment image block),
+  `frontend/tests/attachments.test.ts` (metadata passthrough),
+  `tests/test_forge_tools.py` (attachment id accepted). Advanced `AGENT-TOOLS-001`
+  to revision 12 and refreshed every stale mapping.
+- Verification: `python tools/test_gate.py affected` exit 0 (53.0s);
+  `python tools/test_gate.py full` exit 0 (70.9s); frontend `svelte-check` no
+  errors; forge-tools and attachments vitest files pass; rebuilt
+  `javascript/prompt_agent_90_ui.js`; `node --check
+  javascript/prompt_agent_02_resources.js` passed.
+
 
 
 

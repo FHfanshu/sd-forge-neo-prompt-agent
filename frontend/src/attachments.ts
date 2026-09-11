@@ -167,6 +167,7 @@ export function materializeImageAttachment(attachment: PreparedImageAttachment):
       dataUrl,
       mimeType: attachment.mimeType,
       size: attachment.size,
+      ...("metadata" in attachment && attachment.metadata ? { metadata: attachment.metadata } : {}),
     };
   })();
   materializedAttachments.set(attachment, pending);

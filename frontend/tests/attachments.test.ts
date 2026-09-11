@@ -69,6 +69,7 @@ describe("reference image preparation", () => {
       id: "attachment-1",
       name: "reference.png",
       dataUrl: expect.stringMatching(/^data:image\/png;base64,/),
+      metadata: { metadata_status: "available" },
     });
     expect(read).toHaveBeenCalledOnce();
 

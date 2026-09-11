@@ -252,7 +252,7 @@
     },
     {
       "id": "AGENT-TOOLS-001",
-      "revision": 11,
+      "revision": 12,
       "area": "agent",
       "title": "Forge tool authority and freshness",
       "acceptance": [
@@ -263,6 +263,7 @@
         "The declared Forge tool surface includes read-only list_recent_generations, which returns bounded summaries of recently completed host generations (ids, target, size, metadata availability) without exposing filenames, filesystem paths, or image bytes.",
         "The declared Forge tool surface includes read-only read_pnginfo, which reads the parsed prompt and parameters of an indexed host generation by image_id, selecting requested fields (defaulting to a summary) and reporting metadata source and truncation, without exposing image bytes, filenames, or filesystem paths.",
         "The declared Forge tool surface includes read-only read_image, which returns the pixels of an indexed host generation by image_id as image content for direct inspection, selecting a detail mode (preview by default, or standard) and reporting the original and transfer dimensions plus whether the payload was scaled, without exposing filenames or filesystem paths; when the active model lacks vision the tool is unavailable and reports vision_unsupported while read_pnginfo remains usable.",
+        "The declared Forge tool surface also addresses images attached in the current turn as attachment-1, attachment-2, and so on in attachment order: read_pnginfo resolves an attachment's already-extracted PNG metadata locally without host access or model vision, and read_image returns the attachment's pixels only when the model supports vision. When an attachment's PNG metadata cannot be read, the agent states plainly that the metadata was unavailable and the result was reconstructed from the visible pixels, never passing pixel inference off as the original parameters.",
         "Independent read-only tool calls emitted in one model turn execute concurrently.",
         "A tool batch containing any Forge write executes sequentially so mutations cannot race live state.",
         "Danbooru batch inspection includes bounded Wiki bodies by default; only an explicit include_wiki=false requests metadata-only results, and URL-only search output never counts as inspected background content.",

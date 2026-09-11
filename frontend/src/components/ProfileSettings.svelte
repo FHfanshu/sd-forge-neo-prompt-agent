@@ -338,7 +338,7 @@
 
         <Tabs.Root bind:value={tab} class="pa-profile-tabs"><Tabs.List class="pa-profile-tabs-list" aria-label={t("profiles.advanced_tabs", "Profile settings")}>{#each profileTabs as item}<Tabs.Trigger value={item[0]} class="pa-profile-tab">{item[1]}</Tabs.Trigger>{/each}</Tabs.List>
             <Tabs.Content value="connection"><div class="pa-profile-tab-content">
-              <Heading title={t("profiles.section.connection_model", "Connection & model")} hint={t("profiles.section.connection_model.hint", "Set the name, connection type, address, and credentials; capabilities and fallbacks expand on demand.")} />
+              <Heading hint={t("profiles.section.connection_model.hint", "Set the name, connection type, address, and credentials; capabilities and fallbacks expand on demand.")} />
               <div class="pa-profile-grid">
                 <Field label={t("profiles.display_name", "Display name")}><CommitInput value={selected.displayName} onCommit={(v) => update({ displayName: v })} onInvalid={invalidCommit} /></Field>
                 <Field label={t("profiles.model_id", "Model ID")}><CommitInput value={selected.modelId} onCommit={(v) => update({ modelId: v })} onInvalid={invalidCommit} /></Field>
@@ -352,7 +352,7 @@
               </More>
             </div></Tabs.Content>
             <Tabs.Content value="response"><div class="pa-profile-tab-content">
-              <Heading title={t("profiles.section.response", "Response preferences")} hint={t("profiles.section.response.hint", "Control reasoning effort and the output limit; sampling details expand on demand.")} />
+              <Heading hint={t("profiles.section.response.hint", "Control reasoning effort and the output limit; sampling details expand on demand.")} />
               <div class="pa-profile-grid">
                 <Field wide label={`${t("profiles.reasoning_effort", "Reasoning effort")} · ${reasoningLabel(selected.parameters.reasoningEffort)}`}><div class="pa-profile-reasoning-slider"><Brain size={15} /><input class="pa-profile-slider" type="range" min="0" max={Math.max(0, reasoningScale.length - 1)} step="1" value={reasoningIndex} disabled={!selected.capabilities.reasoning} aria-label={t("profiles.reasoning_effort", "Reasoning effort")} oninput={(event) => setReasoning(Number(event.currentTarget.value))} /></div></Field>
                 <Field label={t("profiles.max_tokens", "Max tokens")}><CommitInput type="number" value={String(selected.parameters.maxTokens)} onCommit={(v) => commitNumberValue(v, selected.parameters.maxTokens, (n) => ({ parameters: { maxTokens: n } }))} onInvalid={invalidCommit} /></Field>
@@ -366,7 +366,7 @@
               </More>
             </div></Tabs.Content>
             <Tabs.Content value="local"><div class="pa-profile-tab-content">
-              <Heading title={t("profiles.section.local", "Local runtime")} hint={t("profiles.section.local.hint", "Configure llama.cpp paths and hardware allocation. Saved paths stay server-side and are never returned to the browser.")} />
+              <Heading hint={t("profiles.section.local.hint", "Configure llama.cpp paths and hardware allocation. Saved paths stay server-side and are never returned to the browser.")} />
               <div class="pa-profile-grid">
                 <Field wide label={t("profiles.model_path", "GGUF path")}><Input value={localPathDraft.modelPath ?? ""} placeholder={selected.localModelConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("modelPath", event.currentTarget.value)} /></Field>
                 <Field wide label={t("profiles.mmproj_path", "mmproj path")}><Input value={localPathDraft.mmprojPath ?? ""} placeholder={selected.mmprojConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("mmprojPath", event.currentTarget.value)} /></Field>
@@ -383,7 +383,7 @@
               </More>
             </div></Tabs.Content>
             <Tabs.Content value="advanced"><div class="pa-profile-tab-content">
-              <Heading title={t("profiles.section.advanced", "Advanced")} hint={t("profiles.section.advanced.hint", "Review the current configuration and adjust routing and low-frequency options on demand.")} />
+              <Heading hint={t("profiles.section.advanced.hint", "Review the current configuration and adjust routing and low-frequency options on demand.")} />
               <p class="pa-profile-summary-line">{advancedSummary}</p>
               <More label={t("profiles.more.advanced", "Advanced settings")}>
                 <div class="pa-profile-route-grid"><Route label={t("profiles.active_profile", "Active profile")} value={$useProfileStore.activeProfileId} profiles={enabledProfiles} onchange={(id: string) => $useProfileStore.activateProfile(id)} /><Route label={t("profiles.session_profile", "Session model")} value={$useProfileStore.sessionProfileId} profiles={localProfiles} onchange={(id: string) => $useProfileStore.setSessionProfile(id)} /><Route label={t("profiles.naming_profile", "Naming model")} value={$useProfileStore.namingProfileId} profiles={namingProfiles} onchange={(id: string) => $useProfileStore.setNamingProfile(id)} /></div>

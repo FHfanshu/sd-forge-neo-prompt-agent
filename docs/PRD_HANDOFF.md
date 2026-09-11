@@ -5,7 +5,7 @@ This document is the entry point for continuing the PRD work in a fresh session.
 
 ## State
 
-- Branch `main`, clean tree, up to date with `origin/main` (HEAD `5a098a7`).
+- Branch `main`, clean tree, ahead of `origin/main` by this increment (previous HEAD `085e2ee`).
 - All PRD work so far is committed and pushed.
 - Do not hand-edit `javascript/prompt_agent_90_ui.js`; regenerate from `frontend/`.
 
@@ -27,7 +27,10 @@ This document is the entry point for continuing the PRD work in a fresh session.
 | `read_image` | `c8f8527` | `POST /prompt-agent/api/images/content`; image content block |
 | PRD in repo | `e89c131` | The spec itself |
 | `read_pnginfo` fields | `f24a58e` | Optional `fields`, `source`, `requested_fields`, `truncated`, reserved `result_id` |
-| `read_image` closure | uncommitted | `detail` (`preview` default / `standard`), original vs transfer size + `scaled`, `vision_unsupported` gate; PNGInfo unaffected |
+| `read_image` closure | `b4a742d` | `detail` (`preview` default / `standard`), original vs transfer size + `scaled`, `vision_unsupported` gate; PNGInfo unaffected |
+| Reasoning dedup | `085e2ee` | Removed the duplicate streaming reasoning excerpt (working indicator vs process trace) |
+| Chat refactor | this commit | Split `Surface.svelte` into `components/chat/*`; removed duplicated tab headings, model-picker chevrons/thinking badge, reasoning readout, flattened settings card borders, dead CSS |
+| Attachment PNGInfo | this commit | Attachments addressed as `attachment-N`; `read_pnginfo`/`read_image` resolve current-turn attachments locally (no host/vision needed for metadata); metadata disclosure rule; `AGENT-TOOLS-001` r12 |
 
 Declared Forge tool surface (15, order is contract-tested):
 `read_prompt`, `edit_prompt`, `read_generation_parameters`,
@@ -45,8 +48,9 @@ Declared Forge tool surface (15, order is contract-tested):
    - `read_pnginfo` (9.2): `result_id` is returned as `null` until the result
      store exists.
 2. Step 3 leftover (PRD 8.2): persist the bounded extracted metadata and image
-   reference; the index is currently in-memory only. Also `generate_image`
-   stable image/batch ids (9.1 / 11).
+   reference; the generation index is currently in-memory only. Also
+   `generate_image` stable image/batch ids (9.1 / 11). Attachment metadata stays
+   browser-local by design; only a durable host-side store would need new routes.
 3. Step 5 (PRD 9.4 + 10 + 5): bounded tool-result store + `read_tool_result`,
    unified search projection fields, and the UI summary/detail layering.
 4. Step 6 (PRD 7): P1 style-preset category/cover/favorite and edit-conflict
@@ -63,7 +67,12 @@ Declared Forge tool surface (15, order is contract-tested):
   (`register_prompt_agent_api`, `_image_id_request`, `_read_indexed_image`).
 - Image data: `prompt_agent/image_index.py` (`DEFAULT_IMAGE_INDEX`),
   `prompt_agent/pnginfo.py`, `scripts/prompt_agent.py` (`on_image_saved`).
-- Acceptance: `quality/acceptance.json`; `AGENT-TOOLS-001` is at revision 11.
+- Attachment metadata path: browser extracts PNGInfo from the original bytes
+  (`frontend/src/attachments.ts`, `image-metadata.ts`) and `WireAttachment.metadata`
+  carries it; `frontend/src/tools/forge-tools.ts` resolves `attachment-N`
+  locally, so there is intentionally no backend attachment store. Generation
+  ids still go through the host (`gen-N-M`).
+- Acceptance: `quality/acceptance.json`; `AGENT-TOOLS-001` is at revision 12.
   Behavior changes need `python tools/test_gate.py behavior-change <ID> --bump`
   then refresh every stale mapped test (decorators live in
   `tests/test_forge_tools.py`, `tests/test_resources.py`,

@@ -19,7 +19,7 @@ from quality.acceptance import acceptance
 
 
 class ForgeToolValidationTests(unittest.TestCase):
-    @acceptance("AGENT-TOOLS-001@11", "surface")
+    @acceptance("AGENT-TOOLS-001@12", "surface")
     def test_agent_tool_names_are_fixed_and_ordered(self):
         self.assertEqual(
             (
@@ -95,6 +95,10 @@ class ForgeToolValidationTests(unittest.TestCase):
             {"image_id": "gen-2-1"},
             validate_forge_tool_request("read_pnginfo", {"image_id": "gen-2-1"}),
         )
+        self.assertEqual(
+            {"image_id": "attachment-1"},
+            validate_forge_tool_request("read_pnginfo", {"image_id": "attachment-1"}),
+        )
         with self.assertRaisesRegex(ForgeToolValidationError, "image_id is required"):
             validate_forge_tool_request("read_pnginfo", {})
         with self.assertRaisesRegex(ForgeToolValidationError, "image_id is required"):
@@ -123,6 +127,10 @@ class ForgeToolValidationTests(unittest.TestCase):
         self.assertEqual(
             {"image_id": "gen-3-2", "detail": "standard"},
             validate_forge_tool_request("read_image", {"image_id": "gen-3-2", "detail": "standard"}),
+        )
+        self.assertEqual(
+            {"image_id": "attachment-2"},
+            validate_forge_tool_request("read_image", {"image_id": "attachment-2"}),
         )
         with self.assertRaisesRegex(ForgeToolValidationError, "detail must be preview or standard"):
             validate_forge_tool_request("read_image", {"image_id": "gen-3-2", "detail": "full"})
@@ -233,7 +241,7 @@ class ForgeToolApiTests(unittest.TestCase):
         self.assertEqual("validation_error", response.json()["detail"]["error"]["code"])
         self.assertNotIn("C:/private", response.text)
 
-    @acceptance("AGENT-TOOLS-001@11", "revalidation,freshness")
+    @acceptance("AGENT-TOOLS-001@12", "revalidation,freshness")
     def test_validation_endpoint_revalidates_browser_host_tools(self):
         with TemporaryDirectory() as directory:
             app = FastAPI()

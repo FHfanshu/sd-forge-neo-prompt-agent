@@ -89,7 +89,7 @@
 
   {#if open}
     <div bind:this={popover} use:floatingPopover={() => anchor} class="pa-reasoning-picker-popover" role="dialog" tabindex="-1" aria-label={t("profiles.reasoning_effort", "Reasoning effort")}>
-      <div class="pa-reasoning-picker-heading"><strong>{t("profiles.reasoning_effort", "Reasoning effort")}</strong><span>{label(value)}</span></div>
+      <div class="pa-reasoning-picker-heading"><strong>{t("profiles.reasoning_effort", "Reasoning effort")}</strong></div>
       <div class="pa-reasoning-picker-slider" style={`--pa-reasoning-progress: ${options.length > 1 ? index / (options.length - 1) * 100 : 0}%`}>
         <div class="pa-reasoning-picker-rail" aria-hidden="true"><span></span></div>
         <div class="pa-reasoning-picker-ticks" aria-hidden="true">
