@@ -75,8 +75,8 @@ describe("Svelte profile settings", () => {
     expect(screen.getByRole("dialog", { name: "Model profiles" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Test" })).toBeInTheDocument();
-    ["Model", "Connection", "Generation", "Routes"].forEach((name) => expect(screen.getByRole("tab", { name })).toBeInTheDocument());
-    expect(screen.queryByRole("tab", { name: "Local" })).not.toBeInTheDocument();
+    ["Connection & model", "Response preferences", "Advanced"].forEach((name) => expect(screen.getByRole("tab", { name })).toBeInTheDocument());
+    expect(screen.queryByRole("tab", { name: "Local runtime" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Interface" })).not.toBeInTheDocument();
   });
 
@@ -236,7 +236,7 @@ describe("Svelte profile settings", () => {
     const user = userEvent.setup();
     const fetchMock = installProfileApi({ failSecretSaves: 1 });
     render(ProfileSettings, { open: true, onclose: () => undefined });
-    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    await user.click(screen.getByRole("tab", { name: "Connection & model" }));
     const input = screen.getByLabelText("API key");
     await user.type(input, "retry-secret");
 
@@ -266,7 +266,7 @@ describe("Svelte profile settings", () => {
     const profileId = useProfileStore.getState().selectedProfileId;
     const fetchMock = installProfileApi();
     render(ProfileSettings, { open: true, onclose: () => undefined });
-    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    await user.click(screen.getByRole("tab", { name: "Connection & model" }));
     const input = screen.getByLabelText("API key");
 
     await user.type(input, "secret-typed-once");
@@ -291,13 +291,13 @@ describe("Svelte profile settings", () => {
     expect(useI18nStore.getState().manualLocale).toBe("zh-CN");
   });
 
-  it("shows local runtime controls without the irrelevant connection tab", () => {
+  it("shows local runtime controls alongside the connection section", () => {
     const local = useProfileStore.getState().profiles.find((profile) => profile.runtime === "llama-once");
     expect(local).toBeDefined();
     useProfileStore.getState().selectProfile(local!.id);
     render(ProfileSettings, { open: true, onclose: () => undefined });
-    expect(screen.getByRole("tab", { name: "Local" })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Connection" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Local runtime" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Connection & model" })).toBeInTheDocument();
   });
 
   acceptanceTest("MODEL-PROFILE-001@3", "edit-stability", "keeps a catalog-backed Gemini profile selected and editable", async () => {
@@ -317,8 +317,8 @@ describe("Svelte profile settings", () => {
 
     expect(useProfileStore.getState().activeProfileId).toBe(gemini.id);
     expect(useProfileStore.getState().selectedProfileId).toBe(gemini.id);
-    expect(screen.getByRole("tab", { name: "Connection" })).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole("tab", { name: "Connection" }));
+    expect(screen.getByRole("tab", { name: "Connection & model" })).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Connection & model" }));
     expect(screen.getByLabelText("Endpoint")).toHaveValue("https://gateway.invalid");
     await fireEvent.change(screen.getByLabelText("Endpoint"), { target: { value: "https://gateway-2.invalid" } });
     expect(useProfileStore.getState().selectedProfileId).toBe(gemini.id);
@@ -343,7 +343,7 @@ describe("Svelte profile settings", () => {
     expect(local?.idleUnloadMinutes).toBe(30);
     useProfileStore.getState().selectProfile(local!.id);
     render(ProfileSettings, { open: true, onclose: () => undefined });
-    await user.click(screen.getByRole("tab", { name: "Local" }));
+    await user.click(screen.getByRole("tab", { name: "Local runtime" }));
 
     const toggle = screen.getByRole("switch", { name: "Unload local model after each reply" });
     expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -358,7 +358,7 @@ describe("Svelte profile settings", () => {
     expect(local).toBeDefined();
     useProfileStore.getState().selectProfile(local!.id);
     render(ProfileSettings, { open: true, onclose: () => undefined });
-    await user.click(screen.getByRole("tab", { name: "Local" }));
+    await user.click(screen.getByRole("tab", { name: "Local runtime" }));
 
     await user.type(screen.getByLabelText("GGUF path"), "C:/private/model.gguf");
 
@@ -402,7 +402,8 @@ describe("Svelte profile settings", () => {
   it("exposes active, session, and naming route controls without a teacher route", async () => {
     const user = userEvent.setup();
     render(ProfileSettings, { open: true, onclose: () => undefined });
-    await user.click(screen.getByRole("tab", { name: "Routes" }));
+    await user.click(screen.getByRole("tab", { name: "Advanced" }));
+    await user.click(screen.getByText("Advanced settings"));
     expect(screen.getByRole("combobox", { name: /Active profile/ })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: /Teacher profile/ })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /Session model/ })).toBeInTheDocument();

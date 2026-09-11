@@ -296,19 +296,20 @@ test("mounted desktop UI exercises chat, history, profiles, and attachments", as
   await page.getByRole("button", { name: "Open settings" }).click();
   const settings = page.getByRole("dialog", { name: "Model profiles" });
   await expect(settings).toBeVisible();
-  await expect(settings.getByRole("tab", { name: "Local" })).toHaveCount(0);
+  await expect(settings.getByRole("tab", { name: "Local runtime" })).toHaveCount(0);
   await expect(settings.getByRole("tab", { name: "Interface" })).toHaveCount(0);
   await capture(page, "settings-remote");
-  await settings.getByRole("tab", { name: "Generation" }).click();
+  await settings.getByRole("tab", { name: "Response preferences" }).click();
   await expect(settings.getByRole("slider", { name: "Reasoning effort" })).toBeVisible();
-  await capture(page, "settings-generation");
-  await settings.getByRole("tab", { name: "Routes" }).click();
+  await capture(page, "settings-response");
+  await settings.getByRole("tab", { name: "Advanced" }).click();
+  await settings.getByText("Advanced settings").click();
   await expect(settings.getByRole("combobox", { name: /Active profile/ })).toBeVisible();
   await expect(settings.getByRole("combobox", { name: /Session model/ })).toBeVisible();
   await expect(settings.getByRole("combobox", { name: /Naming model/ })).toBeVisible();
   await settings.getByRole("button", { name: "Language" }).click();
   await page.getByRole("menuitemradio", { name: "简体中文" }).click();
-  await expect(settings.getByRole("tab", { name: "路由" })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "高级" })).toBeVisible();
 });
 
 acceptanceTest("SESSION-LIFECYCLE-001@3", "abort,recovery", "active turns abort and restore a usable composer", async ({ page }) => {

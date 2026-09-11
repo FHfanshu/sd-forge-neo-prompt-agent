@@ -23,9 +23,10 @@
   import Route from "./settings/RouteField.svelte";
   import Heading from "./settings/SectionHeading.svelte";
   import Toggle from "./settings/ToggleField.svelte";
+  import More from "./settings/More.svelte";
 
   let { open, onclose }: { open: boolean; onclose(): void } = $props();
-  let tab = $state("model");
+  let tab = $state("connection");
   let showKey = $state(false);
   let apiKeyDrafts = $state<Record<string, string>>({});
   let localPathDrafts = $state<Record<string, { modelPath?: string; mmprojPath?: string; draftModelPath?: string; llamaServerPath?: string }>>({});
@@ -56,11 +57,10 @@
   const localProfiles = $derived(enabledProfiles.filter((profile) => profile.runtime !== "remote-http"));
   const namingProfiles = $derived(enabledProfiles.filter((profile) => profile.runtime === "llama-once"));
   const profileTabs = $derived.by(() => [
-    ["model", t("profiles.tab.model", "Model")],
-    ...(selected.runtime !== "llama-once" ? [["connection", t("profiles.tab.connection", "Connection")]] : []),
-    ["generation", t("profiles.tab.generation", "Generation")],
-    ...(selected.runtime !== "remote-http" ? [["local", t("profiles.tab.local", "Local")]] : []),
-    ["routes", t("profiles.tab.routes", "Routes")],
+    ["connection", t("profiles.section.connection_model", "Connection & model")],
+    ["response", t("profiles.section.response", "Response preferences")],
+    ...(selected.runtime !== "remote-http" ? [["local", t("profiles.section.local", "Local runtime")]] : []),
+    ["advanced", t("profiles.section.advanced", "Advanced")],
   ]);
   const reasoningScale = $derived.by(() => {
     if (!selected.capabilities.reasoning) return ["none"];
@@ -75,6 +75,12 @@
   const reasoningIndex = $derived(Math.max(0, reasoningScale.indexOf(selected.parameters.reasoningEffort.toLowerCase())));
   const unsupportedCapabilities = $derived(unsupportedProfileCapabilities(selected));
   const agentChatSupported = $derived(supportsAgentChat(selected));
+  const advancedSummary = $derived([
+    selected.protocol,
+    selected.runtime,
+    `${t("profiles.timeout", "Timeout (seconds)")}: ${selected.parameters.timeout}s`,
+    selected.parameters.sanitizeSensitive ? t("profiles.sanitize_sensitive", "Sanitize sensitive content") : "",
+  ].filter(Boolean).join(" · "));
 
   function t(key: string, fallback: string): string {
     const value = $useI18nStore.t(key);
@@ -150,8 +156,8 @@
     const effort = reasoningScale[Math.round(index)];
     if (effort) update({ parameters: { reasoningEffort: effort } });
   }
-  function add(): void { $useProfileStore.addProfile({ displayName: t("profiles.new_name", "New model profile"), modelId: "model-id" }); tab = "model"; }
-  function addPreset(preset: ProfilePreset): void { $useProfileStore.addProfile({ ...preset.seed }); tab = "model"; }
+  function add(): void { $useProfileStore.addProfile({ displayName: t("profiles.new_name", "New model profile"), modelId: "model-id" }); tab = "connection"; }
+  function addPreset(preset: ProfilePreset): void { $useProfileStore.addProfile({ ...preset.seed }); tab = "connection"; }
   function duplicate(id = selected.id): void { $useProfileStore.duplicateProfile(id); }
   function requestDelete(id: string): void { $useProfileStore.selectProfile(id); pendingDeleteProfileId = id; confirm = "delete"; }
   async function deleteRequestedProfile(): Promise<void> {
@@ -275,7 +281,7 @@
     };
   });
   $effect(() => {
-    if (!profileTabs.some(([value]) => value === tab)) tab = "model";
+    if (!profileTabs.some(([value]) => value === tab)) tab = "connection";
   });
   $effect(() => {
     if (open && !wasOpen) requestAnimationFrame(() => windowElement?.focus());
@@ -329,12 +335,60 @@
           <div class="pa-profile-summary-footer"><div class="pa-profile-summary-actions"><Button size="sm" onclick={() => void testConnection()} disabled={busy !== null || !selected.enabled}><Activity size={13} />{busy === "test" ? t("profiles.test.testing", "Testing…") : t("profiles.test", "Test")}</Button>{#if selected.id !== $useProfileStore.activeProfileId}<Button variant="outline" size="sm" onclick={() => activate(selected.id)} disabled={!selected.enabled || !agentChatSupported}><Check size={13} />{t("profiles.use_model", "Use model")}</Button>{/if}<Button variant="outline" size="sm" onclick={() => void syncModel()} disabled={busy !== null}><RefreshCw size={13} />{busy === "sync" ? t("profiles.models_dev.loading", "Syncing…") : t("profiles.models_dev.sync", "Sync parameters")}</Button><button type="button" class="pa-profile-delete-button" aria-label={t("profiles.delete.selected", "Delete selected profile")} onclick={() => requestDelete(selected.id)} disabled={busy !== null || $useProfileStore.profiles.length <= 1}><Trash2 size={13} /><span>{t("profiles.delete", "Delete")}</span></button></div>{#if status}<div class="pa-profile-status" role="status">{status}</div>{/if}</div>
         </section>
 
-        <Tabs.Root bind:value={tab} class="pa-profile-tabs"><Tabs.List class="pa-profile-tabs-list" aria-label={t("profiles.advanced_tabs", "Profile settings")}>{#each profileTabs as item}<Tabs.Trigger value={item[0]} class="pa-profile-tab">{t(`profiles.tab.${item[0]}`, item[1])}</Tabs.Trigger>{/each}</Tabs.List>
-            <Tabs.Content value="model"><div class="pa-profile-tab-content"><Heading title={t("profiles.section.basic", "Basic information")} hint={t("profiles.section.basic.hint", "Set this model's identity, connection type, and availability.")} /><div class="pa-profile-grid"><Field label={t("profiles.display_name", "Display name")}><CommitInput value={selected.displayName} onCommit={(v) => update({ displayName: v })} onInvalid={invalidCommit} /></Field><Field label={t("profiles.model_id", "Model ID")}><CommitInput value={selected.modelId} onCommit={(v) => update({ modelId: v })} onInvalid={invalidCommit} /></Field><Field wide label={t("profiles.connection_type", "Connection type")}><NativeSelect value={connectionMode} onchange={(event) => updateConnectionMode(event.currentTarget.value as ConnectionMode)}><option value="openai-compatible">{t("profiles.protocol.openai", "OpenAI-compatible API")}</option><option value="gemini-native">{t("profiles.protocol.gemini", "Gemini native API")}</option><option value="llama-once">{t("profiles.runtime.once", "Local GGUF (one-shot)")}</option></NativeSelect></Field></div><div class="pa-profile-toggle-grid"><Toggle label={t("profiles.capability.tools", "Tool calling")} checked={selected.capabilities.tools} onchange={(value: boolean) => update({ capabilities: { tools: value } })} /><Toggle label={t("profiles.capability.vision", "Vision input")} checked={selected.capabilities.vision} onchange={(value: boolean) => update({ capabilities: { vision: value } })} /><Toggle label={t("profiles.capability.streaming", "Streaming")} checked={selected.capabilities.streaming} onchange={(value: boolean) => update({ capabilities: { streaming: value } })} /></div></div></Tabs.Content>
-            <Tabs.Content value="connection"><div class="pa-profile-tab-content"><Heading title={t("profiles.section.connection", "Connection")} hint={t("profiles.section.connection.hint", "Configure endpoints and credentials.")} /><div class="pa-profile-grid">{#if selected.runtime === "remote-http"}<Field wide label={t("profiles.api_key", "API key")}><div class="pa-profile-key-row"><KeyRound size={14} /><input name="api-key" autocomplete="off" spellcheck="false" aria-label={t("profiles.api_key", "API key")} type={showKey ? "text" : "password"} value={apiKeyValue} placeholder={selected.hasApiKey && !apiKeyValue ? t("profiles.api_key.stored", "Stored securely") : t("profiles.api_key.placeholder", "Paste an API key…")} oninput={(event) => updateApiKey(event.currentTarget.value)} /><button type="button" onclick={() => showKey = !showKey}>{showKey ? t("profiles.api_key.hide", "Hide") : t("profiles.api_key.show", "Show")}</button></div></Field>{/if}<Field wide label={t("profiles.endpoint", "Endpoint")}><CommitInput value={selected.endpoint} disabled={selected.runtime === "llama-once"} allowEmpty onCommit={(v) => update({ endpoint: v })} /></Field><Field wide label={t("profiles.fallback_endpoints", "Fallback endpoints (one per line)")}><CommitTextarea value={selected.fallbackEndpoints.join("\n")} allowEmpty onCommit={commitEndpoints} /></Field></div></div></Tabs.Content>
-            <Tabs.Content value="generation"><div class="pa-profile-tab-content"><Heading title={t("profiles.section.generation", "Generation parameters")} hint={t("profiles.section.generation.hint", "Set sampling, reasoning, and privacy behavior.")} /><div class="pa-profile-grid"><Field label={`${t("profiles.temperature", "Temperature")} · ${selected.parameters.temperature.toFixed(2)}`}><input class="pa-profile-slider" type="range" min="0" max="2" step="0.05" value={selected.parameters.temperature} oninput={(event) => update({ parameters: { temperature: numberValue(event.currentTarget.value, selected.parameters.temperature) } })} /></Field><Field label={`${t("profiles.top_p", "Top P")} · ${selected.parameters.topP.toFixed(2)}`}><input class="pa-profile-slider" type="range" min="0" max="1" step="0.05" value={selected.parameters.topP} oninput={(event) => update({ parameters: { topP: numberValue(event.currentTarget.value, selected.parameters.topP) } })} /></Field><Field label={t("profiles.max_tokens", "Max tokens")}><CommitInput type="number" value={String(selected.parameters.maxTokens)} onCommit={(v) => commitNumberValue(v, selected.parameters.maxTokens, (n) => ({ parameters: { maxTokens: n } }))} onInvalid={invalidCommit} /></Field><Field label={`${t("profiles.reasoning_effort", "Reasoning effort")} · ${reasoningLabel(selected.parameters.reasoningEffort)}`}><div class="pa-profile-reasoning-slider"><Brain size={15} /><input class="pa-profile-slider" type="range" min="0" max={Math.max(0, reasoningScale.length - 1)} step="1" value={reasoningIndex} disabled={!selected.capabilities.reasoning} aria-label={t("profiles.reasoning_effort", "Reasoning effort")} oninput={(event) => setReasoning(Number(event.currentTarget.value))} /></div></Field></div></div></Tabs.Content>
-             <Tabs.Content value="local"><div class="pa-profile-tab-content"><Heading title={t("profiles.section.local", "Local runtime")} hint={t("profiles.section.local.hint", "Configure llama.cpp paths and hardware allocation. Saved paths stay server-side and are never returned to the browser.")} /><div class="pa-profile-grid"><Field wide label={t("profiles.model_path", "GGUF path")}><Input value={localPathDraft.modelPath ?? ""} placeholder={selected.localModelConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("modelPath", event.currentTarget.value)} /></Field><Field wide label={t("profiles.mmproj_path", "mmproj path")}><Input value={localPathDraft.mmprojPath ?? ""} placeholder={selected.mmprojConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("mmprojPath", event.currentTarget.value)} /></Field><Field wide label={t("profiles.draft_model_path", "MTP draft GGUF path")}><Input value={localPathDraft.draftModelPath ?? ""} placeholder={selected.draftModelConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("draftModelPath", event.currentTarget.value)} /></Field><Field wide label={t("profiles.llama_server_path", "llama-server path")}><Input value={localPathDraft.llamaServerPath ?? ""} placeholder={selected.llamaServerConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("llamaServerPath", event.currentTarget.value)} /></Field><Field label={t("profiles.n_ctx", "Context size")}><CommitInput type="number" value={String(selected.nCtx)} onCommit={(v) => commitNumberValue(v, selected.nCtx, (n) => ({ nCtx: n }))} onInvalid={invalidCommit} /></Field><Field label={t("profiles.n_gpu_layers", "GPU layers")}><CommitInput type="number" value={String(selected.nGpuLayers)} onCommit={(v) => commitNumberValue(v, selected.nGpuLayers, (n) => ({ nGpuLayers: n }))} onInvalid={invalidCommit} /></Field><Field label={t("profiles.idle_unload_minutes", "Idle unload time (minutes, 0 = never)")}><CommitInput type="number" min="0" max="1440" value={String(selected.idleUnloadMinutes)} disabled={selected.unloadAfterTurn} onCommit={(v) => commitNumberValue(v, selected.idleUnloadMinutes, (n) => ({ idleUnloadMinutes: n }))} onInvalid={invalidCommit} /></Field></div><div class="pa-profile-toggle-grid"><Toggle label={t("profiles.thinking", "Thinking")} checked={selected.thinking} onchange={(thinking: boolean) => update({ thinking })} /><Toggle label={t("profiles.unload_after_turn", "Unload local model after each reply")} checked={selected.unloadAfterTurn} onchange={(unloadAfterTurn: boolean) => update({ unloadAfterTurn })} /></div></div></Tabs.Content>
-            <Tabs.Content value="routes"><div class="pa-profile-tab-content"><Heading title={t("profiles.routes.title", "Routing")} hint={t("profiles.routes.hint", "Choose which enabled profile handles each assistant role.")} /><div class="pa-profile-route-grid"><Route label={t("profiles.active_profile", "Active profile")} value={$useProfileStore.activeProfileId} profiles={enabledProfiles} onchange={(id: string) => $useProfileStore.activateProfile(id)} /><Route label={t("profiles.session_profile", "Session model")} value={$useProfileStore.sessionProfileId} profiles={localProfiles} onchange={(id: string) => $useProfileStore.setSessionProfile(id)} /><Route label={t("profiles.naming_profile", "Naming model")} value={$useProfileStore.namingProfileId} profiles={namingProfiles} onchange={(id: string) => $useProfileStore.setNamingProfile(id)} /></div></div></Tabs.Content>
+        <Tabs.Root bind:value={tab} class="pa-profile-tabs"><Tabs.List class="pa-profile-tabs-list" aria-label={t("profiles.advanced_tabs", "Profile settings")}>{#each profileTabs as item}<Tabs.Trigger value={item[0]} class="pa-profile-tab">{item[1]}</Tabs.Trigger>{/each}</Tabs.List>
+            <Tabs.Content value="connection"><div class="pa-profile-tab-content">
+              <Heading title={t("profiles.section.connection_model", "Connection & model")} hint={t("profiles.section.connection_model.hint", "Set the name, connection type, address, and credentials; capabilities and fallbacks expand on demand.")} />
+              <div class="pa-profile-grid">
+                <Field label={t("profiles.display_name", "Display name")}><CommitInput value={selected.displayName} onCommit={(v) => update({ displayName: v })} onInvalid={invalidCommit} /></Field>
+                <Field label={t("profiles.model_id", "Model ID")}><CommitInput value={selected.modelId} onCommit={(v) => update({ modelId: v })} onInvalid={invalidCommit} /></Field>
+                <Field wide label={t("profiles.connection_type", "Connection type")}><NativeSelect value={connectionMode} onchange={(event) => updateConnectionMode(event.currentTarget.value as ConnectionMode)}><option value="openai-compatible">{t("profiles.protocol.openai", "OpenAI-compatible API")}</option><option value="gemini-native">{t("profiles.protocol.gemini", "Gemini native API")}</option><option value="llama-once">{t("profiles.runtime.once", "Local GGUF (one-shot)")}</option></NativeSelect></Field>
+                <Field wide label={t("profiles.endpoint", "Endpoint")}><CommitInput value={selected.endpoint} disabled={selected.runtime === "llama-once"} allowEmpty onCommit={(v) => update({ endpoint: v })} /></Field>
+                {#if selected.runtime === "remote-http"}<Field wide label={t("profiles.api_key", "API key")}><div class="pa-profile-key-row"><KeyRound size={14} /><input name="api-key" autocomplete="off" spellcheck="false" aria-label={t("profiles.api_key", "API key")} type={showKey ? "text" : "password"} value={apiKeyValue} placeholder={selected.hasApiKey && !apiKeyValue ? t("profiles.api_key.stored", "Stored securely") : t("profiles.api_key.placeholder", "Paste an API key…")} oninput={(event) => updateApiKey(event.currentTarget.value)} /><button type="button" onclick={() => showKey = !showKey}>{showKey ? t("profiles.api_key.hide", "Hide") : t("profiles.api_key.show", "Show")}</button></div></Field>{/if}
+              </div>
+              <More label={t("profiles.more.connection", "More connection settings")}>
+                <div class="pa-profile-grid"><Field wide label={t("profiles.fallback_endpoints", "Fallback endpoints (one per line)")}><CommitTextarea value={selected.fallbackEndpoints.join("\n")} allowEmpty onCommit={commitEndpoints} /></Field></div>
+                <div class="pa-profile-toggle-grid"><Toggle label={t("profiles.capability.tools", "Tool calling")} checked={selected.capabilities.tools} onchange={(value: boolean) => update({ capabilities: { tools: value } })} /><Toggle label={t("profiles.capability.vision", "Vision input")} checked={selected.capabilities.vision} onchange={(value: boolean) => update({ capabilities: { vision: value } })} /><Toggle label={t("profiles.capability.streaming", "Streaming")} checked={selected.capabilities.streaming} onchange={(value: boolean) => update({ capabilities: { streaming: value } })} /></div>
+              </More>
+            </div></Tabs.Content>
+            <Tabs.Content value="response"><div class="pa-profile-tab-content">
+              <Heading title={t("profiles.section.response", "Response preferences")} hint={t("profiles.section.response.hint", "Control reasoning effort and the output limit; sampling details expand on demand.")} />
+              <div class="pa-profile-grid">
+                <Field wide label={`${t("profiles.reasoning_effort", "Reasoning effort")} · ${reasoningLabel(selected.parameters.reasoningEffort)}`}><div class="pa-profile-reasoning-slider"><Brain size={15} /><input class="pa-profile-slider" type="range" min="0" max={Math.max(0, reasoningScale.length - 1)} step="1" value={reasoningIndex} disabled={!selected.capabilities.reasoning} aria-label={t("profiles.reasoning_effort", "Reasoning effort")} oninput={(event) => setReasoning(Number(event.currentTarget.value))} /></div></Field>
+                <Field label={t("profiles.max_tokens", "Max tokens")}><CommitInput type="number" value={String(selected.parameters.maxTokens)} onCommit={(v) => commitNumberValue(v, selected.parameters.maxTokens, (n) => ({ parameters: { maxTokens: n } }))} onInvalid={invalidCommit} /></Field>
+              </div>
+              <More label={t("profiles.more.response", "More response settings")}>
+                <div class="pa-profile-grid">
+                  <Field label={`${t("profiles.temperature", "Temperature")} · ${selected.parameters.temperature.toFixed(2)}`}><input class="pa-profile-slider" type="range" min="0" max="2" step="0.05" value={selected.parameters.temperature} oninput={(event) => update({ parameters: { temperature: numberValue(event.currentTarget.value, selected.parameters.temperature) } })} /></Field>
+                  <Field label={`${t("profiles.top_p", "Top P")} · ${selected.parameters.topP.toFixed(2)}`}><input class="pa-profile-slider" type="range" min="0" max="1" step="0.05" value={selected.parameters.topP} oninput={(event) => update({ parameters: { topP: numberValue(event.currentTarget.value, selected.parameters.topP) } })} /></Field>
+                  <Field label={t("profiles.timeout", "Timeout (seconds)")}><CommitInput type="number" min="1" max="3600" value={String(selected.parameters.timeout)} onCommit={(v) => commitNumberValue(v, selected.parameters.timeout, (n) => ({ parameters: { timeout: n } }))} onInvalid={invalidCommit} /></Field>
+                </div>
+              </More>
+            </div></Tabs.Content>
+            <Tabs.Content value="local"><div class="pa-profile-tab-content">
+              <Heading title={t("profiles.section.local", "Local runtime")} hint={t("profiles.section.local.hint", "Configure llama.cpp paths and hardware allocation. Saved paths stay server-side and are never returned to the browser.")} />
+              <div class="pa-profile-grid">
+                <Field wide label={t("profiles.model_path", "GGUF path")}><Input value={localPathDraft.modelPath ?? ""} placeholder={selected.localModelConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("modelPath", event.currentTarget.value)} /></Field>
+                <Field wide label={t("profiles.mmproj_path", "mmproj path")}><Input value={localPathDraft.mmprojPath ?? ""} placeholder={selected.mmprojConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("mmprojPath", event.currentTarget.value)} /></Field>
+              </div>
+              <More label={t("profiles.more.local", "More local settings")}>
+                <div class="pa-profile-grid">
+                  <Field wide label={t("profiles.draft_model_path", "MTP draft GGUF path")}><Input value={localPathDraft.draftModelPath ?? ""} placeholder={selected.draftModelConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("draftModelPath", event.currentTarget.value)} /></Field>
+                  <Field wide label={t("profiles.llama_server_path", "llama-server path")}><Input value={localPathDraft.llamaServerPath ?? ""} placeholder={selected.llamaServerConfigured ? t("profiles.path.configured", "Configured on server") : ""} oninput={(event) => updateLocalPath("llamaServerPath", event.currentTarget.value)} /></Field>
+                  <Field label={t("profiles.n_ctx", "Context size")}><CommitInput type="number" value={String(selected.nCtx)} onCommit={(v) => commitNumberValue(v, selected.nCtx, (n) => ({ nCtx: n }))} onInvalid={invalidCommit} /></Field>
+                  <Field label={t("profiles.n_gpu_layers", "GPU layers")}><CommitInput type="number" value={String(selected.nGpuLayers)} onCommit={(v) => commitNumberValue(v, selected.nGpuLayers, (n) => ({ nGpuLayers: n }))} onInvalid={invalidCommit} /></Field>
+                  <Field label={t("profiles.idle_unload_minutes", "Idle unload time (minutes, 0 = never)")}><CommitInput type="number" min="0" max="1440" value={String(selected.idleUnloadMinutes)} disabled={selected.unloadAfterTurn} onCommit={(v) => commitNumberValue(v, selected.idleUnloadMinutes, (n) => ({ idleUnloadMinutes: n }))} onInvalid={invalidCommit} /></Field>
+                </div>
+                <div class="pa-profile-toggle-grid"><Toggle label={t("profiles.thinking", "Thinking")} checked={selected.thinking} onchange={(thinking: boolean) => update({ thinking })} /><Toggle label={t("profiles.unload_after_turn", "Unload local model after each reply")} checked={selected.unloadAfterTurn} onchange={(unloadAfterTurn: boolean) => update({ unloadAfterTurn })} /></div>
+              </More>
+            </div></Tabs.Content>
+            <Tabs.Content value="advanced"><div class="pa-profile-tab-content">
+              <Heading title={t("profiles.section.advanced", "Advanced")} hint={t("profiles.section.advanced.hint", "Review the current configuration and adjust routing and low-frequency options on demand.")} />
+              <p class="pa-profile-summary-line">{advancedSummary}</p>
+              <More label={t("profiles.more.advanced", "Advanced settings")}>
+                <div class="pa-profile-route-grid"><Route label={t("profiles.active_profile", "Active profile")} value={$useProfileStore.activeProfileId} profiles={enabledProfiles} onchange={(id: string) => $useProfileStore.activateProfile(id)} /><Route label={t("profiles.session_profile", "Session model")} value={$useProfileStore.sessionProfileId} profiles={localProfiles} onchange={(id: string) => $useProfileStore.setSessionProfile(id)} /><Route label={t("profiles.naming_profile", "Naming model")} value={$useProfileStore.namingProfileId} profiles={namingProfiles} onchange={(id: string) => $useProfileStore.setNamingProfile(id)} /></div>
+                <div class="pa-profile-toggle-grid"><Toggle label={t("profiles.sanitize_sensitive", "Sanitize sensitive content")} checked={selected.parameters.sanitizeSensitive} onchange={(sanitizeSensitive: boolean) => update({ parameters: { sanitizeSensitive } })} /></div>
+              </More>
+            </div></Tabs.Content>
         </Tabs.Root>
       </main>
     </div>

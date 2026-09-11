@@ -390,4 +390,28 @@ Entries from 2026-07-19 through 2026-07-30 moved to
 - Verification: `python tools/test_gate.py full` passed (exit 0), total stage
   time 63.9s.
 
+## 2026-09-11 Settings experience baseline and information architecture
+- Goal: the profile editor was a flat five-tab form (Model / Connection /
+  Generation / Local / Routes) that mixed common and rare fields and sized its
+  columns from the browser width, so the common path was noisy and fragile.
+- Baseline: `docs/EXPERIENCE_BASELINE.md` records the field migration table
+  (every existing field mapped to a new section, nothing dropped), the Forge
+  host version and completion/metadata hooks, and the image source map
+  (attachments transcode to WebP before any metadata extraction; `generate_image`
+  trusts the first new gallery image; the `on_image_saved` hook has no consumer).
+- Changed `frontend/src/components/ProfileSettings.svelte` and added
+  `frontend/src/components/settings/More.svelte`: the five tabs became four
+  sections - Connection & model / Response preferences / Local runtime /
+  Advanced - each showing its common fields with a `<details>` disclosure for
+  on-demand fields; routes moved into Advanced; added an advanced summary line.
+- Changed `frontend/src/styles.css`: `.pa-profile-tab-content` is now an
+  inline-size container, single column under 560px via `@container`, with
+  section/disclosure animations that fall back under `prefers-reduced-motion`.
+- Added the new-IA keys to `prompt_agent/i18n.py` and the offline fallback table
+  in `frontend/src/i18n/runtime.ts`; updated `frontend/tests/profile-settings.test.ts`
+  and `frontend/tests/e2e/mock-host.spec.ts` to the new section labels.
+- Verification: `python tools/test_gate.py affected` passed (exit 0, 46.9s);
+  svelte-check reported 0 errors / 0 warnings; rebuilt
+  `javascript/prompt_agent_90_ui.js` from the frontend sources.
+
 
