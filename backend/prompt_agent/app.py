@@ -15,6 +15,7 @@ from .profile_connection import ConnectionTestError, test_profile_connection
 from .profiles import ProfileAuthority, SecretUnavailableError, default_storage_root
 from .providers import provider_catalog, public_profile_state, stream_profile
 from .session_sync import SessionSyncAuthority, SessionSyncError
+from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
 from prompt_agent.image_payloads import _decode_image_data
 from prompt_agent.pnginfo import extract_image_metadata
 
@@ -190,6 +191,17 @@ def register_prompt_agent_api(
             ) from error
         return {"ok": True, "metadata": extract_image_metadata(binary)}
 
+    @app.post(f"{API_PREFIX}/images/recent")
+    async def prompt_agent_recent_images(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        try:
+            request = _recent_images_request(payload)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=422,
+                detail={"ok": False, "error": {"code": "invalid_request", "message": str(error), "retryable": False}},
+            ) from error
+        return {"ok": True, **DEFAULT_IMAGE_INDEX.list_recent(**request)}
+
     @app.post(f"{API_PREFIX}/profiles/{{profile_id}}/connection-test")
     async def prompt_agent_profile_connection_test(profile_id: str) -> dict[str, Any]:
         try:
@@ -336,3 +348,18 @@ def _local_runtime_request(payload: Any) -> tuple[str, str]:
             raise ValueError(f"{key} must be a safe identifier")
         values.append(value)
     return values[0], values[1]
+
+
+def _recent_images_request(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("request body must be an object")
+    limit = payload.get("limit", 8)
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        raise ValueError("limit must be an integer")
+    target = payload.get("target")
+    if target is not None and target not in ("txt2img", "img2img", "unknown"):
+        raise ValueError("target must be txt2img, img2img, or unknown")
+    include_grids = payload.get("include_grids", False)
+    if not isinstance(include_grids, bool):
+        raise ValueError("include_grids must be a boolean")
+    return {"limit": limit, "target": target, "include_grids": include_grids}

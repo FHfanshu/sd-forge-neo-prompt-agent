@@ -484,5 +484,17 @@ Entries from 2026-07-19 through 2026-07-30 moved to
 - Verification: `python -m unittest tests.test_image_index` passed (3 tests);
   `scripts/prompt_agent.py` compiles.
 
+## 2026-09-11 Read-only recent-images route
+- Goal: the generation index had no consumer, and no way to verify live hook
+  data (PRD step 4 backend half).
+- Added `POST /prompt-agent/api/images/recent` in `backend/prompt_agent/app.py`,
+  delegating to `DEFAULT_IMAGE_INDEX.list_recent` and validating `limit`,
+  `target`, and `include_grids` (`_recent_images_request`), returning 422 on bad
+  input. Responses reuse `ImageRef.to_summary`, so filenames stay server-side.
+- Added route tests to `tests/test_prompt_agent_api.py`.
+- Verification: `python -m unittest tests.test_prompt_agent_api` passed (27
+  tests, includes 2 new); `python tools/test_gate.py affected` exit 0 (5.8s).
+
+
 
 

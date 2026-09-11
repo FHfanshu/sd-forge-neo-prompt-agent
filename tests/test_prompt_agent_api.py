@@ -71,6 +71,47 @@ class PromptAgentApiTests(unittest.TestCase):
             422,
         )
 
+    def test_recent_images_route_projects_index_summary(self):
+        from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
+
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+        DEFAULT_IMAGE_INDEX.clear()
+        try:
+            DEFAULT_IMAGE_INDEX.record_saved(
+                batch_key=object(),
+                target="txt2img",
+                filename="a.png",
+                width=512,
+                height=512,
+                infotext="cat\nSteps: 10",
+            )
+
+            response = client.post(f"{API_PREFIX}/images/recent", json={"limit": 5})
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["scope"], "host_recent")
+            self.assertEqual(payload["returned_count"], 1)
+            image = payload["items"][0]["images"][0]
+            self.assertEqual(image["image_id"], "gen-1-0")
+            self.assertEqual(image["target"], "txt2img")
+            self.assertEqual(image["metadata_status"], "available")
+            self.assertNotIn("filename", image)
+        finally:
+            DEFAULT_IMAGE_INDEX.clear()
+
+    def test_recent_images_route_rejects_invalid_payload(self):
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+
+        self.assertEqual(client.post(f"{API_PREFIX}/images/recent", json={"limit": True}).status_code, 422)
+        self.assertEqual(client.post(f"{API_PREFIX}/images/recent", json={"target": "video"}).status_code, 422)
+        self.assertEqual(client.post(f"{API_PREFIX}/images/recent", json={"include_grids": "yes"}).status_code, 422)
+
     @acceptance("SECURITY-PRIVACY-001@1", "projection")
     def test_profiles_never_return_secret_or_local_paths(self):
         app = FastAPI()
