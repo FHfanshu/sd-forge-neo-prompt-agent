@@ -32,6 +32,7 @@ test("resource and skill tools are registered for agent execution", () => {
         "search_resources",
         "inspect_resource",
         "list_recent_generations",
+        "read_pnginfo",
         "load_skill",
         "search_danbooru_tags",
         "inspect_danbooru_tags",
@@ -41,6 +42,7 @@ test("resource and skill tools are registered for agent execution", () => {
     ]);
     assert.ok(tools.RESOURCE_TOOLS.has("load_skill"));
     assert.ok(tools.RESOURCE_TOOLS.has("list_recent_generations"));
+    assert.ok(tools.RESOURCE_TOOLS.has("read_pnginfo"));
     assert.ok(tools.RESOURCE_TOOLS.has("search_danbooru_tags"));
     assert.ok(tools.RESOURCE_TOOLS.has("inspect_danbooru_tags"));
     assert.ok(tools.RESOURCE_TOOLS.has("related_danbooru_tags"));
@@ -63,6 +65,23 @@ test("recent-generation listing posts bounded filters and omits active target", 
     assert.equal(requests[0].options.method, "POST");
     assert.deepEqual(JSON.parse(requests[0].options.body), { limit: 3, include_grids: true });
     assert.deepEqual(JSON.parse(requests[1].options.body), { target: "img2img", limit: 8, include_grids: false });
+});
+
+test("pnginfo reading posts the image id to the metadata route", async () => {
+    const originalFetch = global.fetch;
+    let request;
+    global.fetch = async (url, options) => {
+        request = { url: url, options: options };
+        return { ok: true, json: async () => ({ ok: true, metadata: {} }) };
+    };
+    try {
+        await tools.readPnginfoTool({ image_id: "gen-3-2" });
+    } finally {
+        global.fetch = originalFetch;
+    }
+    assert.equal(request.url, "/prompt-agent/api/images/pnginfo");
+    assert.equal(request.options.method, "POST");
+    assert.deepEqual(JSON.parse(request.options.body), { image_id: "gen-3-2" });
 });
 
 test("batch Danbooru search forwards all queries", async () => {

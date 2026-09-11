@@ -19,7 +19,7 @@ from quality.acceptance import acceptance
 
 
 class ForgeToolValidationTests(unittest.TestCase):
-    @acceptance("AGENT-TOOLS-001@7", "surface")
+    @acceptance("AGENT-TOOLS-001@8", "surface")
     def test_agent_tool_names_are_fixed_and_ordered(self):
         self.assertEqual(
             (
@@ -29,6 +29,7 @@ class ForgeToolValidationTests(unittest.TestCase):
                 "apply_generation_parameters",
                 "generate_image",
                 "list_recent_generations",
+                "read_pnginfo",
                 "search_resources",
                 "inspect_resource",
                 "search_danbooru_tags",
@@ -40,7 +41,7 @@ class ForgeToolValidationTests(unittest.TestCase):
             FORGE_TOOL_NAMES,
         )
         self.assertNotIn("ask_teacher", FORGE_TOOL_NAMES)
-        self.assertEqual(13, len(FORGE_TOOL_NAMES))
+        self.assertEqual(14, len(FORGE_TOOL_NAMES))
 
     def test_server_owned_paths_and_bridge_fields_are_rejected(self):
         with self.assertRaisesRegex(ForgeToolValidationError, "server-owned"):
@@ -87,6 +88,18 @@ class ForgeToolValidationTests(unittest.TestCase):
             validate_forge_tool_request("list_recent_generations", {"include_grids": "yes"})
         with self.assertRaisesRegex(ForgeToolValidationError, "target"):
             validate_forge_tool_request("list_recent_generations", {"target": "nope"})
+
+    def test_read_pnginfo_arguments_are_validated(self):
+        self.assertEqual(
+            {"image_id": "gen-2-1"},
+            validate_forge_tool_request("read_pnginfo", {"image_id": "gen-2-1"}),
+        )
+        with self.assertRaisesRegex(ForgeToolValidationError, "image_id is required"):
+            validate_forge_tool_request("read_pnginfo", {})
+        with self.assertRaisesRegex(ForgeToolValidationError, "image_id is required"):
+            validate_forge_tool_request("read_pnginfo", {"image_id": "../../etc/passwd"})
+        with self.assertRaisesRegex(ForgeToolValidationError, "unsupported fields"):
+            validate_forge_tool_request("read_pnginfo", {"image_id": "gen-1-0", "extra": "x"})
 
     def test_prompt_patches_and_generation_values_are_revalidated(self):
         with self.assertRaisesRegex(ForgeToolValidationError, r"patches\[0\] must be an object"):
@@ -188,7 +201,7 @@ class ForgeToolApiTests(unittest.TestCase):
         self.assertEqual("validation_error", response.json()["detail"]["error"]["code"])
         self.assertNotIn("C:/private", response.text)
 
-    @acceptance("AGENT-TOOLS-001@7", "revalidation,freshness")
+    @acceptance("AGENT-TOOLS-001@8", "revalidation,freshness")
     def test_validation_endpoint_revalidates_browser_host_tools(self):
         with TemporaryDirectory() as directory:
             app = FastAPI()

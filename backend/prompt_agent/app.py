@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from typing import Any
 
@@ -23,6 +24,7 @@ from prompt_agent.pnginfo import extract_image_metadata
 API_PREFIX = "/prompt-agent/api"
 API_VERSION = 1
 _REGISTRATION_MARKER = "_prompt_agent_api_registered"
+_IMAGE_ID_RE = re.compile(r"gen-\d+-\d+\Z")
 
 
 def health_payload() -> dict[str, Any]:
@@ -202,6 +204,41 @@ def register_prompt_agent_api(
             ) from error
         return {"ok": True, **DEFAULT_IMAGE_INDEX.list_recent(**request)}
 
+    @app.post(f"{API_PREFIX}/images/pnginfo")
+    async def prompt_agent_image_pnginfo(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        try:
+            image_id = _pnginfo_request(payload)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=422,
+                detail={"ok": False, "error": {"code": "invalid_request", "message": str(error), "retryable": False}},
+            ) from error
+        reference = DEFAULT_IMAGE_INDEX.find(image_id)
+        if reference is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"ok": False, "error": {"code": "not_found", "message": "unknown image id", "retryable": False}},
+            )
+        binary = _read_indexed_image(reference)
+        if binary is None:
+            metadata: dict[str, Any] = {
+                "metadata_status": reference.metadata_status if reference.metadata_status == "absent" else "unsupported",
+                "parser_format": "none",
+                "data": {},
+                "missing_fields": ["positive_prompt", "generation_parameters"],
+                "warnings": ["image_file_unavailable"],
+            }
+        else:
+            metadata = extract_image_metadata(binary)
+        return {
+            "ok": True,
+            "image_id": image_id,
+            "target": reference.target,
+            "width": int(metadata.get("width") or reference.width),
+            "height": int(metadata.get("height") or reference.height),
+            "metadata": metadata,
+        }
+
     @app.post(f"{API_PREFIX}/profiles/{{profile_id}}/connection-test")
     async def prompt_agent_profile_connection_test(profile_id: str) -> dict[str, Any]:
         try:
@@ -363,3 +400,26 @@ def _recent_images_request(payload: Any) -> dict[str, Any]:
     if not isinstance(include_grids, bool):
         raise ValueError("include_grids must be a boolean")
     return {"limit": limit, "target": target, "include_grids": include_grids}
+
+
+def _pnginfo_request(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        raise ValueError("request body must be an object")
+    unknown = set(payload) - {"image_id"}
+    if unknown:
+        raise ValueError(f"unsupported fields: {', '.join(sorted(unknown))}")
+    image_id = payload.get("image_id")
+    if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
+        raise ValueError("image_id is required")
+    return image_id
+
+
+def _read_indexed_image(reference: Any) -> bytes | None:
+    filename = str(getattr(reference, "filename", "") or "")
+    if not filename:
+        return None
+    try:
+        with open(filename, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None

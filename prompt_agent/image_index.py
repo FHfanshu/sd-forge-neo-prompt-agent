@@ -174,6 +174,7 @@ class ImageIndex:
 
     def clear(self) -> None:
         with self._lock:
+            self._counter = itertools.count(1)
             self._batches.clear()
             self._refs.clear()
             self._current = None

@@ -523,6 +523,29 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   127 tests and 7 e2e tests passed; svelte-check reported no errors;
   `node --check javascript/prompt_agent_02_resources.js` passed.
 
+## 2026-09-11 Read-only read_pnginfo tool
+- Goal: the agent could list recent generations but not read their saved
+  metadata (PRD step 4).
+- Added `POST /prompt-agent/api/images/pnginfo` in `backend/prompt_agent/app.py`:
+  validates a strict `image_id` (`gen-N-i`, rejecting extra fields), looks it up
+  in `DEFAULT_IMAGE_INDEX`, reads the indexed file and parses it with
+  `extract_image_metadata`, and reports `image_file_unavailable` when the file is
+  gone. Responses carry image_id, target, size, and parsed metadata and never a
+  filename or path.
+- Declared `read_pnginfo` across the Forge tool surface: TypeBox schema
+  (`frontend/src/tools/forge-tools.ts`), Python validation
+  (`backend/prompt_agent/forge_tools.py`), and the host executor
+  (`javascript/prompt_agent_02_resources.js`).
+- `ImageIndex.clear()` now resets the generation counter so a cleared index
+  restarts at `gen-1`.
+- Tests: `tests/test_prompt_agent_api.py` (file present, file missing, bad
+  input/unknown id), `tests/test_forge_tools.py` (validation),
+  `tests/test_frontend_resources.js` (POST body).
+- Extended acceptance `AGENT-TOOLS-001` (revision 8) with a `read_pnginfo` bullet
+  and updated the stale mapped tests.
+- Verification: `python tools/test_gate.py affected` exit 0 (50.3s); frontend
+  suite and mock-host e2e passed.
+
 
 
 

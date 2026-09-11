@@ -17,6 +17,7 @@
         "search_resources",
         "inspect_resource",
         "list_recent_generations",
+        "read_pnginfo",
         "load_skill",
         "search_danbooru_tags",
         "inspect_danbooru_tags",
@@ -99,6 +100,12 @@
             target: target,
             limit: args.limit || 8,
             include_grids: args.include_grids === true
+        }, signal);
+    }
+
+    async function readPnginfoTool(args, signal) {
+        return await resourcePost("/prompt-agent/api/images/pnginfo", {
+            image_id: args.image_id
         }, signal);
     }
 
@@ -293,6 +300,7 @@
         if (name === "search_resources") return await searchResourcesTool(args, signal);
         if (name === "inspect_resource") return await inspectResourceTool(args, signal);
         if (name === "list_recent_generations") return await listRecentGenerationsTool(args, signal);
+        if (name === "read_pnginfo") return await readPnginfoTool(args, signal);
         if (name === "load_skill") return await loadPromptSkillTool(args, signal);
         if (name === "search_danbooru_tags") return await searchDanbooruTagsTool(args, signal);
         if (name === "inspect_danbooru_tags") return await inspectDanbooruTagsTool(args, signal);
@@ -310,6 +318,7 @@
         searchResourcesTool,
         inspectResourceTool,
         listRecentGenerationsTool,
+        readPnginfoTool,
         loadPromptSkillTool,
         searchDanbooruTagsTool,
         inspectDanbooruTagsTool,

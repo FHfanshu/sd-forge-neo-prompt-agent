@@ -11,6 +11,7 @@ FORGE_TOOL_NAMES = (
     "apply_generation_parameters",
     "generate_image",
     "list_recent_generations",
+    "read_pnginfo",
     "search_resources",
     "inspect_resource",
     "search_danbooru_tags",
@@ -19,6 +20,7 @@ FORGE_TOOL_NAMES = (
     "search_danbooru_wikis",
     "inspect_danbooru_wikis",
 )
+_IMAGE_ID_RE = re.compile(r"gen-\d+-\d+\Z")
 _FORBIDDEN_KEYS = frozenset({
     "api_key",
     "apikey",
@@ -123,6 +125,11 @@ def validate_forge_tool_request(tool: str, payload: Any) -> dict[str, Any]:
         _bounded_integer(payload.get("limit", 8), "limit", 1, 20)
         if "include_grids" in payload and not isinstance(payload.get("include_grids"), bool):
             raise ForgeToolValidationError("include_grids must be a boolean")
+    elif tool == "read_pnginfo":
+        _allow_keys(payload, {"image_id"})
+        image_id = payload.get("image_id")
+        if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
+            raise ForgeToolValidationError("image_id is required")
     elif tool == "search_danbooru_tags":
         _allow_keys(payload, {"query", "queries", "category", "limit"})
         _validate_danbooru_search(payload)

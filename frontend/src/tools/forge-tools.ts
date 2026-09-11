@@ -133,6 +133,10 @@ const listRecentGenerationsSchema = Type.Object({
   include_grids: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false });
 
+const readPnginfoSchema = Type.Object({
+  image_id: Type.String({ pattern: "^gen-\\d+-\\d+$" }),
+}, { additionalProperties: false });
+
 export const FORGE_TOOL_SCHEMAS = {
   read_prompt: Type.Object({ target: targetSchema, field: promptFieldSchema }, { additionalProperties: false }),
   edit_prompt: promptEditSchema,
@@ -140,6 +144,7 @@ export const FORGE_TOOL_SCHEMAS = {
   apply_generation_parameters: applyGenerationSchema,
   generate_image: generateImageSchema,
   list_recent_generations: listRecentGenerationsSchema,
+  read_pnginfo: readPnginfoSchema,
   search_resources: resourceListSchema,
   inspect_resource: resourceMetadataSchema,
   search_danbooru_tags: danbooruSearchSchema,
@@ -198,6 +203,7 @@ const TOOL_TIMEOUTS: Record<ForgeToolName, number> = {
   apply_generation_parameters: 15_000,
   generate_image: 320_000,
   list_recent_generations: 10_000,
+  read_pnginfo: 15_000,
   search_resources: 15_000,
   inspect_resource: 15_000,
   search_danbooru_tags: 30_000,
@@ -406,6 +412,14 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
       "List recent generations",
       "List bounded summaries of recently completed Forge generations on this host, newest first, with stable image ids, target, size, and whether PNGInfo metadata is available. Read-only; use it to reference an existing render before inspecting its metadata or pixels. Filenames and filesystem paths are never returned.",
       FORGE_TOOL_SCHEMAS.list_recent_generations,
+      "read",
+      options,
+    ),
+    createForgeTool(
+      "read_pnginfo",
+      "Read PNGInfo",
+      "Read the generation metadata (parsed prompt and parameters) of a previously completed host generation, addressed by its image_id from list_recent_generations. Read-only; filenames and filesystem paths are never returned.",
+      FORGE_TOOL_SCHEMAS.read_pnginfo,
       "read",
       options,
     ),

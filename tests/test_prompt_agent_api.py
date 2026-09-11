@@ -112,6 +112,87 @@ class PromptAgentApiTests(unittest.TestCase):
         self.assertEqual(client.post(f"{API_PREFIX}/images/recent", json={"target": "video"}).status_code, 422)
         self.assertEqual(client.post(f"{API_PREFIX}/images/recent", json={"include_grids": "yes"}).status_code, 422)
 
+    def test_pnginfo_route_reads_metadata_for_an_indexed_image(self):
+        from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
+
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+        with TemporaryDirectory() as directory:
+            path = os.path.join(directory, "00000-1.png")
+            info = PngImagePlugin.PngInfo()
+            info.add_text("parameters", "cat\nNegative prompt: blur\nSteps: 20, Sampler: Euler, Seed: 7")
+            Image.new("RGB", (64, 48)).save(path, pnginfo=info)
+            DEFAULT_IMAGE_INDEX.clear()
+            try:
+                DEFAULT_IMAGE_INDEX.record_saved(
+                    batch_key=object(),
+                    target="txt2img",
+                    filename=path,
+                    width=64,
+                    height=48,
+                    infotext="cat\nSteps: 20, Sampler: Euler, Seed: 7",
+                )
+
+                response = client.post(f"{API_PREFIX}/images/pnginfo", json={"image_id": "gen-1-0"})
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["image_id"], "gen-1-0")
+                self.assertEqual(payload["target"], "txt2img")
+                metadata = payload["metadata"]
+                self.assertEqual(metadata["metadata_status"], "available")
+                self.assertEqual(metadata["width"], 64)
+                self.assertEqual(metadata["height"], 48)
+                self.assertEqual(metadata["data"]["positive_prompt"], "cat")
+                self.assertEqual(metadata["data"]["generation_parameters"]["steps"], 20)
+                self.assertNotIn("filename", json.dumps(payload))
+            finally:
+                DEFAULT_IMAGE_INDEX.clear()
+
+    def test_pnginfo_route_reports_unavailable_files_without_paths(self):
+        from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
+
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+        DEFAULT_IMAGE_INDEX.clear()
+        try:
+            DEFAULT_IMAGE_INDEX.record_saved(
+                batch_key=object(),
+                target="txt2img",
+                filename="",
+                width=32,
+                height=32,
+                infotext="cat\nSteps: 4",
+            )
+
+            response = client.post(f"{API_PREFIX}/images/pnginfo", json={"image_id": "gen-1-0"})
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["metadata"]["warnings"], ["image_file_unavailable"])
+            self.assertEqual(payload["metadata"]["metadata_status"], "unsupported")
+            self.assertNotIn("filename", json.dumps(payload))
+        finally:
+            DEFAULT_IMAGE_INDEX.clear()
+
+    def test_pnginfo_route_rejects_bad_input_and_unknown_ids(self):
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+
+        self.assertEqual(client.post(f"{API_PREFIX}/images/pnginfo", json={}).status_code, 422)
+        self.assertEqual(
+            client.post(f"{API_PREFIX}/images/pnginfo", json={"image_id": "gen-1-0", "path": "x"}).status_code,
+            422,
+        )
+        self.assertEqual(
+            client.post(f"{API_PREFIX}/images/pnginfo", json={"image_id": "gen-999-0"}).status_code,
+            404,
+        )
+
     @acceptance("SECURITY-PRIVACY-001@1", "projection")
     def test_profiles_never_return_secret_or_local_paths(self):
         app = FastAPI()
