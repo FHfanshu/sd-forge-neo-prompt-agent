@@ -132,8 +132,10 @@ def validate_forge_tool_request(tool: str, payload: Any) -> dict[str, Any]:
         _require_image_id(payload)
         _pnginfo_fields(payload)
     elif tool == "read_image":
-        _allow_keys(payload, {"image_id"})
+        _allow_keys(payload, {"image_id", "detail"})
         _require_image_id(payload)
+        if "detail" in payload and payload.get("detail") not in ("preview", "standard"):
+            raise ForgeToolValidationError("detail must be preview or standard")
     elif tool == "search_danbooru_tags":
         _allow_keys(payload, {"query", "queries", "category", "limit"})
         _validate_danbooru_search(payload)

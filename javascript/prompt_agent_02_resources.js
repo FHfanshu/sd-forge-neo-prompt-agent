@@ -111,9 +111,9 @@
     }
 
     async function readImageTool(args, signal) {
-        return await resourcePost("/prompt-agent/api/images/content", {
-            image_id: args.image_id
-        }, signal);
+        const body = { image_id: args.image_id };
+        if (args.detail === "preview" || args.detail === "standard") body.detail = args.detail;
+        return await resourcePost("/prompt-agent/api/images/content", body, signal);
     }
 
     async function loadPromptSkillTool(args, signal) {

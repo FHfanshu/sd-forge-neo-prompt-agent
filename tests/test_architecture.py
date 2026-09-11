@@ -13,6 +13,7 @@ TEXT_SUFFIXES = {".css", ".html", ".js", ".json", ".md", ".py", ".svelte", ".ts"
 SKIP_PARTS = {
     ".git",
     ".loom",
+    ".playwright-mcp",
     ".pytest_cache",
     "__pycache__",
     "bin",

@@ -592,6 +592,37 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   `node --check javascript/prompt_agent_02_resources.js` passed;
   `python tools/test_gate.py affected` exit 0 (32.0s).
 
+## 2026-09-11 read_image detail, scaling, and vision gate
+- Goal: `read_image` returned full-size pixels with no `detail` mode, no
+  size/scaling reporting, and no model-vision check, so a non-vision model could
+  still request pixels and a large render wasted context (PRD 9.3, TOOL-03).
+- Added `detail` (`preview` default | `standard`) across the TypeBox schema, Python
+  validation (`backend/prompt_agent/forge_tools.py`), and the host executor
+  (`javascript/prompt_agent_02_resources.js`). `/images/content`
+  (`backend/prompt_agent/app.py`) now reports original `width`/`height`,
+  `transfer_width`/`transfer_height`, `scaled`, and `detail`: `preview` transcodes
+  to a bounded 768px JPEG via new `_image_dimensions` / `_image_preview` helpers in
+  `prompt_agent/image_payloads.py`, while `standard` (and any already-small image)
+  returns the stored original bytes and MIME unchanged.
+- Added a `supportsVision` factory gate in `frontend/src/tools/forge-tools.ts`,
+  wired from the active profile's effective capabilities in
+  `frontend/src/agent/controller.ts`: a non-vision model gets `vision_unsupported`
+  before any host call, while `read_pnginfo` still works.
+- Tests: `tests/test_forge_tools.py` (detail valid/invalid),
+  `tests/test_prompt_agent_api.py` (large-image preview vs standard original,
+  invalid detail), `frontend/tests/forge-tools.test.ts` (`vision_unsupported`,
+  `read_pnginfo` unaffected); extended acceptance `AGENT-TOOLS-001` to revision 11
+  and refreshed all stale mapped tests.
+- Fixed `tests/test_architecture.py` to skip the gitignored `.playwright-mcp/` MCP
+  output directory, which had accumulated a >1000-line page snapshot and broke the
+  source-line-limit check.
+- Verification: `python -m unittest tests.test_forge_tools tests.test_prompt_agent_api`
+  exit 0; `python tools/test_gate.py affected` exit 0 (53.7s);
+  `python tools/test_gate.py full` exit 0 (68.6s); frontend `svelte-check` no errors;
+  rebuilt `javascript/prompt_agent_90_ui.js`; `node --check
+  javascript/prompt_agent_02_resources.js` passed. One surface preview test was
+  flaky under load; it passed on isolated rerun both with and without this change.
+
 
 
 

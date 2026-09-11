@@ -8,6 +8,8 @@ from PIL import Image
 
 MAX_IMAGE_BYTES = 24 * 1024 * 1024
 MAX_IMAGE_PIXELS = 16 * 1024 * 1024
+PREVIEW_MAX_SIDE = 768
+PREVIEW_QUALITY = 85
 
 
 def _decode_image_data(data_url: str) -> tuple[str, bytes, str]:
@@ -57,3 +59,29 @@ def _image_data_url(image: Image.Image, max_side: int = 768) -> str:
     prepared.save(buffer, format="JPEG", quality=95, optimize=True)
     data = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/jpeg;base64,{data}"
+
+
+def _image_dimensions(binary: bytes) -> tuple[int, int] | None:
+    """Read only the stored dimensions without decoding every pixel."""
+    try:
+        with Image.open(io.BytesIO(binary)) as image:
+            width, height = image.size
+        if width <= 0 or height <= 0:
+            return None
+        return int(width), int(height)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _image_preview(binary: bytes, max_side: int = PREVIEW_MAX_SIDE, quality: int = PREVIEW_QUALITY) -> tuple[bytes, int, int] | None:
+    """Return a downscaled JPEG preview plus its transfer dimensions."""
+    try:
+        with Image.open(io.BytesIO(binary)) as image:
+            prepared = image.convert("RGB")
+            prepared.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+            width, height = prepared.size
+            buffer = io.BytesIO()
+            prepared.save(buffer, format="JPEG", quality=quality, optimize=True)
+        return buffer.getvalue(), int(width), int(height)
+    except Exception:  # noqa: BLE001
+        return None

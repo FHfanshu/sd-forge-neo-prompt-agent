@@ -345,6 +345,7 @@ export class PromptAgentController {
       host: () => getHostApi(typeof window === "undefined" ? undefined : promptAgentNamespace(window)),
       allowWrites: this.options.allowForgeWrites ?? (() => true),
       allowGeneration: this.options.allowGeneration ?? (() => true),
+      supportsVision: () => provider.effectiveCapabilities(profile).vision,
     });
     const model = provider.toPiModel({
       id: profile.modelId,

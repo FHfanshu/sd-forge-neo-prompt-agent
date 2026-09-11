@@ -146,8 +146,14 @@ const readPnginfoSchema = Type.Object({
   fields: Type.Optional(Type.Array(pnginfoFieldSchema, { minItems: 1, maxItems: 5 })),
 }, { additionalProperties: false });
 
+const readImageDetailSchema = Type.Union([
+  Type.Literal("preview"),
+  Type.Literal("standard"),
+]);
+
 const readImageSchema = Type.Object({
   image_id: Type.String({ pattern: "^gen-\\d+-\\d+$" }),
+  detail: Type.Optional(readImageDetailSchema),
 }, { additionalProperties: false });
 
 export const FORGE_TOOL_SCHEMAS = {
@@ -204,6 +210,7 @@ export interface ForgeToolFactoryOptions {
   timeoutMs?: number;
   allowWrites?: () => boolean;
   allowGeneration?: () => boolean;
+  supportsVision?: () => boolean;
 }
 
 export interface ForgeAgentTool<TSchemaValue extends TSchema = TSchema> extends AgentTool<TSchemaValue, unknown> {
@@ -273,6 +280,13 @@ async function invokeForgeTool(
   const host = (options.host ?? defaultHost)();
   if (!host || !host.isForgeAvailable()) {
     throw new ForgeToolError("forge_unavailable", "Forge is not ready, so this tool cannot run.", true);
+  }
+  if (name === "read_image" && options.supportsVision && !options.supportsVision()) {
+    throw new ForgeToolError(
+      "vision_unsupported",
+      "The active model cannot view images, so read_image is unavailable. Use read_pnginfo to read this image's prompt and parameters instead.",
+      false,
+    );
   }
   if (permission === "write" && options.allowWrites && !options.allowWrites()) {
     throw new ForgeToolError("permission_denied", "This Forge change requires write permission.", false);
@@ -446,7 +460,7 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
     createForgeTool(
       "read_image",
       "Read image",
-      "Return the pixels of a previously completed host generation as image content, addressed by its image_id from list_recent_generations, so you can inspect it directly. Read-only; filenames and filesystem paths are never returned.",
+      "Return the pixels of a previously completed host generation as image content, addressed by its image_id from list_recent_generations, so you can inspect it directly. Optional detail: \"preview\" (default) returns a bounded render for quick inspection, \"standard\" returns the stored original. Only usable when the active model supports vision; if it does not, this tool is unavailable and read_pnginfo reports the prompt and parameters instead. Read-only; filenames and filesystem paths are never returned.",
       FORGE_TOOL_SCHEMAS.read_image,
       "read",
       options,

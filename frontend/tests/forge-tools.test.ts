@@ -167,6 +167,20 @@ describe("Forge Agent Tools", () => {
     expect(blocks[0]).toEqual({ type: "image", data: "aW1hZ2U=", mimeType: "image/webp" });
   });
 
+  it("blocks read_image for a non-vision model while leaving read_pnginfo available", async () => {
+    const fake = host({ ok: true, image_id: "gen-2-1", width: 64, height: 48, image_base64: "aW1hZ2U=" });
+    const tools = createForgeAgentTools({ host: () => fake.api, supportsVision: () => false });
+    const readImage = tools.find((tool) => tool.name === "read_image")!;
+    const readPnginfo = tools.find((tool) => tool.name === "read_pnginfo")!;
+
+    await expect(readImage.execute("read-1", { image_id: "gen-2-1" }, new AbortController().signal))
+      .rejects.toMatchObject({ code: "vision_unsupported" });
+    expect(fake.calls).toHaveLength(0);
+
+    await readPnginfo.execute("png-1", { image_id: "gen-2-1" }, new AbortController().signal);
+    expect(fake.calls[0]).toMatchObject({ tool: "read_pnginfo", arguments: { image_id: "gen-2-1" } });
+  });
+
   it("sends compact search candidates to the model while keeping the full host result in details", async () => {
     const items = Array.from({ length: 12 }, (_, index) => ({
       name: `tag ${index}`,

@@ -250,6 +250,49 @@ class PromptAgentApiTests(unittest.TestCase):
             finally:
                 DEFAULT_IMAGE_INDEX.clear()
 
+    def test_image_content_route_previews_large_images_and_keeps_standard_original(self):
+        from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
+
+        app = FastAPI()
+        register_prompt_agent_api(app)
+        client = TestClient(app)
+        with TemporaryDirectory() as directory:
+            path = os.path.join(directory, "00001-1.png")
+            Image.new("RGB", (1600, 800), (200, 100, 50)).save(path)
+            with open(path, "rb") as handle:
+                expected = handle.read()
+            DEFAULT_IMAGE_INDEX.clear()
+            try:
+                DEFAULT_IMAGE_INDEX.record_saved(
+                    batch_key=object(),
+                    target="txt2img",
+                    filename=path,
+                    width=1600,
+                    height=800,
+                )
+
+                preview = client.post(f"{API_PREFIX}/images/content", json={"image_id": "gen-1-0"}).json()
+                self.assertEqual(preview["detail"], "preview")
+                self.assertEqual((preview["width"], preview["height"]), (1600, 800))
+                self.assertTrue(preview["scaled"])
+                self.assertEqual(preview["image_mime_type"], "image/jpeg")
+                self.assertEqual((preview["transfer_width"], preview["transfer_height"]), (768, 384))
+                self.assertNotEqual(base64.b64decode(preview["image_base64"]), expected)
+
+                standard = client.post(f"{API_PREFIX}/images/content", json={"image_id": "gen-1-0", "detail": "standard"}).json()
+                self.assertEqual(standard["detail"], "standard")
+                self.assertFalse(standard["scaled"])
+                self.assertEqual(standard["image_mime_type"], "image/png")
+                self.assertEqual((standard["transfer_width"], standard["transfer_height"]), (1600, 800))
+                self.assertEqual(base64.b64decode(standard["image_base64"]), expected)
+
+                self.assertEqual(
+                    client.post(f"{API_PREFIX}/images/content", json={"image_id": "gen-1-0", "detail": "full"}).status_code,
+                    422,
+                )
+            finally:
+                DEFAULT_IMAGE_INDEX.clear()
+
     def test_image_content_route_rejects_bad_input_and_missing_files(self):
         from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
 

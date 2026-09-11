@@ -20,7 +20,12 @@ from .profiles import ProfileAuthority, SecretUnavailableError, default_storage_
 from .providers import provider_catalog, public_profile_state, stream_profile
 from .session_sync import SessionSyncAuthority, SessionSyncError
 from prompt_agent.image_index import DEFAULT_IMAGE_INDEX
-from prompt_agent.image_payloads import _decode_image_data
+from prompt_agent.image_payloads import (
+    PREVIEW_MAX_SIDE,
+    _decode_image_data,
+    _image_dimensions,
+    _image_preview,
+)
 from prompt_agent.pnginfo import extract_image_metadata
 
 
@@ -257,7 +262,8 @@ def register_prompt_agent_api(
     @app.post(f"{API_PREFIX}/images/content")
     async def prompt_agent_image_content(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         try:
-            image_id = _image_id_request(payload)
+            image_id = _image_id_request(payload, ("detail",))
+            detail = _image_detail_request(payload)
         except ValueError as error:
             raise HTTPException(
                 status_code=422,
@@ -280,14 +286,31 @@ def register_prompt_agent_api(
                 status_code=413,
                 detail={"ok": False, "error": {"code": "too_large", "message": "image exceeds the content limit", "retryable": False}},
             )
+        dimensions = _image_dimensions(binary)
+        width = int(dimensions[0]) if dimensions else int(reference.width)
+        height = int(dimensions[1]) if dimensions else int(reference.height)
+        transfer_binary = binary
+        transfer_mime = _image_mime_type(reference)
+        transfer_width, transfer_height = width, height
+        scaled = False
+        if detail == "preview" and max(width, height) > PREVIEW_MAX_SIDE:
+            preview = _image_preview(binary)
+            if preview is not None:
+                transfer_binary, transfer_width, transfer_height = preview
+                transfer_mime = "image/jpeg"
+                scaled = True
         return {
             "ok": True,
             "image_id": image_id,
             "target": reference.target,
-            "width": reference.width,
-            "height": reference.height,
-            "image_mime_type": _image_mime_type(reference),
-            "image_base64": base64.b64encode(binary).decode("ascii"),
+            "detail": detail,
+            "width": width,
+            "height": height,
+            "transfer_width": transfer_width,
+            "transfer_height": transfer_height,
+            "scaled": scaled,
+            "image_mime_type": transfer_mime,
+            "image_base64": base64.b64encode(transfer_binary).decode("ascii"),
         }
 
     @app.post(f"{API_PREFIX}/profiles/{{profile_id}}/connection-test")
@@ -463,6 +486,13 @@ def _image_id_request(payload: Any, allowed_extra: tuple[str, ...] = ()) -> str:
     if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
         raise ValueError("image_id is required")
     return image_id
+
+
+def _image_detail_request(payload: dict[str, Any]) -> str:
+    detail = payload.get("detail", "preview")
+    if detail not in ("preview", "standard"):
+        raise ValueError("detail must be preview or standard")
+    return detail
 
 
 def _pnginfo_fields_request(payload: dict[str, Any]) -> list[str]:
