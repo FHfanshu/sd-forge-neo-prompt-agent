@@ -191,6 +191,43 @@ const DEFAULT_PROFILE_SEEDS: Array<Partial<Profile>> = [
   { id: "local-llama-once", displayName: "Local llama one-shot", modelId: DEFAULT_MODEL_ID, enabled: false, runtime: "llama-once", endpoint: DEFAULT_ENDPOINT, parameters: { ...DEFAULT_PARAMETERS } },
 ];
 
+export interface ProfilePreset {
+  id: string;
+  label: string;
+  seed: Partial<Profile>;
+}
+
+// Built-in starting points offered when adding a profile. DeepSeek V4.1 Flash
+// speaks the OpenAI chat-completions API, exposes reasoning through
+// `reasoning_content`, and accepts a 1M-token context with up to 384K output.
+export const PROFILE_PRESETS: ProfilePreset[] = [
+  {
+    id: "deepseek-v4.1-flash",
+    label: "DeepSeek V4.1 Flash",
+    seed: {
+      displayName: "DeepSeek V4.1 Flash",
+      modelId: "deepseek-v4.1-flash",
+      enabled: true,
+      protocol: "openai-chat-completions",
+      runtime: "remote-http",
+      providerId: "openai-compatible",
+      endpoint: "https://api.deepseek.com",
+      fallbackEndpoints: [],
+      capabilities: { ...DEFAULT_CAPABILITIES, vision: true, reasoning: true },
+      parameters: { ...DEFAULT_PARAMETERS, temperature: 0.35, maxTokens: 32768, reasoningEffort: "high", timeout: 180 },
+      modelInfo: {
+        ...DEFAULT_MODEL_INFO,
+        source: "builtin",
+        providerId: "openai-compatible",
+        matchedModelId: "deepseek-v4.1-flash",
+        contextLimit: 1_000_000,
+        outputLimit: 384_000,
+        reasoningEfforts: ["none", "high", "max"],
+      },
+    },
+  },
+];
+
 export function createDefaultProfileState(): ProfileState {
   return {
     version: 2,

@@ -8,6 +8,7 @@
   import { DropdownMenu } from "$lib/components/ui/dropdown-menu";
   import { Tabs } from "$lib/components/ui/tabs";
   import type { ProfilePatch } from "../contracts";
+  import { PROFILE_PRESETS, type ProfilePreset } from "../profile-adapter";
   import { listProfiles, testProfileConnection, updateProfile as updateRemoteProfile } from "../profile-api";
   import { syncProfileFromModelsDev } from "../profile-model-catalog";
   import { supportsAgentChat, unsupportedProfileCapabilities } from "../providers/profile-capabilities";
@@ -150,6 +151,7 @@
     if (effort) update({ parameters: { reasoningEffort: effort } });
   }
   function add(): void { $useProfileStore.addProfile({ displayName: t("profiles.new_name", "New model profile"), modelId: "model-id" }); tab = "model"; }
+  function addPreset(preset: ProfilePreset): void { $useProfileStore.addProfile({ ...preset.seed }); tab = "model"; }
   function duplicate(id = selected.id): void { $useProfileStore.duplicateProfile(id); }
   function requestDelete(id: string): void { $useProfileStore.selectProfile(id); pendingDeleteProfileId = id; confirm = "delete"; }
   async function deleteRequestedProfile(): Promise<void> {
@@ -303,7 +305,7 @@
 
     <div class="pa-profile-window-body">
       <aside class="pa-profile-sidebar">
-        <div class="pa-profile-sidebar-title"><div><span class="pa-eyebrow">{t("profiles.fleet", "Models")}</span><strong>{$useProfileStore.profiles.length}</strong></div><button type="button" class="pa-profile-add-icon" onclick={add} aria-label={t("profiles.add", "Add")}><Plus size={15} /></button></div>
+        <div class="pa-profile-sidebar-title"><div><span class="pa-eyebrow">{t("profiles.fleet", "Models")}</span><strong>{$useProfileStore.profiles.length}</strong></div><DropdownMenu.Root><DropdownMenu.Trigger class="pa-profile-add-icon" aria-label={t("profiles.add", "Add")}><Plus size={15} /></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content class="pa-dropdown-content"><DropdownMenu.Item class="pa-dropdown-item" onclick={add}>{t("profiles.add.empty", "Empty profile")}</DropdownMenu.Item>{#each PROFILE_PRESETS as preset (preset.id)}<DropdownMenu.Item class="pa-dropdown-item" onclick={() => addPreset(preset)}>{preset.label}</DropdownMenu.Item>{/each}</DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div>
         <div class="pa-profile-list" role="listbox" aria-label={t("profiles.list", "Model profiles")}>
           {#each $useProfileStore.profiles as profile (profile.id)}
             <div class:is-selected={profile.id === selected.id} class:is-disabled={!profile.enabled} class="pa-profile-list-item">

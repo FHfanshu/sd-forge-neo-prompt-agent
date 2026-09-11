@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { normalizeProfile, normalizeProfileState, toHostProfilePatch } from "../src/profile-adapter";
+import { normalizeProfile, normalizeProfileState, PROFILE_PRESETS, toHostProfilePatch } from "../src/profile-adapter";
 
 describe("profile migration adapters", () => {
+  it("ships a DeepSeek V4.1 Flash preset pointed at the DeepSeek OpenAI-compatible endpoint", () => {
+    const preset = PROFILE_PRESETS.find((item) => item.id === "deepseek-v4.1-flash");
+    expect(preset).toBeDefined();
+    expect(normalizeProfile({ ...preset!.seed, id: "deepseek-v4.1-flash" })).toMatchObject({
+      modelId: "deepseek-v4.1-flash",
+      protocol: "openai-chat-completions",
+      runtime: "remote-http",
+      endpoint: "https://api.deepseek.com",
+      capabilities: { vision: true, reasoning: true },
+      parameters: { maxTokens: 32768, reasoningEffort: "high" },
+      modelInfo: { contextLimit: 1_000_000, outputLimit: 384_000, reasoningEfforts: ["none", "high", "max"] },
+    });
+  });
+
   it("collapses removed provider modes without turning resident endpoints into one-shot models", () => {
     expect(normalizeProfile({
       id: "legacy-endpoint",

@@ -336,3 +336,17 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   raw / 239126 gzip bytes, and all generated/browser JavaScript syntax checks
   passed.
 
+## 2026-09-11 Built-in DeepSeek V4.1 Flash profile preset
+- Added `PROFILE_PRESETS` in `frontend/src/profile-adapter.ts` and a preset
+  dropdown on the profile "+" button in `ProfileSettings.svelte`. The preset
+  seeds model `deepseek-v4.1-flash` at `https://api.deepseek.com` over the
+  OpenAI chat-completions adapter, with reasoning and vision enabled, 32768
+  max output tokens, `reasoning_effort=high`, and model info of 1M context /
+  384K output. `openai_chat_url` already maps that endpoint to
+  `/chat/completions`.
+- Added `profiles.add.empty` to `prompt_agent/i18n.py`, regenerated
+  `javascript/prompt_agent_90_ui.js` via `pnpm --dir frontend run build`, and
+  added a `profile-adapter` regression test covering the preset.
+- Verification: `python tools/test_gate.py affected` passed (exit 0).
+
+
