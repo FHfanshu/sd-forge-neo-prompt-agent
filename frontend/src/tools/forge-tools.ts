@@ -133,8 +133,17 @@ const listRecentGenerationsSchema = Type.Object({
   include_grids: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false });
 
+const pnginfoFieldSchema = Type.Union([
+  Type.Literal("summary"),
+  Type.Literal("positive_prompt"),
+  Type.Literal("negative_prompt"),
+  Type.Literal("generation_parameters"),
+  Type.Literal("extra_metadata"),
+]);
+
 const readPnginfoSchema = Type.Object({
   image_id: Type.String({ pattern: "^gen-\\d+-\\d+$" }),
+  fields: Type.Optional(Type.Array(pnginfoFieldSchema, { minItems: 1, maxItems: 5 })),
 }, { additionalProperties: false });
 
 const readImageSchema = Type.Object({
@@ -429,7 +438,7 @@ export function createForgeAgentTools(options: ForgeToolFactoryOptions = {}): Fo
     createForgeTool(
       "read_pnginfo",
       "Read PNGInfo",
-      "Read the generation metadata (parsed prompt and parameters) of a previously completed host generation, addressed by its image_id from list_recent_generations. Read-only; filenames and filesystem paths are never returned.",
+      "Read the generation metadata (parsed prompt and parameters) of a previously completed host generation, addressed by its image_id from list_recent_generations. Optionally select which fields to read; the default is a short summary. Read-only; filenames and filesystem paths are never returned.",
       FORGE_TOOL_SCHEMAS.read_pnginfo,
       "read",
       options,

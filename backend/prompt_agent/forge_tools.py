@@ -22,6 +22,7 @@ FORGE_TOOL_NAMES = (
     "inspect_danbooru_wikis",
 )
 _IMAGE_ID_RE = re.compile(r"gen-\d+-\d+\Z")
+PNGINFO_FIELDS = ("summary", "positive_prompt", "negative_prompt", "generation_parameters", "extra_metadata")
 _FORBIDDEN_KEYS = frozenset({
     "api_key",
     "apikey",
@@ -126,11 +127,13 @@ def validate_forge_tool_request(tool: str, payload: Any) -> dict[str, Any]:
         _bounded_integer(payload.get("limit", 8), "limit", 1, 20)
         if "include_grids" in payload and not isinstance(payload.get("include_grids"), bool):
             raise ForgeToolValidationError("include_grids must be a boolean")
-    elif tool in ("read_pnginfo", "read_image"):
+    elif tool == "read_pnginfo":
+        _allow_keys(payload, {"image_id", "fields"})
+        _require_image_id(payload)
+        _pnginfo_fields(payload)
+    elif tool == "read_image":
         _allow_keys(payload, {"image_id"})
-        image_id = payload.get("image_id")
-        if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
-            raise ForgeToolValidationError("image_id is required")
+        _require_image_id(payload)
     elif tool == "search_danbooru_tags":
         _allow_keys(payload, {"query", "queries", "category", "limit"})
         _validate_danbooru_search(payload)
@@ -198,6 +201,28 @@ def execute_catalog_tool(tool: str, payload: dict[str, Any]) -> dict[str, Any]:
         "cursor": str(cursor),
         "next_cursor": next_cursor,
     }
+
+
+def _require_image_id(payload: dict[str, Any]) -> str:
+    image_id = payload.get("image_id")
+    if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
+        raise ForgeToolValidationError("image_id is required")
+    return image_id
+
+
+def _pnginfo_fields(payload: dict[str, Any]) -> list[str]:
+    fields = payload.get("fields")
+    if fields is None:
+        return ["summary"]
+    if not isinstance(fields, list) or not fields or len(fields) > len(PNGINFO_FIELDS):
+        raise ForgeToolValidationError("fields must be a list of supported pnginfo fields")
+    selected: list[str] = []
+    for field in fields:
+        if field not in PNGINFO_FIELDS:
+            raise ForgeToolValidationError(f"unsupported pnginfo field: {field}")
+        if field not in selected:
+            selected.append(field)
+    return selected
 
 
 def _validate_target(payload: dict[str, Any]) -> None:

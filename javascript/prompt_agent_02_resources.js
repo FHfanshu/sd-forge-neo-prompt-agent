@@ -105,9 +105,9 @@
     }
 
     async function readPnginfoTool(args, signal) {
-        return await resourcePost("/prompt-agent/api/images/pnginfo", {
-            image_id: args.image_id
-        }, signal);
+        const body = { image_id: args.image_id };
+        if (Array.isArray(args.fields) && args.fields.length) body.fields = args.fields;
+        return await resourcePost("/prompt-agent/api/images/pnginfo", body, signal);
     }
 
     async function readImageTool(args, signal) {

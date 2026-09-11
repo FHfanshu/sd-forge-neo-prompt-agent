@@ -19,7 +19,7 @@ from quality.acceptance import acceptance
 
 
 class ForgeToolValidationTests(unittest.TestCase):
-    @acceptance("AGENT-TOOLS-001@9", "surface")
+    @acceptance("AGENT-TOOLS-001@10", "surface")
     def test_agent_tool_names_are_fixed_and_ordered(self):
         self.assertEqual(
             (
@@ -101,6 +101,19 @@ class ForgeToolValidationTests(unittest.TestCase):
             validate_forge_tool_request("read_pnginfo", {"image_id": "../../etc/passwd"})
         with self.assertRaisesRegex(ForgeToolValidationError, "unsupported fields"):
             validate_forge_tool_request("read_pnginfo", {"image_id": "gen-1-0", "extra": "x"})
+
+    def test_read_pnginfo_field_selection_is_validated(self):
+        self.assertEqual(
+            {"image_id": "gen-2-1", "fields": ["positive_prompt", "generation_parameters"]},
+            validate_forge_tool_request(
+                "read_pnginfo",
+                {"image_id": "gen-2-1", "fields": ["positive_prompt", "generation_parameters"]},
+            ),
+        )
+        with self.assertRaisesRegex(ForgeToolValidationError, "fields must be a list"):
+            validate_forge_tool_request("read_pnginfo", {"image_id": "gen-1-0", "fields": []})
+        with self.assertRaisesRegex(ForgeToolValidationError, "unsupported pnginfo field"):
+            validate_forge_tool_request("read_pnginfo", {"image_id": "gen-1-0", "fields": ["nope"]})
 
     def test_read_image_arguments_are_validated(self):
         self.assertEqual(
@@ -214,7 +227,7 @@ class ForgeToolApiTests(unittest.TestCase):
         self.assertEqual("validation_error", response.json()["detail"]["error"]["code"])
         self.assertNotIn("C:/private", response.text)
 
-    @acceptance("AGENT-TOOLS-001@9", "revalidation,freshness")
+    @acceptance("AGENT-TOOLS-001@10", "revalidation,freshness")
     def test_validation_endpoint_revalidates_browser_host_tools(self):
         with TemporaryDirectory() as directory:
             app = FastAPI()

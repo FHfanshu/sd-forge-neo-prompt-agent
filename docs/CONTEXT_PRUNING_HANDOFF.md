@@ -52,7 +52,7 @@ Composer meter: latest assistant `usage.inputTokens` / `modelInfo.contextLimit |
 - `frontend/src/components/ContextMeter.svelte`
 - `frontend/src/components/Surface.svelte`
 - `frontend/src/components/ProcessDrawer.svelte`
-- `quality/acceptance.json` `UI-FEEDBACK-001@12`, `AGENT-TOOLS-001@9`
+- `quality/acceptance.json` `UI-FEEDBACK-001@12`, `AGENT-TOOLS-001@10`
 - tests: `context-pruning.test.ts`, `surface.test.ts`, `forge-tools.test.ts`, `prompt-toolkit.test.ts`, `load-skill.test.ts`
 
 Unrelated dirty files already in this tree: Krea skill, process-timeline UI, `javascript/prompt_agent_90_ui.js` (must be rebuilt, never edited by hand).

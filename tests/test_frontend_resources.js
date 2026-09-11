@@ -71,19 +71,21 @@ test("recent-generation listing posts bounded filters and omits active target", 
 
 test("pnginfo reading posts the image id to the metadata route", async () => {
     const originalFetch = global.fetch;
-    let request;
+    const requests = [];
     global.fetch = async (url, options) => {
-        request = { url: url, options: options };
+        requests.push({ url: url, options: options });
         return { ok: true, json: async () => ({ ok: true, metadata: {} }) };
     };
     try {
         await tools.readPnginfoTool({ image_id: "gen-3-2" });
+        await tools.readPnginfoTool({ image_id: "gen-3-2", fields: ["positive_prompt"] });
     } finally {
         global.fetch = originalFetch;
     }
-    assert.equal(request.url, "/prompt-agent/api/images/pnginfo");
-    assert.equal(request.options.method, "POST");
-    assert.deepEqual(JSON.parse(request.options.body), { image_id: "gen-3-2" });
+    assert.equal(requests[0].url, "/prompt-agent/api/images/pnginfo");
+    assert.equal(requests[0].options.method, "POST");
+    assert.deepEqual(JSON.parse(requests[0].options.body), { image_id: "gen-3-2" });
+    assert.deepEqual(JSON.parse(requests[1].options.body), { image_id: "gen-3-2", fields: ["positive_prompt"] });
 });
 
 test("image reading posts the image id to the content route", async () => {

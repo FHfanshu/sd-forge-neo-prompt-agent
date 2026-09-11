@@ -147,7 +147,23 @@ class PromptAgentApiTests(unittest.TestCase):
                 self.assertEqual(metadata["height"], 48)
                 self.assertEqual(metadata["data"]["positive_prompt"], "cat")
                 self.assertEqual(metadata["data"]["generation_parameters"]["steps"], 20)
+                self.assertEqual(payload["source"], "generation")
+                self.assertEqual(payload["requested_fields"], ["summary"])
+                self.assertFalse(payload["truncated"])
+                self.assertIsNone(payload["result_id"])
+                self.assertTrue(payload["data"]["summary"]["has_metadata"])
+                self.assertIn("steps=20", payload["data"]["summary"]["parameter_summary"])
                 self.assertNotIn("filename", json.dumps(payload))
+
+                projected = client.post(
+                    f"{API_PREFIX}/images/pnginfo",
+                    json={"image_id": "gen-1-0", "fields": ["positive_prompt", "generation_parameters"]},
+                )
+                projected_payload = projected.json()
+                self.assertEqual(projected_payload["requested_fields"], ["positive_prompt", "generation_parameters"])
+                self.assertEqual(projected_payload["data"]["positive_prompt"], "cat")
+                self.assertEqual(projected_payload["data"]["generation_parameters"]["sampler"], "Euler")
+                self.assertNotIn("negative_prompt", projected_payload["data"])
             finally:
                 DEFAULT_IMAGE_INDEX.clear()
 
@@ -186,6 +202,14 @@ class PromptAgentApiTests(unittest.TestCase):
         self.assertEqual(client.post(f"{API_PREFIX}/images/pnginfo", json={}).status_code, 422)
         self.assertEqual(
             client.post(f"{API_PREFIX}/images/pnginfo", json={"image_id": "gen-1-0", "path": "x"}).status_code,
+            422,
+        )
+        self.assertEqual(
+            client.post(f"{API_PREFIX}/images/pnginfo", json={"image_id": "gen-1-0", "fields": []}).status_code,
+            422,
+        )
+        self.assertEqual(
+            client.post(f"{API_PREFIX}/images/pnginfo", json={"image_id": "gen-1-0", "fields": ["nope"]}).status_code,
             422,
         )
         self.assertEqual(

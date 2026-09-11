@@ -572,6 +572,26 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   `javascript/prompt_agent_90_ui.js`; `node --check
   javascript/prompt_agent_02_resources.js` passed.
 
+## 2026-09-11 read_pnginfo field selection
+- Goal: `read_pnginfo` always returned the whole metadata block, with no way to
+  ask for a specific field, so bounded context reads were not possible
+  (PRD section 9.2).
+- Added an optional `fields` input (summary, positive_prompt, negative_prompt,
+  generation_parameters, extra_metadata; default summary) declared in the
+  TypeBox schema and validated in Python (`PNGINFO_FIELDS`, `_pnginfo_fields`,
+  `_pnginfo_fields_request`).
+- The route now returns `source`, `parser_format`, `metadata_status`,
+  `requested_fields`, projected `data`, `missing_fields`, `warnings`,
+  `truncated`, and `result_id` (null until the result-detail store lands), while
+  keeping the full `metadata` block for compatibility.
+- Tests: Python validation and route projection, host POST body; extended
+  acceptance `AGENT-TOOLS-001` (revision 10) and refreshed the stale mapped
+  tests.
+- Verification: `python -m unittest tests.test_forge_tools tests.test_prompt_agent_api`
+  passed (46 tests); rebuilt `javascript/prompt_agent_90_ui.js`;
+  `node --check javascript/prompt_agent_02_resources.js` passed;
+  `python tools/test_gate.py affected` exit 0 (32.0s).
+
 
 
 

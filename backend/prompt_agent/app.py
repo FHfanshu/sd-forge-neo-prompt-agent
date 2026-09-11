@@ -9,6 +9,7 @@ from typing import Any
 from .contracts import parse_stream_request
 from .errors import PromptAgentError
 from .forge_tools import (
+    PNGINFO_FIELDS,
     ForgeToolValidationError,
     validate_forge_tool_request,
 )
@@ -210,7 +211,8 @@ def register_prompt_agent_api(
     @app.post(f"{API_PREFIX}/images/pnginfo")
     async def prompt_agent_image_pnginfo(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         try:
-            image_id = _image_id_request(payload)
+            image_id = _image_id_request(payload, ("fields",))
+            fields = _pnginfo_fields_request(payload)
         except ValueError as error:
             raise HTTPException(
                 status_code=422,
@@ -233,10 +235,20 @@ def register_prompt_agent_api(
             }
         else:
             metadata = extract_image_metadata(binary)
+        warnings = list(metadata.get("warnings") or [])
         return {
             "ok": True,
             "image_id": image_id,
             "target": reference.target,
+            "source": "generation",
+            "parser_format": metadata.get("parser_format"),
+            "metadata_status": metadata.get("metadata_status"),
+            "requested_fields": fields,
+            "data": _project_pnginfo(metadata, fields),
+            "missing_fields": list(metadata.get("missing_fields") or []),
+            "warnings": warnings,
+            "truncated": "metadata_too_large" in warnings,
+            "result_id": None,
             "width": int(metadata.get("width") or reference.width),
             "height": int(metadata.get("height") or reference.height),
             "metadata": metadata,
@@ -441,16 +453,52 @@ def _recent_images_request(payload: Any) -> dict[str, Any]:
     return {"limit": limit, "target": target, "include_grids": include_grids}
 
 
-def _image_id_request(payload: Any) -> str:
+def _image_id_request(payload: Any, allowed_extra: tuple[str, ...] = ()) -> str:
     if not isinstance(payload, dict):
         raise ValueError("request body must be an object")
-    unknown = set(payload) - {"image_id"}
+    unknown = set(payload) - {"image_id"} - set(allowed_extra)
     if unknown:
         raise ValueError(f"unsupported fields: {', '.join(sorted(unknown))}")
     image_id = payload.get("image_id")
     if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
         raise ValueError("image_id is required")
     return image_id
+
+
+def _pnginfo_fields_request(payload: dict[str, Any]) -> list[str]:
+    fields = payload.get("fields")
+    if fields is None:
+        return ["summary"]
+    if not isinstance(fields, list) or not fields or len(fields) > len(PNGINFO_FIELDS):
+        raise ValueError("fields must be a list of supported pnginfo fields")
+    selected: list[str] = []
+    for field in fields:
+        if field not in PNGINFO_FIELDS:
+            raise ValueError(f"unsupported pnginfo field: {field}")
+        if field not in selected:
+            selected.append(field)
+    return selected
+
+
+def _project_pnginfo(metadata: dict[str, Any], fields: list[str]) -> dict[str, Any]:
+    data = metadata.get("data") or {}
+    projected: dict[str, Any] = {}
+    for field in fields:
+        if field == "summary":
+            parameters = data.get("generation_parameters") or {}
+            short = ", ".join(
+                f"{key}={parameters[key]}"
+                for key in ("steps", "sampler", "scheduler", "cfg_scale", "seed", "size")
+                if key in parameters
+            )
+            projected["summary"] = {
+                "has_metadata": metadata.get("metadata_status") in ("available", "partial"),
+                "recognized_fields": sorted(data.keys()),
+                "parameter_summary": short,
+            }
+        else:
+            projected[field] = data.get(field)
+    return projected
 
 
 def _image_mime_type(reference: Any) -> str:

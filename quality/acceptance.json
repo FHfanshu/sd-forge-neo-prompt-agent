@@ -252,7 +252,7 @@
     },
     {
       "id": "AGENT-TOOLS-001",
-      "revision": 9,
+      "revision": 10,
       "area": "agent",
       "title": "Forge tool authority and freshness",
       "acceptance": [
@@ -261,7 +261,7 @@
         "Prompt and generation mutations require fresh hashes.",
         "The declared Forge tool surface includes generate_image, which runs one bounded txt2img/img2img generation on demand and returns the fresh render as image content for the agent to inspect.",
         "The declared Forge tool surface includes read-only list_recent_generations, which returns bounded summaries of recently completed host generations (ids, target, size, metadata availability) without exposing filenames, filesystem paths, or image bytes.",
-        "The declared Forge tool surface includes read-only read_pnginfo, which returns the parsed prompt and parameters of an indexed host generation by image_id without exposing image bytes, filenames, or filesystem paths.",
+        "The declared Forge tool surface includes read-only read_pnginfo, which reads the parsed prompt and parameters of an indexed host generation by image_id, selecting requested fields (defaulting to a summary) and reporting metadata source and truncation, without exposing image bytes, filenames, or filesystem paths.",
         "The declared Forge tool surface includes read-only read_image, which returns the pixels of an indexed host generation by image_id as image content for direct inspection, without exposing filenames or filesystem paths.",
         "Independent read-only tool calls emitted in one model turn execute concurrently.",
         "A tool batch containing any Forge write executes sequentially so mutations cannot race live state.",
