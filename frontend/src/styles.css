@@ -203,6 +203,7 @@
     border: 1px solid var(--pa-line);
     border-radius: var(--pa-radius-lg);
     background: var(--pa-surface);
+    animation: pa-disclosure-in 100ms ease;
     box-shadow: var(--pa-shadow);
   }
   .pa-history-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -706,6 +707,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pa-profile-tab-content, .pa-profile-more-body { animation: none; }
+  .pa-profile-tab-content, .pa-profile-more-body, .pa-history-anchor > .pa-history-popover { animation: none; }
   .pa-profile-more > summary::before { transition: none; }
 }

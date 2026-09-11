@@ -14,6 +14,37 @@ Object.defineProperty(HTMLElement.prototype, "getClientRects", {
 });
 if (!HTMLElement.prototype.scrollIntoView) HTMLElement.prototype.scrollIntoView = () => undefined;
 
+if (!Element.prototype.animate) {
+  Object.defineProperty(Element.prototype, "animate", {
+    configurable: true,
+    value: (_keyframes: unknown, options?: { duration?: number }) => {
+      const duration = Number(options?.duration ?? 0);
+      const animation = {
+        currentTime: duration,
+        playState: "running",
+        effect: null as unknown,
+        cancel() { animation.playState = "idle"; },
+        finish() {},
+        play() {},
+        pause() {},
+        commitStyles() {},
+        addEventListener() {},
+        removeEventListener() {},
+        get finished() { return Promise.resolve(animation); },
+        set onfinish(handler: null | (() => void)) {
+          if (typeof handler !== "function") return;
+          queueMicrotask(() => {
+            animation.currentTime = duration;
+            animation.playState = "finished";
+            handler();
+          });
+        },
+      };
+      return animation;
+    },
+  });
+}
+
 afterEach(() => {
   cleanup();
 });

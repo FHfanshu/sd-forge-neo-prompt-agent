@@ -33,6 +33,7 @@
   import { useRuntimeStore } from "../stores/runtime";
   import { useUiStore } from "../stores/ui";
   import { clampLauncherPosition, clampWindowLayout, minimumForViewport, pointerPosition, pointerWindow, readViewportRect, resolveViewportAfterKeyboard, viewportKind, type FloatingPosition, type LayoutViewport } from "../window-interactions";
+  import { windowIn, windowOut } from "../motion";
   import Markdown from "./Markdown.svelte";
   import ContextMeter from "./ContextMeter.svelte";
   import ModelPicker from "./ModelPicker.svelte";
@@ -701,6 +702,8 @@
       class:pa-window-interacting={interacting}
       class:pa-keyboard-overflow={viewportRecovering}
       class="pa-window"
+      in:windowIn
+      out:windowOut
       style:left="{currentLayout.left}px"
       style:top="{currentLayout.top}px"
       style:width="{currentLayout.width}px"

@@ -414,4 +414,21 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   svelte-check reported 0 errors / 0 warnings; rebuilt
   `javascript/prompt_agent_90_ui.js` from the frontend sources.
 
+## 2026-09-11 Unified window motion and reduced-motion
+- Goal: the floating chat and settings windows appeared with no transition, so
+  position and layer changes were hard to read; the PRD asks for one shared
+  motion vocabulary instead of ad-hoc per-component animations.
+- Added `frontend/src/motion.ts` with `windowIn` (fade + scale 0.98 -> 1, 180ms)
+  and `windowOut` (fade, 120ms), both honoring `prefers-reduced-motion`, and
+  applied them to `.pa-window` and `.pa-profile-window`.
+- Added a fade to the history popover and disabled the window, section,
+  disclosure, and popover animations under `prefers-reduced-motion`. No
+  `transition: all` was introduced (none existed).
+- Added an `Element.prototype.animate` polyfill to `frontend/tests/setup.ts`
+  because Svelte 5 runs `css` transitions through WAAPI, which jsdom lacks
+  (41 `element.animate is not a function` failures before the polyfill).
+- Verification: `python tools/test_gate.py affected` passed (exit 0, 49.6s);
+  svelte-check reported 0 errors / 0 warnings; rebuilt
+  `javascript/prompt_agent_90_ui.js` from the frontend sources.
+
 

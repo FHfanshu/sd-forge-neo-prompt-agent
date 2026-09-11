@@ -17,6 +17,7 @@
   import { useProfileStore } from "../stores/profiles";
   import { useUiStore } from "../stores/ui";
   import { clampWindowLayout, pointerWindow, readViewportRect, resolveViewportAfterKeyboard, viewportKind, type LayoutViewport } from "../window-interactions";
+  import { windowIn, windowOut } from "../motion";
   import CommitInput from "./settings/CommitInput.svelte";
   import CommitTextarea from "./settings/CommitTextarea.svelte";
   import Field from "./settings/Field.svelte";
@@ -290,7 +291,7 @@
 </script>
 
 {#if open && selected}
-  <div bind:this={windowElement} class:pa-window-interacting={interacting} class:pa-keyboard-overflow={viewportRecovering} class="pa-profile-window" style:left="{layout.left}px" style:top="{layout.top}px" style:width="{layout.width}px" style:height="{layout.height}px" style:z-index={$useUiStore.frontWindow === "profiles" ? 1003 : 1001} role="dialog" tabindex="-1" aria-modal="false" aria-label={t("profiles.title", "Model profiles")} data-prompt-agent-profile-window="true" onpointerdown={() => $useUiStore.bringToFront("profiles")} onkeydown={(event) => { if (event.key === "Escape") onclose(); }}>
+  <div bind:this={windowElement} class:pa-window-interacting={interacting} class:pa-keyboard-overflow={viewportRecovering} class="pa-profile-window" in:windowIn out:windowOut style:left="{layout.left}px" style:top="{layout.top}px" style:width="{layout.width}px" style:height="{layout.height}px" style:z-index={$useUiStore.frontWindow === "profiles" ? 1003 : 1001} role="dialog" tabindex="-1" aria-modal="false" aria-label={t("profiles.title", "Model profiles")} data-prompt-agent-profile-window="true" onpointerdown={() => $useUiStore.bringToFront("profiles")} onkeydown={(event) => { if (event.key === "Escape") onclose(); }}>
     <header class="pa-profile-window-header" use:pointerWindow={{ mode: "drag", layout: () => layout, update: updateLayout, minimum, interacting: (active) => interacting = active }}>
       <div class="pa-brand-lockup"><div><strong>{t("profiles.title", "Model profiles")}</strong></div></div>
       <div class="pa-profile-window-actions">
