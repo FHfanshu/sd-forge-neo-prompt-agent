@@ -683,7 +683,8 @@ describe("Svelte chat surface", () => {
     useRuntimeStore.getState().setWorking("generating");
     expect(await screen.findByText("Generating response…")).toBeInTheDocument();
     expect(screen.queryByText("Generating", { exact: true })).not.toBeInTheDocument();
-    expect(screen.getByText("Reasoning: draft rationale")).toBeInTheDocument();
+    expect(container.querySelector(".pa-process-reasoning")).toHaveTextContent("draft rationale");
+    expect(screen.queryByText("Reasoning: draft rationale")).not.toBeInTheDocument();
     const activeProcess = container.querySelector<HTMLDetailsElement>("[data-prompt-agent-process='true']");
     expect(activeProcess?.open).toBe(true);
     expect(screen.queryByRole("button", { name: "Collapse response" })).not.toBeInTheDocument();

@@ -3,7 +3,7 @@
   import type { WorkingPhase } from "../stores/runtime";
   import { useI18nStore } from "../stores/i18n";
 
-  let { phase, tool = null, statusDetail = null, reasoning = "" }: { phase: Exclude<WorkingPhase, "idle">; tool?: string | null; statusDetail?: string | null; reasoning?: string } = $props();
+  let { phase, tool = null, statusDetail = null }: { phase: Exclude<WorkingPhase, "idle">; tool?: string | null; statusDetail?: string | null } = $props();
 
   function t(key: string, fallback: string): string {
     const value = $useI18nStore.t(key);
@@ -25,10 +25,6 @@
         : phase === "generating"
           ? t("assistant.working.generating", "Generating response…")
           : t("assistant.working.thinking", "Thinking…"));
-  const reasoningExcerpt = $derived.by(() => {
-    const text = reasoning.replace(/\s+/g, " ").trim();
-    return text.length > 180 ? `…${text.slice(-180)}` : text;
-  });
   const modelLoadDetail = $derived.by(() => {
     if (phase !== "model-loading" || !statusDetail) return "";
     const [status, seconds = "0"] = statusDetail.split(":");
@@ -42,12 +38,10 @@
     ? statusDetail
     : phase === "tool" && tool
     ? `${t("assistant.working.tool_name", "Tool")}: ${tool}`
-    : reasoningExcerpt
-      ? `${t("assistant.working.reasoning", "Reasoning")}: ${reasoningExcerpt}`
-      : "");
+    : "");
 </script>
 
-<div class:pa-working-has-reasoning={Boolean(reasoningExcerpt)} class="pa-working-indicator pa-working-{phase}" role="status" aria-live="polite">
+<div class="pa-working-indicator pa-working-{phase}" role="status" aria-live="polite">
   <div class="pa-working-summary"><span class="pa-working-icon" aria-hidden="true">{#if phase === "model-loading"}<ServerCog size={14} />{:else if phase === "submitting"}<Send size={14} />{:else if phase === "cancelling"}<CircleStop size={14} />{:else if phase === "retrying"}<RefreshCw size={14} />{:else if phase === "tool"}<Wrench size={14} />{:else if phase === "generating"}<Sparkles size={14} />{:else}<BrainCircuit size={14} />{/if}</span><strong><span>{label}</span>{#if phase === "tool" && tool} <code>{tool}</code>{/if}</strong><span class="pa-working-thread" aria-hidden="true"><i></i></span></div>
   {#if detail}<small class="pa-working-detail" title={detail}>{detail}</small>{/if}
 </div>

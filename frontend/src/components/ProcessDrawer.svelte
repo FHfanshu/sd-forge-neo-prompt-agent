@@ -15,7 +15,6 @@
     workingPhase = "idle",
     workingTool = null,
     workingDetail = null,
-    workingReasoning = "",
     onundo,
   }: {
     finalMessage: ChatMessage;
@@ -24,7 +23,6 @@
     workingPhase?: WorkingPhase;
     workingTool?: string | null;
     workingDetail?: string | null;
-    workingReasoning?: string;
     onundo?: (message: ChatMessage) => void | Promise<void>;
   } = $props();
 
@@ -110,7 +108,7 @@
           <div data-prompt-agent-process-event="tool"><ToolCard message={message} onundo={onundo} /></div>
         {/if}
       {/each}
-      {#if active && workingPhase !== "idle"}<WorkingIndicator phase={workingPhase} tool={workingTool} statusDetail={workingDetail} reasoning={workingReasoning} />{/if}
+      {#if active && workingPhase !== "idle"}<WorkingIndicator phase={workingPhase} tool={workingTool} statusDetail={workingDetail} />{/if}
     </div>
   </details>
 {/if}
