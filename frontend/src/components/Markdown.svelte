@@ -8,9 +8,47 @@
   let markdownElement = $state<HTMLDivElement>();
   let displayedContent = $state("");
   let reducedMotion = $state(false);
+  let settleToken = $state(0);
   let revealTimer: number | undefined;
+  let settleTimer: number | undefined;
   const resetTimers = new Map<HTMLButtonElement, number>();
-  const html = $derived(DOMPurify.sanitize(marked.parse(content || " ", { gfm: true }) as string));
+
+  // Bounded Markdown parsing: append-only stream growth is appended as plain text
+  // instead of re-parsing and replacing the whole document on every event, so long
+  // reasoning and tool traces cannot freeze the UI. Anything rendered as HTML still
+  // passes through DOMPurify; the live tail is rendered as a text node.
+  const STREAM_INLINE_LIMIT = 2048;
+  const SETTLE_MS = 380;
+  let parsedSource: string | null = null;
+  let parsedHtml = "";
+  let parsedWhileStreaming = false;
+  let parsedToken = 0;
+
+  function parseMarkdown(source: string): string {
+    return DOMPurify.sanitize(marked.parse(source || " ", { gfm: true }) as string);
+  }
+
+  const rendered = $derived.by(() => {
+    const current = content || "";
+    const settle = settleToken;
+    if (streaming && !renderStreamingMarkdown) return { html: "", tail: "", pending: false };
+    const prior = parsedSource;
+    if (current === prior) return { html: parsedHtml, tail: "", pending: false };
+    const grown = prior !== null && current.startsWith(prior);
+    const parseNow = prior === null
+      || !grown
+      || (!streaming && parsedWhileStreaming)
+      || (!streaming && (settle !== parsedToken || current.length < STREAM_INLINE_LIMIT));
+    if (parseNow) {
+      parsedHtml = parseMarkdown(current);
+      parsedSource = current;
+      parsedWhileStreaming = streaming;
+      parsedToken = settle;
+      return { html: parsedHtml, tail: "", pending: false };
+    }
+    const tail = current.slice(prior?.length ?? 0);
+    return { html: parsedHtml, tail, pending: true };
+  });
 
   function graphemes(value: string): string[] {
     if (typeof Intl.Segmenter === "function") {
@@ -108,8 +146,21 @@
   $effect(() => {
     $useI18nStore.locale;
     if (streaming || !markdownElement) return;
-    html;
+    rendered.html;
     void tick().then(enhanceCodeBlocks);
+  });
+
+  $effect(() => {
+    const pending = rendered.pending && !streaming;
+    if (settleTimer !== undefined) {
+      window.clearTimeout(settleTimer);
+      settleTimer = undefined;
+    }
+    if (!pending) return;
+    settleTimer = window.setTimeout(() => {
+      settleTimer = undefined;
+      settleToken += 1;
+    }, SETTLE_MS);
   });
 
   $effect(() => {
@@ -136,6 +187,7 @@
 
   onDestroy(() => {
     stopReveal();
+    if (settleTimer !== undefined) window.clearTimeout(settleTimer);
     for (const timer of resetTimers.values()) window.clearTimeout(timer);
     resetTimers.clear();
   });
@@ -144,7 +196,7 @@
 {#if streaming && !renderStreamingMarkdown}
   <div class="pa-markdown pa-markdown-streaming">{smoothStreaming ? displayedContent : content}</div>
 {:else if streaming}
-  <div class="pa-markdown pa-markdown-streaming">{@html html}</div>
+  <div class="pa-markdown pa-markdown-streaming">{@html rendered.html}{#if rendered.tail}<span class="pa-markdown-live">{rendered.tail}</span>{/if}</div>
 {:else}
-  <div bind:this={markdownElement} class="pa-markdown">{@html html}</div>
+  <div bind:this={markdownElement} class="pa-markdown">{@html rendered.html}{#if rendered.tail}<span class="pa-markdown-live">{rendered.tail}</span>{/if}</div>
 {/if}

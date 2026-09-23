@@ -678,3 +678,25 @@ Entries from 2026-07-19 through 2026-07-30 moved to
   cleared as clean (marked with a `ponytail:` note in `sync.ts`); the next write
   re-dirties it. `UI-FEEDBACK-001` and `SESSION-SYNC-001` text and accepted
   semantics are unchanged, so no acceptance revision was bumped.
+
+## 2026-09-24 Keep long reasoning and execution traces responsive
+- Root cause: every reasoning delta reparsed, sanitized, and replaced the whole
+  growing Markdown DOM, while each runtime event also reprojected and validated
+  the entire prior session, including completed prompt diffs and attachments.
+- Change: `frontend/src/components/Markdown.svelte`, `ToolCard.svelte`, and
+  `styles.css` keep append-only live output as safe text and parse settled/final
+  Markdown; `frontend/src/agent/controller.ts` caches completed projections,
+  and `frontend/src/stores/chat.ts` reuses unchanged validated messages and
+  attachment ownership. Rebuilt `javascript/prompt_agent_90_ui.js` from source.
+- Regression tests: `frontend/tests/markdown-streaming.test.ts`,
+  `surface.test.ts`, `prompt-agent-controller.test.ts`, and `stores.test.ts`
+  cover growing traces, final formatting, stable completed history, and
+  attachment reconciliation. Pinned Node 22.17.0 / pnpm 10.12.4 checks.
+- Verification: `python tools/test_gate.py fast` passed; `affected` passed its
+  Python, frontend, and type checks but one parallel mobile browser test hit
+  its 30-second timeout; isolated retry passed. `python tools/test_gate.py full`
+  passed (132 Python, 16 host contracts, 230 frontend, 7 browser, type check,
+  build, bundle budget, and browser syntax). Acceptance preflight: 0 warnings.
+- Residual risk: long-trace browser behavior was exercised in the mock-host
+  frontend, not a live Forge instance. Final Markdown still requires one full
+  parse; the repeated per-delta parse and whole-history validation are removed.

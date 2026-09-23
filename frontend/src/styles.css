@@ -338,6 +338,7 @@
   /* Markdown. */
   .pa-markdown { color: var(--pa-ink); font-size: .9rem; line-height: 1.65; overflow-wrap: anywhere; }
   .pa-markdown-streaming { white-space: pre-wrap; }
+  .pa-markdown-live { display: block; white-space: pre-wrap; }
   .pa-markdown > :first-child { margin-top: 0; }
   .pa-markdown > :last-child { margin-bottom: 0; }
   .pa-markdown p, .pa-markdown ul, .pa-markdown ol, .pa-markdown pre, .pa-markdown blockquote { margin: .45em 0; }

@@ -23,6 +23,16 @@ export interface ChatStore {
 }
 
 let activeController: AbortController | null = null;
+// Streaming updates re-deliver the same source projections; validating each object once
+// keeps unchanged messages reference-stable instead of cloning them per event.
+const validatedMessages = new WeakMap<object, ChatMessage>();
+function validateChatMessage(message: ChatMessage): ChatMessage {
+  const validated = validatedMessages.get(message);
+  if (validated) return validated;
+  const parsed = chatMessageSchema.parse(message);
+  validatedMessages.set(message, parsed);
+  return parsed;
+}
 function replaceOwnedAttachments(current: ChatAttachment[], next: ChatAttachment[]): void {
   retainImageAttachments(next);
   releaseImageAttachments(current);
@@ -62,8 +72,34 @@ export const useChatStore = createStore<ChatStore>((set, get) => ({
     }) }));
   },
   setMessages(messages) {
-    const next = messages.map((message) => chatMessageSchema.parse(message));
-    replaceOwnedAttachments(get().messages.flatMap((message) => message.attachments), next.flatMap((message) => message.attachments));
+    const current = get().messages;
+    const previous = new Map(current.map((message) => [message.id, message]));
+    const next: ChatMessage[] = [];
+    let changed = false;
+    for (const candidate of messages) {
+      const existing = previous.get(candidate.id);
+      previous.delete(candidate.id);
+      // Projection caches hand back the same ChatMessage object while a message cannot
+      // change; reuse it so unchanged items are neither revalidated nor re-rendered.
+      if (existing === candidate) {
+        next.push(existing);
+        continue;
+      }
+      const parsed = validateChatMessage(candidate);
+      if (existing === parsed) {
+        next.push(existing);
+        continue;
+      }
+      if (existing) replaceOwnedAttachments(existing.attachments, parsed.attachments);
+      else retainImageAttachments(parsed.attachments);
+      next.push(parsed);
+      changed = true;
+    }
+    if (previous.size) {
+      for (const removed of previous.values()) releaseImageAttachments(removed.attachments);
+      changed = true;
+    }
+    if (!changed && next.length === current.length && next.every((message, index) => message === current[index])) return;
     set({ messages: next });
   },
   setAttachments(messageId, attachments) {

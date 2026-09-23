@@ -241,6 +241,34 @@ describe("Svelte chat surface", () => {
     expect(document.querySelector("script")).toBeNull();
   });
 
+  it("streams a growing reasoning trace as live text and formats it after the turn completes", async () => {
+    useChatStore.getState().setMessages([{
+      id: "reasoning-grow",
+      role: "assistant",
+      content: "Working",
+      reasoning: "**first thought**",
+      status: "streaming",
+      attachments: [],
+      createdAt: Date.now(),
+    }]);
+    const { container } = render(Surface, { initialOpen: true, actions: {} });
+    expect(container.querySelector(".pa-process-reasoning strong")).toHaveTextContent("first thought");
+
+    let reasoning = "**first thought**";
+    for (let step = 0; step < 8; step += 1) {
+      reasoning += `\ntrace ${step} <script>alert(${step})</script>`;
+      useChatStore.getState().updateMessage("reasoning-grow", { reasoning });
+    }
+    await waitFor(() => expect(container.querySelector(".pa-process-reasoning")).toHaveTextContent("trace 7"));
+    expect(document.querySelector("script")).toBeNull();
+
+    useChatStore.getState().updateMessage("reasoning-grow", { reasoning, status: "complete" });
+    await waitFor(() => expect(container.querySelector(".pa-process-reasoning strong")).toHaveTextContent("first thought"));
+    expect(container.querySelector(".pa-process-reasoning .pa-markdown-live")).toBeNull();
+    expect(container.querySelector(".pa-process-reasoning")).toHaveTextContent("trace 7");
+    expect(document.querySelector("script")).toBeNull();
+  });
+
   it("guides an empty chat and restores the launcher after closing", async () => {
     const user = userEvent.setup();
     render(Surface, { initialOpen: true, actions: {} });

@@ -78,6 +78,7 @@ export class PromptAgentController {
   private syncPromise: Promise<void> | null = null;
   private mounted = false;
   private destroyed = false;
+  private projectedMessages = new WeakMap<AgentMessage, { status: SessionMessageStatus; chat: ChatMessage }>();
 
   constructor(
     private readonly sessions: SessionRepository = new PromptAgentSessionRepository(),
@@ -367,6 +368,8 @@ export class PromptAgentController {
   private async openSession(session: PromptAgentSession): Promise<void> {
     this.unsubscribeRuntime?.();
     this.runtime?.destroy();
+    // Projections are keyed by source message identity; a different session never reuses them.
+    this.projectedMessages = new WeakMap();
     this.currentSession = session;
     await this.sessions.putPreference(LAST_SESSION_PREFERENCE, session.id);
     const records = await this.sessions.getMessages(session.id);
@@ -424,13 +427,26 @@ export class PromptAgentController {
   private projectRuntimeState(state: AgentRuntimeState): void {
     const records = [...this.interruptedRecords, ...runtimeRecords(this.currentSession?.id ?? "", state)];
     records.sort((left, right) => left.createdAt - right.createdAt);
-    useChatStore.getState().setMessages(records.map(toChatMessage));
+    useChatStore.getState().setMessages(records.map((record) => this.projectRecord(record)));
     useRuntimeStore.getState().setError(state.error?.message ?? null);
     const phase = workingPhase(state);
     useRuntimeStore.getState().setWorking(
       phase,
       phase === "retrying" ? null : state.pendingToolCalls[0] ?? null,
     );
+  }
+
+  // Streaming emits a new runtime state per token. Only the current assistant message can
+  // change while it streams, so cache terminal projections by source message identity plus
+  // status and never re-parse, re-diff, or re-render the completed history for each token.
+  private projectRecord(record: PromptAgentMessage): ChatMessage {
+    // A streaming message is mutable, so it must always be reprojected even if its
+    // source object identity and status repeat across events.
+    const cached = record.status === "streaming" ? undefined : this.projectedMessages.get(record.message);
+    if (cached && cached.status === record.status) return cached.chat;
+    const chat = toChatMessage(record);
+    if (record.status !== "streaming") this.projectedMessages.set(record.message, { status: record.status, chat });
+    return chat;
   }
 
   private queueRuntimePersistence(state: AgentRuntimeState, sessionId: string): Promise<void> {
@@ -483,7 +499,7 @@ export class PromptAgentController {
   }
 
   private async persistRuntimeState(state: AgentRuntimeState, sessionId: string): Promise<void> {
-    const records = runtimeRecords(sessionId, state);
+    const records = runtimeRecords(sessionId, state).map((record) => ({ ...record, message: durableMessage(record.message) }));
     if (["retrying", "completed", "failed"].includes(state.status)) {
       const recordIds = new Set(records.map((record) => record.id));
       const obsoleteIds = (await this.sessions.getMessages(sessionId))
@@ -607,7 +623,9 @@ function runtimeRecords(sessionId: string, state: AgentRuntimeState): PromptAgen
   return messages.map((message) => ({
     id: messageId(sessionId, message),
     sessionId,
-    message: durableMessage(message),
+    // Keep the live message reference so projection caches can key on source identity;
+    // durableMessage is applied at the persistence boundary instead.
+    message,
     status: messageStatus(message, state),
     createdAt: message.timestamp,
     updatedAt: Date.now(),

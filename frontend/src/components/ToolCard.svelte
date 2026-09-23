@@ -16,6 +16,9 @@
   const content = $derived(!compactResult && message.content && message.content !== detail ? message.content : "");
   const status = $derived(message.tool?.status ?? "complete");
   const statusLabel = $derived(t(`chat.tool_status.${status}`, status === "error" ? "failed" : status));
+  // A still-running tool result grows as a live execution trace; stream it as plain
+  // text so long traces never re-parse Markdown per update, then format it once done.
+  const live = $derived(message.status === "streaming" || status === "running");
 </script>
 
 <details class="pa-tool-card" data-prompt-agent-tool-result="true">
@@ -25,7 +28,7 @@
   </summary>
    <div class="pa-tool-result">
     {#if detail}<p>{detail}</p>{/if}
-    {#if content}<Markdown content={content} streaming={message.status === "streaming"} />{/if}
+    {#if content}<Markdown content={content} streaming={live} />{/if}
      {#if message.tool?.undoable && !message.tool.undone}<button type="button" class="pa-tool-undo" onclick={() => void onundo?.(message)}><Undo2 size={13} /> {t("chat.undo_change", "Undo change")}</button>{:else if message.tool?.undone}<span class="pa-tool-undone">{t("chat.change_undone", "Change undone")}</span>{/if}
   </div>
 </details>

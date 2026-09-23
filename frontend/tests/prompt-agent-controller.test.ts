@@ -1,10 +1,13 @@
 import { createDefaultProfileState } from "../src/profile-adapter";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { PromptAgentController, userRequestedBackgroundLookup, userRequestedNaturalLanguagePrompt, userRequestedPromptMutation, userRequestedPromptToolkit } from "../src/agent/controller";
 import { useChatStore } from "../src/stores/chat";
 import { useProfileStore } from "../src/stores/profiles";
 import { useRuntimeStore } from "../src/stores/runtime";
+import type { ChatMessage } from "../src/contracts";
 import type { PromptAgentMessage, PromptAgentSession } from "../src/sessions/schema";
 import type { PromptAgentHostApi } from "../src/bridge";
+import * as promptDiff from "../src/prompts/prompt-diff";
 import { acceptanceTest } from "./acceptance";
 
 const repository = {
@@ -722,6 +725,159 @@ describe("PromptAgentController recovery", () => {
     controller.destroy();
   });
 
+  it("reuses completed history projections while a new response streams", async () => {
+    const profiles = createDefaultProfileState();
+    const profile = profiles.profiles.find((item) => item.id === profiles.activeProfileId)!;
+    const session: PromptAgentSession = {
+      id: "session-stream",
+      title: "Long trace",
+      createdAt: 1,
+      updatedAt: 2,
+      profileId: profile.id,
+      providerId: profile.modelInfo.providerId || "gemini",
+      modelId: profile.modelId,
+      reasoningLevel: "off",
+      systemPrompt: "",
+      schemaVersion: 1,
+    };
+    const records = completedTrace(session.id, profile.modelId);
+    repository.listSessions.mockResolvedValue([session]);
+    repository.getMessages.mockImplementation(async () => records.slice());
+    const diff = vi.spyOn(promptDiff, "diffPromptText");
+    const deltas = 40;
+    installFetch(() => eventStream([
+      { type: "start" },
+      { type: "text_start", contentIndex: 0 },
+      ...Array.from({ length: deltas }, (_, index) => ({ type: "text_delta", contentIndex: 0, delta: `t${index} ` })),
+      { type: "text_end", contentIndex: 0 },
+      { type: "done", reason: "stop" },
+    ]));
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+
+    const historyCount = useChatStore.getState().messages.length;
+    expect(historyCount).toBe(records.length);
+
+    let baseline: ChatMessage[] | undefined;
+    let diffsAtStreamStart = 0;
+    const unsubscribe = useChatStore.subscribe((state) => {
+      if (!baseline && state.messages.some((message) => message.status === "streaming")) {
+        baseline = state.messages;
+        diffsAtStreamStart = diff.mock.calls.length;
+      }
+    });
+    await controller.actions.sendMessage({ text: "Continue", attachments: [], reasoning: "none" });
+    unsubscribe();
+
+    expect(baseline).toBeDefined();
+    const final = useChatStore.getState().messages;
+    expect(final.length).toBe(historyCount + 2);
+    // Every completed history message keeps its projected identity across the whole stream.
+    for (let index = 0; index < historyCount; index += 1) {
+      expect(final[index]).toBe(baseline![index]);
+    }
+    // The mutable streaming message still reprojects and settles as complete.
+    const assistant = final.at(-1)!;
+    expect(assistant.role).toBe("assistant");
+    expect(assistant.status).toBe("complete");
+    expect(assistant.content).toContain(`t${deltas - 1} `);
+    // Completed history is not re-parsed or re-diffed per streamed token.
+    expect(diff.mock.calls.length).toBe(diffsAtStreamStart);
+    controller.destroy();
+  });
+
+  it("reprojects the mutable streaming message on every update", async () => {
+    installFetch(() => eventStream([
+      { type: "start" },
+      { type: "text_start", contentIndex: 0 },
+      { type: "text_delta", contentIndex: 0, delta: "one " },
+      { type: "text_delta", contentIndex: 0, delta: "two " },
+      { type: "text_end", contentIndex: 0 },
+      { type: "done", reason: "stop" },
+    ]));
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+
+    const seen: ChatMessage[] = [];
+    const unsubscribe = useChatStore.subscribe((state) => {
+      const last = state.messages.at(-1);
+      if (last?.status === "streaming") seen.push(last);
+    });
+    await controller.actions.sendMessage({ text: "Hello", attachments: [], reasoning: "none" });
+    unsubscribe();
+
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(seen.at(-1)!.content).toBe("one two ");
+    const final = useChatStore.getState().messages.at(-1)!;
+    expect(final.status).toBe("complete");
+    expect(final.content).toBe("one two ");
+    controller.destroy();
+  });
+
+  it("always reprojects a streaming message and caches only its terminal projection", () => {
+    const controller = new PromptAgentController(repository);
+    const project = (controller as unknown as { projectRecord(record: PromptAgentMessage): ChatMessage }).projectRecord.bind(controller);
+    const message: AgentMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "one" }],
+      api: "test",
+      provider: "test",
+      model: "test",
+      usage: traceUsage,
+      stopReason: "stop",
+      timestamp: 10,
+    };
+    const record: PromptAgentMessage = { id: "session:assistant:10", sessionId: "session", message, status: "streaming", createdAt: 10, updatedAt: 10 };
+
+    const streaming = project(record);
+    expect(project(record)).not.toBe(streaming);
+    message.content = [{ type: "text", text: "one two" }];
+    expect(project(record).content).toBe("one two");
+
+    const terminal: PromptAgentMessage = { ...record, status: "complete" };
+    const completed = project(terminal);
+    expect(completed).toMatchObject({ content: "one two", status: "complete" });
+    expect(project(terminal)).toBe(completed);
+    controller.destroy();
+  });
+
+  it("rebuilds history projections after switching sessions", async () => {
+    const profiles = createDefaultProfileState();
+    const profile = profiles.profiles.find((item) => item.id === profiles.activeProfileId)!;
+    const makeSession = (id: string): PromptAgentSession => ({
+      id,
+      title: id,
+      createdAt: 1,
+      updatedAt: 2,
+      profileId: profile.id,
+      providerId: profile.modelInfo.providerId || "gemini",
+      modelId: profile.modelId,
+      reasoningLevel: "off",
+      systemPrompt: "",
+      schemaVersion: 1,
+    });
+    const sessionA = makeSession("session-a");
+    const sessionB = makeSession("session-b");
+    const sharedMessage = { role: "user" as const, content: "Shared body", timestamp: 10 };
+    const recordA: PromptAgentMessage = { id: "session-a:user:10", sessionId: sessionA.id, message: sharedMessage, status: "complete", createdAt: 10, updatedAt: 10 };
+    const recordB: PromptAgentMessage = { ...recordA, id: "session-b:user:10", sessionId: sessionB.id };
+    let activeMessages = [recordA];
+    repository.listSessions.mockResolvedValue([sessionA, sessionB]);
+    repository.getSession.mockResolvedValue(sessionB);
+    repository.getMessages.mockImplementation(async () => activeMessages);
+    installFetch();
+    const controller = new PromptAgentController(repository);
+    await controller.mount();
+    expect(useChatStore.getState().messages.map((message) => message.id)).toEqual(["session-a:user:10"]);
+
+    activeMessages = [recordB];
+    await controller.selectHistory({ id: sessionB.id, source: "prompt-agent", title: sessionB.title, preview: "", updatedAt: "", messageCount: 1 });
+
+    expect(useChatStore.getState().messages.map((message) => message.id)).toEqual(["session-b:user:10"]);
+    expect(useChatStore.getState().messages[0]?.content).toBe("Shared body");
+    controller.destroy();
+  });
+
 });
 
 function eventStream(events: unknown[]): Response {
@@ -729,6 +885,81 @@ function eventStream(events: unknown[]): Response {
     status: 200,
     headers: { "Content-Type": "text/event-stream" },
   });
+}
+
+const traceUsage = {
+  input: 10,
+  output: 2,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 12,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+/** A completed multi-turn trace whose edit_prompt results make projection expensive. */
+function completedTrace(sessionId: string, modelId: string): PromptAgentMessage[] {
+  const records: PromptAgentMessage[] = [];
+  let timestamp = 10;
+  for (let turn = 0; turn < 6; turn += 1) {
+    records.push({
+      id: `${sessionId}:user:${timestamp}`,
+      sessionId,
+      message: { role: "user", content: `Turn ${turn} request`, timestamp },
+      status: "complete",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    timestamp += 10;
+    records.push({
+      id: `${sessionId}:assistant:${timestamp}`,
+      sessionId,
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: `reasoning for turn ${turn} `.repeat(12) },
+          { type: "text", text: `Reply ${turn}` },
+        ],
+        api: "test",
+        provider: "test",
+        model: modelId,
+        usage: traceUsage,
+        stopReason: "stop",
+        timestamp,
+      },
+      status: "complete",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    timestamp += 10;
+    records.push({
+      id: `${sessionId}:toolResult:${timestamp}`,
+      sessionId,
+      message: {
+        role: "toolResult",
+        toolCallId: `call-${turn}`,
+        toolName: "edit_prompt",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            before_prompt: `solo, portrait, turn ${turn}`,
+            after_prompt: `solo, portrait, turn ${turn}, rim light`,
+            target: "txt2img",
+            field: "positive",
+            before_hash: `before-${turn}`,
+            prompt_hash: `after-${turn}`,
+          }),
+        }],
+        isError: false,
+        timestamp,
+      },
+      status: "complete",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    timestamp += 10;
+  }
+  return records;
 }
 
 function testHost(executeAssistantTool: PromptAgentHostApi["executeAssistantTool"]): PromptAgentHostApi {
