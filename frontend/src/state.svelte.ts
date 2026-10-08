@@ -1,4 +1,4 @@
-import type { Message, ModelEntry, Profile, Session, Settings, TurnState } from "./types";
+import type { Message, ModelEntry, Probe, Profile, Session, Settings, TurnState } from "./types";
 
 export type PanelMode = "squeeze" | "overlay";
 
@@ -122,6 +122,8 @@ class AppState {
   notice = $state("");
   lastError = $state(false);
   efforts = $state.raw<Record<string, string>>(loadEfforts());
+  /** Probe results keyed "profileId/model"; drives the status dots. */
+  probes = $state.raw<Record<string, Probe>>({});
 
   get session(): Session | null {
     return this.sessions.find((s) => s.id === this.sessionId) ?? null;

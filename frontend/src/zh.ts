@@ -37,6 +37,7 @@ export const zh = {
   sessionGone: "这个会话已在别处删除，已切到新会话",
   noModel: "选择模型",
   noKey: "无 Key",
+  probeUnknown: "未检测",
   visionShort: "看图",
   models: "模型",
   addModel: "添加",

@@ -105,6 +105,12 @@ def build_router(profiles: ProfileStore, sessions: SessionStore, chat: ChatProxy
         stream = await chat.open_stream(body)
         return StreamingResponse(stream, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+    @router.post("/probe")
+    @guarded
+    async def probe(request: Request):
+        body = await _json(request)
+        return await chat.probe(str(body.get("profile_id") or ""), str(body.get("model") or ""))
+
     @router.post("/tokens")
     @guarded
     async def count_tokens(request: Request):

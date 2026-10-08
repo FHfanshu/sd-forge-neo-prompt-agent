@@ -1,4 +1,4 @@
-import type { Message, Profile, Session, Settings, ToolResult } from "./types";
+import type { Message, Probe, Profile, Session, Settings, ToolResult } from "./types";
 
 const BASE = "/prompt-agent/v2";
 
@@ -39,6 +39,7 @@ export const api = {
   deleteProfile: (id: string) => call("DELETE", `/profiles/${id}`),
   setDefaultProfile: (id: string) => call("PUT", "/profiles/default", { id }),
   listModels: (id: string) => call<{ models: string[] }>("POST", `/profiles/${id}/models`),
+  probe: (profileId: string, model: string) => call<Omit<Probe, "at">>("POST", "/probe", { profile_id: profileId, model }),
   countTokens: (profileId: string, model: string, text: string) => call<{ tokens: number }>("POST", "/tokens", { profile_id: profileId, model, text }),
   settings: () => call<Settings>("GET", "/settings"),
   saveSettings: (body: Record<string, unknown>) => call<Settings>("PUT", "/settings", body),

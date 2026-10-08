@@ -147,6 +147,40 @@ class ChatUnitTest(unittest.TestCase):
                 asyncio.run(proxy.count_tokens(remote["id"], "m", "think"))
         self.assertEqual(sum("remote" in c for c in calls), 1)
 
+    def test_probe_states(self):
+        replies = {
+            "ok": httpx.Response(200, json={"data": [{"id": "m"}]}),
+            "missing": httpx.Response(200, json={"data": [{"id": "other"}]}),
+            "auth": httpx.Response(401, json={"error": "bad key"}),
+            "nolist": httpx.Response(404),
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "down":
+                raise httpx.ConnectError("refused", request=request)
+            return replies[request.url.host]
+
+        data = TempData()
+        self.addCleanup(data.cleanup)
+        profiles = data.profiles()
+        proxy = ChatProxy(profiles, transport=httpx.MockTransport(handler))
+        replies["sleepy"] = httpx.Response(200, json={"data": [{"id": "m", "owned_by": "llamacpp"}]})
+        original = handler
+
+        def handler(request: httpx.Request) -> httpx.Response:  # noqa: F811 - adds llama.cpp /props
+            if request.url.path == "/props":
+                return httpx.Response(200, json={"is_sleeping": True})
+            return original(request)
+
+        proxy = ChatProxy(profiles, transport=httpx.MockTransport(handler))
+        sleepy = profiles.upsert(None, {"name": "s", "base_url": "http://sleepy/v1", "models": [{"id": "m"}]})
+        result = asyncio.run(proxy.probe(sleepy["id"], "m"))
+        self.assertEqual((result["state"], result.get("sleeping")), ("ok", True))
+        expected = {"ok": "ok", "missing": "warn", "auth": "auth", "nolist": "ok", "down": "down"}
+        for host, state in expected.items():
+            profile = profiles.upsert(None, {"name": host, "base_url": f"http://{host}/v1", "models": [{"id": "m"}]})
+            self.assertEqual(asyncio.run(proxy.probe(profile["id"], "m"))["state"], state, host)
+
     def test_context_length_error_code(self):
         error = sanitize_error(400, b'{"error":{"message":"maximum context length exceeded"}}', [])
         self.assertEqual(error.code, "CONTEXT_LENGTH")

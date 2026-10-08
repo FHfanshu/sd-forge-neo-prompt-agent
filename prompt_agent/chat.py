@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any, AsyncIterator
 
 import httpx
@@ -13,6 +14,7 @@ from .profiles import REASONING_EFFORTS, ProfileStore
 LOGGER = logging.getLogger("prompt_agent")
 CONNECT_TIMEOUT = 15.0
 READ_TIMEOUT = 300.0
+PROBE_TIMEOUT = 5.0
 
 
 def upstream_request(profile: dict[str, Any], api_key: str, body: dict[str, Any]) -> tuple[str, dict[str, str], dict[str, Any]]:
@@ -136,6 +138,57 @@ class ChatProxy:
             self._no_tokenize.add(root)
             raise ToolError("UNSUPPORTED", "这个服务不提供 tokenize")
         return len(tokens)
+
+    async def probe(self, profile_id: str, model: str) -> dict[str, Any]:
+        """Is this provider/model usable right now? GET /models with a short timeout.
+
+        state: ok | warn (reachable, but the model is not in its list) | auth | down.
+        Never raises for upstream failures; the result is shown as the picker's status dot.
+        """
+        profile = self.profiles.resolve(profile_id, model)
+        api_key = self.profiles.api_key(profile["id"])
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        started = time.monotonic()
+        async with self._client() as client:
+            try:
+                response = await client.get(f"{profile['base_url']}/models", headers=headers, timeout=PROBE_TIMEOUT)
+            except httpx.TimeoutException:
+                return {"state": "down", "message": "连接超时"}
+            except httpx.HTTPError as error:
+                return {"state": "down", "message": f"连不上：{type(error).__name__}"}
+            latency = round((time.monotonic() - started) * 1000)
+            sleeping = await self._llama_sleeping(client, profile["base_url"], headers, response)
+        if response.status_code in (401, 403):
+            return {"state": "auth", "message": "API Key 无效或没有权限", "latency_ms": latency}
+        if response.status_code == 404:
+            return {"state": "ok", "message": "服务在线（不提供模型列表）", "latency_ms": latency}
+        if response.status_code >= 400:
+            return {"state": "down", "message": f"服务返回 HTTP {response.status_code}", "latency_ms": latency}
+        try:
+            ids = [str(item.get("id")) for item in response.json().get("data", []) if isinstance(item, dict)]
+        except (ValueError, AttributeError):
+            ids = []
+        if ids and profile["model"] not in ids:
+            listed = "、".join(ids[:3]) + ("…" if len(ids) > 3 else "")
+            return {"state": "warn", "message": f"服务在线，但模型列表里没有 {profile['model']}（现有：{listed}）", "latency_ms": latency}
+        if sleeping:
+            return {"state": "ok", "message": "在线 · 休眠中，首条消息要先加载模型", "latency_ms": latency, "sleeping": True}
+        return {"state": "ok", "message": "在线", "latency_ms": latency}
+
+    @staticmethod
+    async def _llama_sleeping(client: httpx.AsyncClient, base_url: str, headers: dict[str, str], models: httpx.Response) -> bool:
+        """llama.cpp started with --sleep-idle-seconds unloads the model when idle; /props says so."""
+        try:
+            owners = {item.get("owned_by") for item in models.json().get("data", []) if isinstance(item, dict)}
+        except (ValueError, AttributeError):
+            return False
+        if "llamacpp" not in owners:
+            return False
+        try:
+            props = await client.get(f"{re.sub(r'/v1$', '', base_url)}/props", headers=headers, timeout=2.0)
+            return bool(props.json().get("is_sleeping")) if props.status_code < 400 else False
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return False
 
     async def list_models(self, profile_id: str) -> list[str]:
         profile = self.profiles.get(profile_id)

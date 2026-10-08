@@ -71,3 +71,13 @@ export type TurnState = "idle" | "requesting" | "streaming" | "tool_running";
 
 /** reasoning_effort values a provider may accept; which ones work depends on the model's chat template. */
 export const EFFORTS = ["none", "low", "medium", "high", "xhigh"] as const;
+
+/** Result of POST /probe: can this provider/model be used right now. */
+export interface Probe {
+  state: "ok" | "warn" | "auth" | "down";
+  message: string;
+  latency_ms?: number;
+  /** llama.cpp unloaded the model after --sleep-idle-seconds; the next request reloads it */
+  sleeping?: boolean;
+  at: number;
+}

@@ -6,7 +6,7 @@ import type { StreamDelta } from "./agent/sse";
 import * as dom from "./forge/dom";
 import * as forgeTools from "./forge/tools";
 import { app, PAGE_SIZE, rememberedModel, rememberedSession, rememberModel, rememberSession, saveEfforts } from "./state.svelte";
-import type { AttachmentRef, Message, ToolCall } from "./types";
+import type { AttachmentRef, Message, Probe, ToolCall } from "./types";
 import { zh } from "./zh";
 
 const BROWSER_TOOLS = new Set(["read_prompt", "edit_prompt", "read_generation_parameters", "set_generation_parameters", "read_latest_image"]);
@@ -200,6 +200,45 @@ export async function deleteSession(id: string): Promise<void> {
   if (app.sessionId === id) await openSession(null);
 }
 
+// -- provider status probes -------------------------------------------------------
+
+const PROBE_TTL_MS = 30_000;
+const probing = new Set<string>();
+
+function setProbe(key: string, probe: Omit<Probe, "at">): void {
+  app.probes = { ...app.probes, [key]: { ...probe, at: Date.now() } };
+}
+
+/** Refresh one provider/model status; cached for 30 s unless forced, one request in flight per key. */
+export async function probe(profileId: string, model: string, force = false): Promise<void> {
+  const key = `${profileId}/${model}`;
+  const known = app.probes[key];
+  if (probing.has(key) || (!force && known && Date.now() - known.at < PROBE_TTL_MS)) return;
+  probing.add(key);
+  try {
+    setProbe(key, await api.probe(profileId, model));
+  } catch (error) {
+    setProbe(key, { state: "down", message: errorText(error) });
+  } finally {
+    probing.delete(key);
+  }
+}
+
+export function probeCurrent(force = false): void {
+  if (app.profileId && app.model) void probe(app.profileId, app.model.id, force);
+}
+
+export function probeAll(): void {
+  for (const profile of app.profiles) for (const model of profile.models) void probe(profile.id, model.id);
+}
+
+/** Dot colour for a probe: unknown or never checked is grey. */
+export function probeDot(probe: Probe | undefined): "ok" | "sleep" | "warn" | "bad" | "idle" {
+  if (!probe) return "idle";
+  if (probe.state === "ok") return probe.sleeping ? "sleep" : "ok";
+  return probe.state === "warn" ? "warn" : "bad";
+}
+
 export function chooseEffort(effort: string): void {
   const key = `${app.profileId}/${app.model?.id ?? ""}`;
   const { [key]: _old, ...rest } = app.efforts;
@@ -209,6 +248,7 @@ export function chooseEffort(effort: string): void {
 
 export async function chooseModel(profileId: string, model: string): Promise<void> {
   rememberModel(profileId, model);
+  void probe(profileId, model);
   if (app.sessionId) {
     try {
       const updated = await api.updateSession(app.sessionId, { profile_id: profileId, model });
@@ -254,7 +294,12 @@ async function startTurn(): Promise<void> {
           }
           replaceMessage(message);
           if (save) persist(message);
-          if (message.status === "error") app.lastError = true;
+          // a completed reply is proof of life; no need to wait for the next probe
+          if (message.status === "complete" && message.role === "assistant") setProbe(`${profile.id}/${model.id}`, { state: "ok", message: "在线" });
+          if (message.status === "error") {
+            app.lastError = true;
+            void probe(profile.id, model.id, true); // was it the service, or just this request?
+          }
         },
         delta: onDelta,
         setState: (state, note) => {
@@ -383,6 +428,7 @@ export async function boot(): Promise<void> {
     const remembered = rememberedSession();
     const target = app.sessions.find((s) => s.id === remembered)?.id ?? app.sessions[0]?.id ?? null;
     await openSession(target);
+    probeCurrent();
   } catch (error) {
     notify(errorText(error));
   }
@@ -390,4 +436,5 @@ export async function boot(): Promise<void> {
 
 export function onPanelFocus(): void {
   if (!app.busy) void refreshSessions().catch(() => {});
+  probeCurrent();
 }
