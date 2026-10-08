@@ -122,12 +122,32 @@ def _infotext_from_image(image: Image.Image) -> tuple[str | None, str]:
         value = info.get(key)
         if isinstance(value, str) and value.strip():
             return value, "comfyui"
-    comment = info.get("UserComment")
+    comment = info.get("UserComment") or _exif_user_comment(image)
     if isinstance(comment, bytes):
-        comment = comment.decode("utf-8", "replace")
+        comment = _decode_user_comment(comment)
     if isinstance(comment, str) and comment.strip():
-        return comment, "exif"
+        # A1111/Forge write the same infotext format into EXIF for JPEG and WebP outputs
+        return comment, "a1111" if "Steps:" in comment else "exif"
     return None, "none"
+
+
+def _exif_user_comment(image: Image.Image) -> bytes | None:
+    try:
+        value = image.getexif().get_ifd(0x8769).get(0x9286)
+    except Exception:  # noqa: BLE001
+        return None
+    return value if isinstance(value, bytes) else None
+
+
+def _decode_user_comment(raw: bytes) -> str:
+    """EXIF UserComment: 8-byte charset prefix, then text (UNICODE is UTF-16, usually big-endian from piexif)."""
+    prefix, body = raw[:8], raw[8:]
+    if prefix.startswith(b"UNICODE"):
+        big_endian = len(body) > 1 and body[0] == 0 and body[1] != 0
+        return body.decode("utf-16-be" if big_endian else "utf-16-le", "replace").rstrip("\x00")
+    if prefix.startswith(b"ASCII") or prefix == b"\x00" * 8:
+        return body.decode("utf-8", "replace").rstrip("\x00")
+    return raw.decode("utf-8", "replace").rstrip("\x00")
 
 
 def extract_image_metadata(binary: bytes) -> dict[str, Any]:

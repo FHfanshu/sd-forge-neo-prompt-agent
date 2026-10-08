@@ -1,0 +1,13 @@
+{
+  "name": "Xiuran",
+  "reference_images": [
+    "portrait",
+    "front",
+    "side",
+    "back"
+  ],
+  "trigger_words": [
+    "xiuran"
+  ],
+  "short_description": "Mature male anthro dragon."
+}

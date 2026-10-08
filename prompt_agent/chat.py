@@ -1,0 +1,208 @@
+from __future__ import annotations
+
+import json
+import logging
+import re
+import time
+from typing import Any, AsyncIterator
+
+import httpx
+
+from .common import ToolError, clip
+from .profiles import REASONING_EFFORTS, ProfileStore
+
+LOGGER = logging.getLogger("prompt_agent")
+CONNECT_TIMEOUT = 15.0
+READ_TIMEOUT = 300.0
+PROBE_TIMEOUT = 5.0
+
+
+def upstream_request(profile: dict[str, Any], api_key: str, body: dict[str, Any]) -> tuple[str, dict[str, str], dict[str, Any]]:
+    """Build the OpenAI-compatible request. Connection target and model always come from the stored profile."""
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise ToolError("INVALID_ARGS", "messages 不能为空")
+    payload: dict[str, Any] = {
+        "model": profile["model"],
+        "messages": messages,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    tools = body.get("tools")
+    if isinstance(tools, list) and tools:
+        payload["tools"] = tools
+    # the composer may override the provider's effort per request; values differ by model template
+    effort = body.get("reasoning_effort") or profile.get("reasoning_effort")
+    if effort not in REASONING_EFFORTS:
+        raise ToolError("INVALID_ARGS", f"不支持的推理强度：{effort}")
+    if effort:
+        payload["reasoning_effort"] = effort
+    if profile.get("temperature") is not None:
+        payload["temperature"] = profile["temperature"]
+    if profile.get("max_tokens"):
+        payload["max_tokens"] = profile["max_tokens"]
+    headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return f"{profile['base_url']}/chat/completions", headers, payload
+
+
+def sanitize_error(status: int, raw: bytes, secrets: list[str]) -> ToolError:
+    text = raw.decode("utf-8", "replace")
+    message = text
+    try:
+        parsed = json.loads(text)
+        error = parsed.get("error") if isinstance(parsed, dict) else None
+        if isinstance(error, dict):
+            message = str(error.get("message") or error)
+        elif isinstance(error, str):
+            message = error
+        elif isinstance(parsed, dict) and parsed.get("message"):
+            message = str(parsed["message"])
+    except ValueError:
+        pass
+    for secret in secrets:
+        if secret:
+            message = message.replace(secret, "***")
+    code = {401: "AUTH", 403: "AUTH", 429: "RATE_LIMIT"}.get(status, "UPSTREAM")
+    lowered = message.lower()
+    if "context" in lowered and any(word in lowered for word in ("length", "too long", "maximum", "size", "window")):
+        code = "CONTEXT_LENGTH"
+    return ToolError(code, clip(message.strip() or f"HTTP {status}", 600), status=status if status >= 400 else 502)
+
+
+class ChatProxy:
+    def __init__(self, profiles: ProfileStore, transport: httpx.AsyncBaseTransport | None = None):
+        self.profiles = profiles
+        self.transport = transport
+        self._no_tokenize: set[str] = set()
+
+    def _client(self) -> httpx.AsyncClient:
+        timeout = httpx.Timeout(READ_TIMEOUT, connect=CONNECT_TIMEOUT)
+        return httpx.AsyncClient(timeout=timeout, transport=self.transport, trust_env=True)
+
+    async def open_stream(self, body: dict[str, Any]) -> AsyncIterator[bytes]:
+        """Connect upstream and return a byte iterator. Errors before the first byte raise ToolError."""
+        profile = self.profiles.resolve(str(body.get("profile_id") or ""), str(body.get("model") or ""))
+        api_key = self.profiles.api_key(profile["id"])
+        url, headers, payload = upstream_request(profile, api_key, body)
+        client = self._client()
+        try:
+            request = client.build_request("POST", url, headers=headers, json=payload)
+            response = await client.send(request, stream=True)
+        except httpx.HTTPError as error:
+            await client.aclose()
+            raise ToolError("NETWORK", f"连接模型服务失败：{type(error).__name__}", status=502) from None
+        if response.status_code >= 400:
+            raw = await response.aread()
+            await response.aclose()
+            await client.aclose()
+            raise sanitize_error(response.status_code, raw, [api_key])
+
+        async def iterate() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in response.aiter_raw():
+                    yield chunk
+            except httpx.HTTPError as error:
+                LOGGER.warning("[prompt-agent] upstream stream ended: %s", type(error).__name__)
+                note = {"error": {"code": "NETWORK", "message": "模型服务连接中断"}}
+                yield f"\n\ndata: {json.dumps(note, ensure_ascii=False)}\n\n".encode()
+            finally:
+                await response.aclose()
+                await client.aclose()
+
+        return iterate()
+
+    async def count_tokens(self, profile_id: str, model: str, text: str) -> int:
+        """Exact token count from the provider's own tokenizer (llama.cpp style POST /tokenize).
+
+        Used when the stream's usage does not report reasoning tokens. The URL comes from the
+        stored profile; servers without the endpoint are remembered and not asked again.
+        """
+        profile = self.profiles.resolve(profile_id, model)
+        root = re.sub(r"/v1$", "", profile["base_url"])
+        if root in self._no_tokenize:
+            raise ToolError("UNSUPPORTED", "这个服务不提供 tokenize")
+        api_key = self.profiles.api_key(profile["id"])
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        async with self._client() as client:
+            try:
+                response = await client.post(f"{root}/tokenize", json={"content": text}, headers=headers, timeout=5.0)
+            except httpx.HTTPError as error:
+                raise ToolError("NETWORK", f"连接模型服务失败：{type(error).__name__}", status=502) from None
+        try:
+            tokens = response.json().get("tokens") if response.status_code < 400 else None
+        except ValueError:
+            tokens = None
+        if not isinstance(tokens, list):
+            self._no_tokenize.add(root)
+            raise ToolError("UNSUPPORTED", "这个服务不提供 tokenize")
+        return len(tokens)
+
+    async def probe(self, profile_id: str, model: str) -> dict[str, Any]:
+        """Is this provider/model usable right now? GET /models with a short timeout.
+
+        state: ok | warn (reachable, but the model is not in its list) | auth | down.
+        Never raises for upstream failures; the result is shown as the picker's status dot.
+        """
+        profile = self.profiles.resolve(profile_id, model)
+        api_key = self.profiles.api_key(profile["id"])
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        started = time.monotonic()
+        async with self._client() as client:
+            try:
+                response = await client.get(f"{profile['base_url']}/models", headers=headers, timeout=PROBE_TIMEOUT)
+            except httpx.TimeoutException:
+                return {"state": "down", "message": "连接超时"}
+            except httpx.HTTPError as error:
+                return {"state": "down", "message": f"连不上：{type(error).__name__}"}
+            latency = round((time.monotonic() - started) * 1000)
+            sleeping = await self._llama_sleeping(client, profile["base_url"], headers, response)
+        if response.status_code in (401, 403):
+            return {"state": "auth", "message": "API Key 无效或没有权限", "latency_ms": latency}
+        if response.status_code == 404:
+            return {"state": "ok", "message": "服务在线（不提供模型列表）", "latency_ms": latency}
+        if response.status_code >= 400:
+            return {"state": "down", "message": f"服务返回 HTTP {response.status_code}", "latency_ms": latency}
+        try:
+            ids = [str(item.get("id")) for item in response.json().get("data", []) if isinstance(item, dict)]
+        except (ValueError, AttributeError):
+            ids = []
+        if ids and profile["model"] not in ids:
+            listed = "、".join(ids[:3]) + ("…" if len(ids) > 3 else "")
+            return {"state": "warn", "message": f"服务在线，但模型列表里没有 {profile['model']}（现有：{listed}）", "latency_ms": latency}
+        if sleeping:
+            return {"state": "ok", "message": "在线 · 休眠中，首条消息要先加载模型", "latency_ms": latency, "sleeping": True}
+        return {"state": "ok", "message": "在线", "latency_ms": latency}
+
+    @staticmethod
+    async def _llama_sleeping(client: httpx.AsyncClient, base_url: str, headers: dict[str, str], models: httpx.Response) -> bool:
+        """llama.cpp started with --sleep-idle-seconds unloads the model when idle; /props says so."""
+        try:
+            owners = {item.get("owned_by") for item in models.json().get("data", []) if isinstance(item, dict)}
+        except (ValueError, AttributeError):
+            return False
+        if "llamacpp" not in owners:
+            return False
+        try:
+            props = await client.get(f"{re.sub(r'/v1$', '', base_url)}/props", headers=headers, timeout=2.0)
+            return bool(props.json().get("is_sleeping")) if props.status_code < 400 else False
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return False
+
+    async def list_models(self, profile_id: str) -> list[str]:
+        profile = self.profiles.get(profile_id)
+        api_key = self.profiles.api_key(profile_id)
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        async with self._client() as client:
+            try:
+                response = await client.get(f"{profile['base_url']}/models", headers=headers)
+            except httpx.HTTPError as error:
+                raise ToolError("NETWORK", f"连接模型服务失败：{type(error).__name__}", status=502) from None
+            if response.status_code >= 400:
+                raise sanitize_error(response.status_code, response.content, [api_key])
+            try:
+                data = response.json().get("data", [])
+            except ValueError:
+                raise ToolError("UPSTREAM", "模型列表格式无法识别", status=502) from None
+        return sorted(str(item.get("id")) for item in data if isinstance(item, dict) and item.get("id"))

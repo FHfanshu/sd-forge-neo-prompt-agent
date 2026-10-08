@@ -1,75 +1,46 @@
 # Repository Rules
 
-This extension is loaded inside Forge Neo, so keep changes small and easy to audit.
+Forge Neo extension: a docked Chinese agent panel that reads and edits prompts and
+generation parameters. The agent never generates images. Keep changes small and auditable.
 
-## Roadmap
+## Source of truth
 
-- Read `ROADMAP.md` before planning non-trivial work.
-- Current decision order is user experience, stability/data integrity,
-  performance, maintainability, then new capability. Security and privacy remain
-  hard invariants.
-- Prefer work from the earliest incomplete roadmap phase relevant to the affected
-  area. New features need a user-visible problem, explicit acceptance criteria,
-  and verified failure/recovery behavior.
+- `docs/V2_SPEC.md` defines behavior, interfaces, data, security, performance and visual
+  rules. `docs/V2_PLAN.md` records scope and decisions. Update the spec in the same change
+  when behavior changes intentionally.
+- Security invariants (spec §8) are hard rules: API keys only decrypted in Python for the
+  request that needs them; the browser never chooses upstream URLs, file paths or the model;
+  no tool replay after refresh; no image generation by the agent.
 
-## Architecture
+## Layout
 
-- Keep every source/documentation file at or below 1000 lines.
-- Preserve the leaf direction: root `prompt_agent/` shared modules
-  (`provider_errors`, `i18n`, `utils`, `image_payloads`, `response_text`,
-  `pnginfo`, `danbooru`, `forge_resources`, `prompt_skills`, `image_index`)
-  must not import from `backend.prompt_agent`; `backend.prompt_agent` and
-  `scripts/` may depend on them.
-- Avoid circular imports. Run `python -m unittest discover -s tests` after changing Python module boundaries.
+- `scripts/prompt_agent.py`: Forge hook only (mounts routes on app start).
+- `prompt_agent/`: Python package. Do not name anything `backend` or `scripts` (Forge owns
+  those top-level names). Forge imports stay lazy inside `prompt_agent/forge.py` so tests run
+  without Forge.
+- `frontend/`: Svelte 5 + Vite source. `javascript/prompt_agent.js` is the generated bundle;
+  never edit it by hand, rebuild it.
+- Forge DOM selectors live only in `frontend/src/forge/dom.ts` and `frontend/src/forge/params.ts`.
+- `generation-skills/`, `character-definitions/`, `danbooru-tools/` are content and a shared
+  library used read-only.
+- Source files: aim for ≤ 400 lines, hard limit 1000 (generated bundle excepted).
 
-## Frontend
+## Toolchain
 
-- Browser scripts under `javascript/` are loaded by filename order. Keep `prompt_agent.js` as the Forge adapter initializer, then layer resource, host, generated UI, and boot scripts after it.
-- Shared browser state lives on `window.__SD_FORGE_NEO_PROMPT_AGENT__`.
-- The frontend toolchain is project-local and pinned by `frontend/.node-version`,
-  `frontend/package.json`, and `frontend/.npmrc`: use Node `22.17.0` and pnpm
-  `10.12.4`; do not use another global Node or pnpm version for installs,
-  checks, tests, or builds.
-- When a compatible version manager is unavailable, run frontend commands from
-  `frontend/` through npm's temporary isolated toolchain, for example:
-  `npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm install --frozen-lockfile`
-  and
-  `npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm run check`.
-- Keep pnpm's package store in `frontend/.pnpm-store/` as configured by
-  `frontend/.npmrc`; never commit the store or `frontend/node_modules/`.
-- Run `node --check javascript/prompt_agent*.js` after editing browser scripts when Node is available.
-- `javascript/prompt_agent_90_ui.js` is generated Vite output and may exceed the 1000-line source limit; never edit it manually. Regenerate it from `frontend/` instead.
-- `javascript/prompt_agent_99_boot.js` is an intentionally tiny generated-UI gate and may only call the Svelte mount after `UI_READY` and `onUiLoaded` both allow it.
+- Python tests use Forge's venv: `..\..\venv\Scripts\python.exe -m unittest discover -s tests`.
+- Frontend uses Node `22.17.0` and pnpm `10.12.4` (pinned in `frontend/`). Without a version
+  manager run from `frontend/`:
+  `npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm <install --frozen-lockfile | run check | run test | run build>`.
+- Keep the pnpm store in `frontend/.pnpm-store/`; never commit it or `node_modules/`.
 
-## Local Models
+## Verification
 
-Local llama.cpp text/VLM inference, including the on-demand `llama-once`
-runtime and local reference-image analysis, was removed. All model profiles run
-against remote HTTP providers; do not reintroduce local model lifecycles, model
-paths, or bundled/GGUF artifacts.
+- Before committing: Python tests, `pnpm run check`, `pnpm run test`, `pnpm run build`.
+- For UI or Forge-DOM changes, also check the real panel in a running Forge Neo.
+- Every turn-ending path (done, stop, error, refresh) must leave the composer usable.
+- Add a focused regression test for each bugfix where the boundary is testable.
 
 ## Git
 
-- Commit in small verified increments.
-- Before each commit, inspect `git status --short`, `git diff --stat`, and recent log.
-- Stage only files that belong to the current increment.
-
-## Bugfix Verification and Audit
-
-- Reproduce UI bugs against the real frontend state transition before changing code; record the visible symptom and the state or event that caused it.
-- For session lifecycle bugs, verify success, failure, abort, refresh interruption, and stale-write recovery. A failed request must not leave the composer permanently disabled.
-- Add or update a focused regression test for every bugfix when the affected boundary is testable.
-- Run `python tools/test_gate.py fast` during the inner loop,
-  `python tools/test_gate.py affected` when mapped browser acceptance is needed,
-  and `python tools/test_gate.py full` before delivery. The affected gate warns on
-  stale high-level acceptance instead of making an old test dictate production
-  behavior; the full gate requires every critical mapping to be current.
-- Critical UI, session, agent/provider, security, and data-integrity behavior is
-  authoritative in `quality/acceptance.json`. Ordinary unit tests do not need an
-  acceptance mapping. Intentional behavior changes must use
-  `python tools/test_gate.py behavior-change <ID> --bump` and then review all
-  stale mapped tests.
-- High-level tests should assert observable semantics. Do not lock exact pixels,
-  private DOM structure, timer counts, or internal ordering unless the matching
-  acceptance explicitly requires it.
-- Append a concise entry to `AUDIT.md` with the root cause, changed files, commands run, and their outcomes. Do not include secrets, model files, caches, or raw user content in audit records.
+- Small verified commits; inspect `git status --short` and `git diff --stat` first and stage
+  only the files of the current change. Never commit `data/`.
