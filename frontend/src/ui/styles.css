@@ -1,21 +1,25 @@
 .pa-root {
-  --pa-bg: #10141f;
-  --pa-bg-sunken: #0b0f19;
-  --pa-bg-raised: #161b28;
-  --pa-bubble: #1c2333;
-  --pa-chip: rgba(255, 255, 255, 0.05);
-  --pa-hover: rgba(255, 255, 255, 0.06);
-  --pa-line: rgba(255, 255, 255, 0.07);
-  --pa-text: #e6e8ee;
-  --pa-text-2: #a3abbd;
-  --pa-muted: #8b93a7;
-  --pa-accent: #f97316;
-  --pa-accent-soft: rgba(249, 115, 22, 0.12);
-  --pa-accent-text: #fdba74;
+  /* Every color derives from the active Gradio theme, with the original design as fallback. */
+  --pa-text: var(--body-text-color, #e6e8ee);
+  --pa-bg: var(--background-fill-primary, var(--body-background-fill, #10141f));
+  --pa-bg-raised: color-mix(in srgb, var(--pa-text) 5%, var(--pa-bg));
+  --pa-bg-sunken: color-mix(in srgb, #000 22%, var(--pa-bg));
+  --pa-accent: var(--color-accent, #f97316);
+  --pa-on-accent: var(--button-primary-text-color, white);
+  --pa-bubble: color-mix(in srgb, var(--pa-accent) 14%, var(--pa-bg-raised));
+  --pa-chip: color-mix(in srgb, var(--pa-text) 6%, transparent);
+  --pa-hover: color-mix(in srgb, var(--pa-text) 9%, transparent);
+  --pa-line: color-mix(in srgb, var(--pa-text) 10%, transparent);
+  --pa-line-strong: color-mix(in srgb, var(--pa-text) 16%, transparent);
+  --pa-text-2: color-mix(in srgb, var(--pa-text) 72%, var(--pa-bg));
+  --pa-muted: var(--body-text-color-subdued, #8b93a7);
+  --pa-accent-soft: color-mix(in srgb, var(--pa-accent) 16%, transparent);
+  --pa-accent-text: color-mix(in srgb, var(--pa-accent) 60%, var(--pa-text));
+  --pa-focus: color-mix(in srgb, var(--pa-accent) 55%, transparent);
   --pa-ok: #5fd39a;
   --pa-bad: #f2817f;
   --pa-warn: #f5c451;
-  --pa-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --pa-mono: var(--font-mono, ui-monospace), "Cascadia Code", Consolas, monospace;
 
   position: fixed;
   top: 0;
@@ -28,14 +32,24 @@
   background: var(--pa-bg);
   color: var(--pa-text);
   border-left: 1px solid var(--pa-line);
-  font: 13px/1.55 ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--font, ui-sans-serif), "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
   text-align: left;
+}
+/* light Gradio themes: darker semantic colors and a lighter sunken surface */
+.pa-root.pa-light {
+  --pa-bg-sunken: color-mix(in srgb, var(--pa-text) 4%, var(--pa-bg));
+  --pa-bg-raised: color-mix(in srgb, var(--pa-text) 3%, var(--pa-bg));
+  --pa-ok: #15803d;
+  --pa-bad: #dc2626;
+  --pa-warn: #b45309;
 }
 .pa-root *, .pa-root *::before, .pa-root *::after { box-sizing: border-box; }
 .pa-root button { font: inherit; color: inherit; background: none; border: 0; margin: 0; cursor: pointer; }
 .pa-root button:disabled { cursor: default; opacity: 0.45; }
 .pa-root :focus { outline: none; }
-.pa-root :focus-visible { box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.55); border-radius: 7px; }
+.pa-root :focus-visible { box-shadow: 0 0 0 2px var(--pa-focus); border-radius: 7px; }
 .pa-root.pa-dragging { user-select: none; }
 .pa-icon { flex: none; display: block; }
 .pa-spin { animation: pa-spin 0.9s linear infinite; }
@@ -135,14 +149,14 @@
 
 /* composer */
 .pa-composer { flex: none; margin: 6px 12px 12px; background: var(--pa-bg-raised); border: 1px solid var(--pa-line); border-radius: 14px; padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
-.pa-composer:focus-within { border-color: rgba(249, 115, 22, 0.35); }
+.pa-composer:focus-within { border-color: var(--pa-focus); }
 .pa-composer textarea, .pa-edit textarea { width: 100%; resize: none; background: transparent; border: 0; color: var(--pa-text); font: inherit; line-height: 20px; padding: 0; max-height: 172px; }
 .pa-composer textarea::placeholder { color: var(--pa-muted); }
 .pa-composer-row { display: flex; align-items: center; gap: 4px; }
-.pa-outline-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.09) !important; color: var(--pa-text-2) !important; font-size: 12px; align-self: flex-start; }
+.pa-outline-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--pa-line-strong) !important; color: var(--pa-text-2) !important; font-size: 12px; align-self: flex-start; }
 .pa-outline-chip:hover { background: var(--pa-hover) !important; }
 .pa-hint { font-size: 11px; color: var(--pa-muted); margin-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pa-send { width: 28px; height: 28px; border-radius: 8px; background: var(--pa-accent) !important; color: #fff !important; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.pa-send { width: 28px; height: 28px; border-radius: 8px; background: var(--pa-accent) !important; color: var(--pa-on-accent) !important; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .pa-send:hover { filter: brightness(1.08); }
 .pa-drafts { display: flex; gap: 6px; flex-wrap: wrap; }
 .pa-draft { position: relative; }
@@ -165,12 +179,12 @@
 .pa-inline { display: flex; gap: 6px; align-items: center; }
 .pa-inline .pa-input { flex: 1; min-width: 0; }
 .pa-input { height: 30px; width: 100%; background: var(--pa-bg-sunken) !important; border: 1px solid var(--pa-line) !important; border-radius: 7px; color: var(--pa-text) !important; font-family: inherit; font-size: 13px; padding: 0 8px; }
-.pa-input:focus { border-color: rgba(249, 115, 22, 0.5) !important; }
+.pa-input:focus { border-color: var(--pa-focus) !important; }
 select.pa-input option { background: var(--pa-bg-raised); }
 .pa-root label.pa-check { flex-direction: row; align-items: center; gap: 8px; font-size: 12px; color: var(--pa-text-2); }
 .pa-check input { accent-color: var(--pa-accent); }
 .pa-form-actions { display: flex; align-items: center; gap: 6px; }
-.pa-primary { height: 28px; padding: 0 14px; border-radius: 8px; background: var(--pa-accent) !important; color: #fff !important; font-size: 12px; }
+.pa-primary { height: 28px; padding: 0 14px; border-radius: 8px; background: var(--pa-accent) !important; color: var(--pa-on-accent) !important; font-size: 12px; }
 .pa-status { font-size: 12px; color: var(--pa-text-2); }
 .pa-note { font-size: 12px; color: var(--pa-text-2); background: var(--pa-chip); border-radius: 8px; padding: 8px 10px; }
 .pa-notice { position: absolute; left: 12px; right: 12px; bottom: 120px; background: var(--pa-bg-raised); border: 1px solid var(--pa-line); border-radius: 10px; padding: 8px 12px; font-size: 12px; color: var(--pa-text); z-index: 6; }

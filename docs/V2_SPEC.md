@@ -443,34 +443,33 @@ data/                          运行数据，不入库
 
 ## 12. 视觉规范
 
-定稿：A（融入 Forge）+ B（聊天式输入与标签摘要）+ C（等宽内联 diff）。只做暗色（Forge Neo 默认暗色）。
+定稿：A（融入 Forge）+ B（聊天式输入与标签摘要）+ C（等宽内联 diff）。配色跟随当前 Gradio 主题和明暗模式。
 
 ### 12.1 颜色变量（定义在面板根节点 `.pa-root`）
 
-| 变量 | 值 | 用途 |
+所有颜色从 Gradio 主题变量派生，括号里是主题缺变量时的回退值。明暗由 `<body>` 的 `dark` 类决定，面板用 MutationObserver 跟随切换，亮色时加 `.pa-light`。
+
+| 变量 | 来源 | 用途 |
 |---|---|---|
-| `--pa-bg` | `#10141f` | 面板底色 |
-| `--pa-bg-sunken` | `#0b0f19` | diff、代码块底色（与 Forge 页面同色） |
-| `--pa-bg-raised` | `#161b28` | 输入卡片、弹出菜单 |
-| `--pa-bubble` | `#1c2333` | 用户消息气泡 |
-| `--pa-chip` | `rgba(255,255,255,.05)` | 标签底色 |
-| `--pa-hover` | `rgba(255,255,255,.06)` | 悬停 |
-| `--pa-line` | `rgba(255,255,255,.07)` | 分隔线、边框 |
-| `--pa-text` | `#e6e8ee` | 正文 |
-| `--pa-text-2` | `#a3abbd` | 标签文字、次要信息 |
-| `--pa-muted` | `#8b93a7` | 提示、占位、图标 |
-| `--pa-accent` | `#f97316` | 发送/停止、流式光标、焦点环 |
-| `--pa-accent-soft` | `rgba(249,115,22,.12)` / 文字 `#fdba74` | 提示词修改标签 |
-| `--pa-ok` | `#5fd39a` | 成功、diff 新增、可用状态点 |
-| `--pa-bad` | `#f2817f` | 失败、diff 删除、错误文字 |
-| `--pa-warn` | `#f5c451` | 中断、重试中 |
+| `--pa-text` | `--body-text-color`（`#e6e8ee`） | 正文 |
+| `--pa-bg` | `--background-fill-primary`（`#10141f`） | 面板底色 |
+| `--pa-bg-raised` | 正文色 5% 混入底色（亮色 3%） | 输入卡片、弹出菜单 |
+| `--pa-bg-sunken` | 黑色 22% 混入底色（亮色：正文色 4%） | diff、代码块底色 |
+| `--pa-bubble` | 主色 14% 混入 raised | 用户消息气泡 |
+| `--pa-chip` / `--pa-hover` / `--pa-line` / `--pa-line-strong` | 正文色 6% / 9% / 10% / 16% 透明混合 | 标签、悬停、分隔线、描边 |
+| `--pa-text-2` | 正文色 72% 混入底色 | 标签文字、次要信息 |
+| `--pa-muted` | `--body-text-color-subdued`（`#8b93a7`） | 提示、占位、图标 |
+| `--pa-accent` | `--color-accent`（`#f97316`） | 发送/停止、流式光标 |
+| `--pa-on-accent` | `--button-primary-text-color`（white） | 主色按钮上的文字 |
+| `--pa-accent-soft` / `--pa-accent-text` / `--pa-focus` | 主色 16% / 主色 60% 混入正文 / 主色 55% | 提示词修改标签、焦点环 |
+| `--pa-ok` / `--pa-bad` / `--pa-warn` | 暗色 `#5fd39a` `#f2817f` `#f5c451`；亮色 `#15803d` `#dc2626` `#b45309` | 成功/diff 新增、失败/diff 删除、中断/重试 |
 
 主色只用于：发送/停止按钮、流式光标、焦点环、提示词修改标签。其他地方一律中性色。
 
 ### 12.2 字体与尺寸
 
-- 正文：`ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif`，13px，行高 1.55。
-- 等宽（diff、代码、工具参数）：`ui-monospace, "Cascadia Code", Consolas, monospace`，11.5px，行高 1.6。
+- 正文：Gradio `--font`，回退 `ui-sans-serif, "PingFang SC", "Microsoft YaHei", sans-serif`，13px，行高 1.55。
+- 等宽（diff、代码、工具参数）：Gradio `--font-mono`，回退 `ui-monospace, "Cascadia Code", Consolas, monospace`，11.5px，行高 1.6。
 - 小字（标签、快捷键提示、时间）：12px / 11px。字重只用 400 和 500。
 - 间距基数 4px：消息间距 14px，面板内边距 12–14px，标签间距 6px。
 - 圆角：标签 999px，按钮 7–8px，diff/代码块 8px，输入卡片 14px，用户气泡 `14px 14px 4px 14px`。

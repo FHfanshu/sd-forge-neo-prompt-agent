@@ -13,6 +13,14 @@
   let menuOpen = $state(false);
   let dragging = $state(false);
   let noticeTimer = 0;
+  let dark = $state(document.body.classList.contains("dark"));
+
+  // follow Gradio's light/dark switch (it toggles the "dark" class on <body>)
+  $effect(() => {
+    const observer = new MutationObserver(() => (dark = document.body.classList.contains("dark")));
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  });
 
   const overlay = $derived(app.panel.mode === "overlay" || viewport < 900);
   const width = $derived(app.panel.open ? Math.min(app.panel.width, Math.max(320, viewport - 40)) : RAIL);
@@ -71,7 +79,7 @@
 
 <svelte:window onresize={() => (viewport = window.innerWidth)} onclick={onWindowClick} />
 
-<aside class="pa-root" class:pa-overlay={overlay} class:pa-dragging={dragging} style:width="{width}px" onfocusin={onPanelFocus}>
+<aside class="pa-root" class:pa-light={!dark} class:pa-overlay={overlay} class:pa-dragging={dragging} style:width="{width}px" onfocusin={onPanelFocus}>
   {#if !app.panel.open}
     <button type="button" class="pa-rail" title={zh.expand} aria-label={zh.expand} onclick={() => update({ open: true })}>
       <Icon name="message" />
