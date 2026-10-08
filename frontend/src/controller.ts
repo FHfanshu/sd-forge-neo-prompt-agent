@@ -15,6 +15,8 @@ const IMAGE_CACHE_LIMIT = 12;
 let abort: AbortController | null = null;
 let promptContext: PromptContext | null = null;
 let writeChain: Promise<unknown> = Promise.resolve();
+/** Resolves once the open session's full history is loaded; turns wait for it so context is complete. */
+let historyReady: Promise<void> = Promise.resolve();
 const imageCache = new Map<string, string>();
 let pendingDelta: StreamDelta = { content: "", reasoning: "" };
 let deltaFrame = 0;
@@ -134,13 +136,21 @@ export async function openSession(id: string | null): Promise<void> {
     return;
   }
   try {
-    let page = await api.messages(id);
-    let all = page.messages;
-    while (page.has_more && all.length) {
-      page = await api.messages(id, all[0].seq);
-      all = [...page.messages, ...all];
-    }
-    if (app.sessionId === id) app.messages = all;
+    // show the latest page at once, then fetch older history in the background
+    const first = await api.messages(id);
+    if (app.sessionId !== id) return;
+    app.messages = first.messages;
+    historyReady = (async () => {
+      let page = first;
+      let older: Message[] = [];
+      while (page.has_more) {
+        const oldest = (older[0] ?? first.messages[0])?.seq;
+        if (!oldest) break;
+        page = await api.messages(id, oldest, 500);
+        older = [...page.messages, ...older];
+      }
+      if (older.length && app.sessionId === id) app.messages = [...older, ...app.messages];
+    })().catch((error) => notify(errorText(error)));
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       app.sessionId = null;
@@ -207,6 +217,7 @@ async function startTurn(): Promise<void> {
   app.lastError = false;
   const signal = abort.signal;
   try {
+    await historyReady;
     if (!promptContext) promptContext = await api.context().catch(() => null);
     await runTurn(
       {

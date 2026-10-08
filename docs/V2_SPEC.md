@@ -12,7 +12,7 @@
 |---|---|
 | 面板 | 停靠在 Forge 页面右侧的 agent 对话 UI |
 | 目标页 | `txt2img` 或 `img2img`；`active` 表示当前所在的那个 |
-| 配置（profile） | 一组 LLM 连接设置：名称、Base URL、模型、API Key、推理强度 |
+| 服务商（provider，代码里叫 profile） | 一组 LLM 连接设置：名称、Base URL、API Key、推理强度，以及它下面的若干模型（每个模型可标记是否支持看图） |
 | 轮（turn） | 用户发一条消息到 agent 停止（回复完、出错或被停止）的全过程 |
 | 工具轮 | 一轮内模型请求一次工具调用并拿到结果，算一个工具轮 |
 | 附图 | 用户随消息附带的图片，存服务端 |
@@ -37,9 +37,9 @@
 
 ### 2.2 结构
 
-1. 顶栏：会话标题（点开会话列表）、配置/模型下拉、新会话、模式切换、折叠、设置。
+1. 顶栏：会话标题（点开会话列表）、新会话、模式切换、设置、折叠。
 2. 消息区：消息列表，见 §3.4。
-3. 输入区：附图预览条、`📎 附图` 和 `🖼 最新出图` 按钮、输入框、发送/停止按钮。
+3. 输入区：附图预览条、`📎 附图` 和 `🖼 最新出图` 按钮、输入框；右下角是模型选择器（按服务商分组列出各自的模型，不合并、不做路由）和发送/停止按钮。
 4. 设置视图：在面板内替换消息区显示，顶栏出现"返回"。
 
 ### 2.3 挂载
@@ -119,7 +119,8 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 - 新会话：标题为空，首条用户消息发出后取前 24 个字符（去换行）作为标题。
 - 会话列表：按 `updated_at` 倒序，显示标题和相对时间；支持重命名、删除（二次确认后永久删除，含附图文件）。
 - 当前会话 id 存 localStorage `pa2.session`；页面加载时打开它，不存在则打开最新会话，没有会话则新建空会话（空会话不入库，发出第一条消息时才创建）。
-- 每个会话记住所用配置 id；切换配置只影响之后的请求。
+- 每个会话记住所用服务商和模型；切换只影响之后的请求。新会话沿用用户上次选择的模型（localStorage `pa2.model`）。
+- 打开会话时先显示最近一页消息，更早的历史在后台加载；发起新一轮前会等历史加载完，保证上下文完整。
 - 刷新/关闭页面：
   - 助手消息在流式中每 2 秒、以及完成/停止/出错时写入服务端。
   - 页面加载时，服务端里 `status=streaming` 的消息改为 `interrupted`。
@@ -196,7 +197,8 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 所有名称类参数只能取自服务端枚举出的清单，不接受路径、`..`、绝对路径或 URL。
 
 **`read_attachment`** `{attachment_id, include_image?}` → `{pnginfo, width, height}`（+ 图片，需视觉）
-- `pnginfo` 结构：`{status: "ok"|"missing"|"unsupported"|"error", positive, negative, parameters: {...}, raw}`。
+- `pnginfo` 结构：`{status: "ok"|"missing"|"unsupported"|"error", positive, negative, parameters: {...}, raw}`。PNG 读文本块；WebP/JPEG 读 EXIF UserComment（Forge 的 WebP 输出就存在这里）。
+- 发给模型的用户消息里，每张附图都带 `[附图 attachment_id=…]` 标签，模型据此调用 `read_attachment`。
 
 **`search_resources`** `{kind: "style"|"lora"|"wildcard", query?, limit?≤50}` → `[{name, summary}]`
 **`inspect_resource`** `{kind, name}` → style：正/负提示词；lora：激活词、推荐权重、说明（来自 sidecar）；wildcard：前 100 行。
@@ -256,12 +258,12 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 | POST | `/profiles/{id}/models` | 调上游 `GET {base_url}/models` 返回模型 id 列表，用作连接测试 |
 | GET/PUT | `/settings` | `{civitai_enabled, has_civitai_key}`；PUT 可带 `civitai_api_key` |
 
-配置字段：`id`（服务端生成）、`name`（1–40 字）、`base_url`（http/https，末尾的 `/chat/completions` 会被去掉）、`model`（1–200 字）、`reasoning_effort`（`""|low|medium|high`）、`vision`（布尔）、`temperature`（可空，0–2）、`max_tokens`（可空，256–200000）。
+配置字段：`id`（服务端生成）、`name`（1–40 字）、`base_url`（http/https，末尾的 `/chat/completions` 会被去掉）、`models`（1–100 个 `{id, vision}`，id 不重复）、`reasoning_effort`（`""|low|medium|high`）、`temperature`（可空，0–2）、`max_tokens`（可空，256–200000）。旧格式（单个 `model` + `vision`）读取时自动转换。
 
 ### 6.2 对话
 
-`POST /chat`：`{profile_id, messages, tools}` → 透传上游 `text/event-stream`。
-- 服务端设置 `model`、`stream: true`、`stream_options.include_usage`、`reasoning_effort`、`temperature`，忽略浏览器传来的同名字段。
+`POST /chat`：`{profile_id, model, messages, tools}` → 透传上游 `text/event-stream`。`model` 必须是该服务商已配置的模型之一，否则 400。
+- 服务端设置 `stream: true`、`stream_options.include_usage`、`reasoning_effort`、`temperature`，忽略浏览器传来的同名字段。
 - 请求体上限 32 MB。
 - 客户端断开时服务端必须关闭上游连接。
 - 上游非 2xx：读取错误体，清洗后返回同状态码的 JSON 错误。
@@ -318,7 +320,7 @@ model-info/<sha256>.json
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
   profile_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-);
+);  -- 迁移 2：ALTER TABLE sessions ADD COLUMN model TEXT
 CREATE TABLE messages (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -346,6 +348,7 @@ CREATE TABLE attachments (
 
 - 条件：`profiles-v2.json` 不存在且 `profiles.json` 存在。只执行一次。
 - 导入 OpenAI 兼容类型的配置：名称、Base URL、模型、推理强度；其余类型跳过并记录数量。
+- Base URL 沿用 v1 的含义：路径里没有 `/v1`、`/v1beta`、`/openai` 时补 `/v1`（`api.deepseek.com` 除外）。
 - 对应密钥：从 `secrets.dpapi.json` 复制密文到 `secrets-v2.dpapi.json`（同一 entropy，无需解密）。
 - 设置页显示一次"已导入 N 个配置，跳过 M 个"。
 

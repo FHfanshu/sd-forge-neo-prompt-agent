@@ -47,8 +47,8 @@ export const api = {
   updateSession: (id: string, body: { title?: string; profile_id?: string | null; model?: string | null }) => call<Session>("PATCH", `/sessions/${id}`, body),
   deleteSession: (id: string) => call("DELETE", `/sessions/${id}`),
   recover: () => call<{ recovered: number }>("POST", "/sessions/recover"),
-  messages: (id: string, beforeSeq?: number) =>
-    call<{ messages: Message[]; has_more: boolean }>("GET", `/sessions/${id}/messages${beforeSeq ? `?before_seq=${beforeSeq}` : ""}`),
+  messages: (id: string, beforeSeq?: number, limit = 60) =>
+    call<{ messages: Message[]; has_more: boolean }>("GET", `/sessions/${id}/messages?limit=${limit}${beforeSeq ? `&before_seq=${beforeSeq}` : ""}`),
   putMessage: (sessionId: string, message: Message) =>
     call<{ seq: number }>("PUT", `/sessions/${sessionId}/messages/${message.id}`, message),
   deleteMessagesFrom: (sessionId: string, fromSeq: number) => call("DELETE", `/sessions/${sessionId}/messages?from_seq=${fromSeq}`),
