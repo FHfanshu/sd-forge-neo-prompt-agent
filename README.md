@@ -1,177 +1,33 @@
 # SD Forge Neo Prompt Agent
 
-> **Maintenance ended 2026-09-12. This project is archived.** It is no longer
-> developed as a standalone product; only crash, data-loss, or
-> asset-extraction blockers would be fixed. The durable outputs live on:
->
-> - [`generation-skills/`](generation-skills/README.md) — eight personal
->   anime image-generation skills (Anima prompting, OC design, reference
->   sheets, consistency, debugging, Danbooru methodology);
-> - [`danbooru-tools/`](danbooru-tools/README.md) — the standalone Danbooru
->   lookup tools (Python + CLI);
-> - [`character-definitions/`](character-definitions/README.md) — the minimal
->   character definition schema.
->
-> **ComfyTV is the production workspace.** Import the skills there (first
-> `anima-image-generation` + `anthro-oc-design`, then the rest) and use
-> `danbooru-tools` as the lookup backend. Git history keeps the full product
-> (chat UI, providers, sessions, streaming, Forge glue); it is preserved, not
-> maintained.
+在 Forge Neo 页面右侧停靠一个中文 agent 对话面板：和 LLM 一起写、改提示词和生成参数。
+**agent 不能出图**——参数调好后由你点 Generate，再点"最新出图"把结果交给它继续改。
 
-Single-agent prompt assistant for Forge Neo. The browser owns the Pi agent loop
-and keeps an IndexedDB session cache; Python owns durable synchronized chat
-history, profiles, secrets, provider streaming, and privileged Forge tools.
+## 功能
 
-Image reverse prompting is a separate sibling extension:
-`sd_forge_reverse_prompt`.
+- 停靠面板：挤压或覆盖两种模式，可折叠、可调宽度
+- 读写 txt2img / img2img 的正负提示词（补丁式修改，带防覆盖校验和红绿 diff）
+- 读写全部生成参数：checkpoint、预设、采样器、调度器、步数、CFG、种子、尺寸、批次、高清修复、重绘幅度
+- 看图：粘贴/拖放/选择图片，或一键附上最新出图；读取 PNG 生成参数，视觉模型可直接看图
+- 知识工具：Forge styles / LoRA / wildcards、checkpoint 与 LoRA 的 Civitai 信息（本地缓存）、
+  Danbooru 标签与 wiki、`generation-skills/` 技能文档、`character-definitions/` 角色定义
+- 会话历史保存在本机 SQLite，刷新页面不会丢，未完成的回复标记为"已中断"
+- 只支持 OpenAI 兼容接口；API Key 用 Windows DPAPI 加密保存在服务端，浏览器拿不到
 
-## Features
+## 安装
 
-- Floating assistant for composition, layout, and prompt rewriting
-- Frontend Pi runtime: stream, reason, tool calls, abort, terminal recovery
-- FIFO follow-ups while a response is active, with visible pause/resume recovery
-- Python-authoritative Model Profiles (HTTP)
-- Server-owned secrets; browser never receives plaintext keys or local paths
-- Cross-browser sessions with a server-side SQLite authority and IndexedDB cache
-- Interrupted-message recovery after refresh without request or tool replay
-- Hash-guarded positive/negative prompt reads and edits
-- Forge resource discovery: styles, wildcards, LoRAs, checkpoints, embeddings
+把本目录放到 `extensions/` 下并重启 Forge。依赖只有 Forge 自带的 `httpx`、`Pillow`。
+在面板右上角 ⚙ 里添加模型配置（Base URL、模型、API Key）。
 
-## Architecture
+旧版（v1）的配置和 API Key 会在首次启动时自动导入；旧会话不导入。旧文件不会被修改，
+旧版代码在 git 标签 `pre-v2`。
 
-API prefix: `/prompt-agent/api`.
+## 数据与隐私
 
-| Layer | Owns |
-| --- | --- |
-| Browser | `PromptAgentRuntime`, UI, IndexedDB session cache, profile selection |
-| Python | Durable session snapshots, profiles, secrets, provider proxy, Forge tools |
+运行数据在 `data/prompt-agent/`（可用环境变量 `SD_FORGE_NEO_PROMPT_AGENT_DATA` 改位置）。
+对外只发送：LLM 请求（到你配置的地址）、Danbooru 查询、Civitai 模型哈希查询（可在设置里关闭）。
+会话没有单独鉴权：能打开这个 Forge 页面的人就能看到对话历史。
 
-The server stores history but never owns or resumes agent execution. There is no
-managed sidecar, execution lease, or refresh-time tool replay. Refresh keeps
-partial content, marks unfinished messages `interrupted`, and never re-runs an
-old request. Concurrent stale edits are retained as conflict-copy sessions.
+## 开发
 
-Anyone who can use the Forge web UI can access synchronized Prompt Agent
-history. Do not expose Forge to an untrusted network without authentication.
-
-### Layout
-
-```text
-backend/prompt_agent/   # API, profiles, provider proxy, Forge tool validation
-prompt_agent/           # shared leaf modules (i18n, resources, images)
-scripts/                # Forge extension entry
-frontend/               # Svelte 5 source (build only)
-javascript/             # Forge-loaded browser scripts (incl. generated UI)
-tests/                  # Python + small host-script checks; tests/run_suite.py
-docs/                   # active product docs
-docs/archive/           # KT migration history (not product surface)
-data/                   # local runtime state (gitignored)
-```
-
-## Agent tools
-
-The agent always has a small core surface plus a `load_tools` meta-tool; grouped
-lookups stay hidden until the model requests them, so a request does not pay
-schema and selection cost for tools it will not use.
-
-Always available: `read_prompt`, `edit_prompt`, `read_generation_parameters`,
-`apply_generation_parameters`, `generate_image`, `prompt_toolkit`, `load_skill`,
-and `load_tools`.
-
-Revealed on demand through `load_tools`:
-
-| Group | Tools |
-| --- | --- |
-| `image` | `list_recent_generations`, `read_pnginfo`, `read_image` |
-| `forge_resources` | `search_resources`, `inspect_resource` |
-| `danbooru` | `search_danbooru_tags`, `inspect_danbooru_tags`, `related_danbooru_tags`, `search_danbooru_wikis`, `inspect_danbooru_wikis` |
-
-Attachment turns reveal `image`, and background-lookup turns reveal
-`forge_resources` and `danbooru`, automatically. Every revealed tool is
-revalidated by Python, and Forge DOM access is host-gated. Write tools require a
-fresh hash from a prior read. Non-empty prompt fields must use `patches` or
-`diff`; a full `prompt` body is accepted only when the current field is empty.
-`ask_teacher` is removed.
-
-## Model profiles
-
-Profiles define model ID, protocol, runtime (`remote-http`), endpoint,
-capabilities, and generation parameters. Public APIs only expose safe status
-flags (for example “has API key”). Browser requests cannot inject provider
-endpoints, credentials, model identifiers, or paths into generation endpoints.
-
-## License
-
-[MIT License](LICENSE). Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-Historical KT/Terrarium runtime remains only on branch `kt` / tag `kt-final`.
-
-## Verification
-
-Pinned frontend toolchain: Node `22.17.0`, pnpm `10.12.4`.
-
-Critical user behavior and cross-layer contracts are versioned in
-`quality/acceptance.json`. Ordinary unit tests stay lightweight. The acceptance
-gate detects stale high-level tests before they can force production code back
-to an older design.
-
-### Fast local loop
-
-```powershell
-python tools/test_gate.py fast
-python tools/test_gate.py affected
-```
-
-`fast` is the inner-loop gate: acceptance preflight, affected Python tests, and
-mapped or changed frontend vitest files. It skips frontend build, bundle budget,
-Playwright, and generated-script syntax. `affected` adds mapped browser
-acceptance. A stale acceptance test is reported and skipped during this
-development loop instead of forcing an immediate production-code rollback.
-
-### Frontend (when UI/source changes)
-
-```powershell
-npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm --dir frontend install --frozen-lockfile
-npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm --dir frontend run check
-npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm --dir frontend run test
-npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm --dir frontend run build
-npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm --dir frontend run bundle:size
-```
-
-### Full / CI-equivalent
-
-```powershell
-python tools/test_gate.py full
-```
-
-The full gate blocks stale acceptance mappings, expired flaky-test waivers,
-implementation regressions, generated-bundle drift, browser acceptance failures,
-and bundle-budget failures. CI keeps its path-filtered jobs for parallel speed
-but runs the same acceptance preflight before dispatching them.
-
-When product behavior intentionally changes, review the current acceptance first:
-
-```powershell
-python tools/test_gate.py behavior-change UI-WINDOW-001
-python tools/test_gate.py behavior-change UI-WINDOW-001 --bump
-```
-
-The bump intentionally makes mapped high-level tests stale until their assertions
-are reviewed. Do not bump revisions for a bugfix that restores already-documented
-behavior.
-
-### Real Forge (local only)
-
-Requires an already-running Forge Neo instance:
-
-```powershell
-npx --yes --package node@22.17.0 --package pnpm@10.12.4 pnpm --dir frontend run test:e2e:forge
-```
-
-Or run the release gate, which adds coverage and real-Forge evidence:
-
-```powershell
-python tools/test_gate.py release
-```
-
-Optional: `FORGE_BASE_URL`, HTTP basic-auth vars, `FORGE_MODEL_PROFILE_ID`.
+见 `AGENTS.md`、`docs/V2_SPEC.md`。

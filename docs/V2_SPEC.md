@@ -142,7 +142,7 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 
 **`read_prompt`** `{target?: "active"|"txt2img"|"img2img"}`
 → `{target, positive: {text, hash}, negative: {text, hash, effective}}`
-- `hash` = 文本 UTF-8 的 SHA-256 前 16 位十六进制。
+- `hash` = 文本的 53 位非加密哈希（cyrb53，14 位十六进制）。只用于检测过期状态；用同步哈希是因为局域网 http 访问时浏览器没有 `crypto.subtle`。
 - `effective` = 当前 CFG ≠ 1（CFG 为 1 时负向提示词不生效）。
 - `active` 但当前不在 txt2img/img2img 页 → `NOT_ON_GENERATION_TAB`。
 
@@ -179,7 +179,7 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 | `enable_hr`、`hr_scale`、`hr_upscaler`、`hr_steps`、`hr_denoising` | 仅 txt2img | upscaler 下拉 |
 | `denoising_strength` | 0–1，仅 img2img | |
 
-- `context_hash` = 上表所有当前值规范化 JSON 的 SHA-256 前 16 位。
+- `context_hash` = 目标页 + 上表所有当前值 JSON 的同一哈希。
 - 某控件在当前 Forge 中找不到时，该项不出现在 `values` 里，并在 `missing` 数组中列出，不报错。
 
 **`set_generation_parameters`** `{target?, context_hash, values: {...}}`
@@ -256,7 +256,7 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 | POST | `/profiles/{id}/models` | 调上游 `GET {base_url}/models` 返回模型 id 列表，用作连接测试 |
 | GET/PUT | `/settings` | `{civitai_enabled, has_civitai_key}`；PUT 可带 `civitai_api_key` |
 
-配置字段：`id`（服务端生成）、`name`（1–40 字）、`base_url`（http/https）、`model`（1–200 字）、`reasoning_effort`（`""|low|medium|high`）、`vision`（布尔）、`temperature`（可空，0–2）。
+配置字段：`id`（服务端生成）、`name`（1–40 字）、`base_url`（http/https，末尾的 `/chat/completions` 会被去掉）、`model`（1–200 字）、`reasoning_effort`（`""|low|medium|high`）、`vision`（布尔）、`temperature`（可空，0–2）、`max_tokens`（可空，256–200000）。
 
 ### 6.2 对话
 
@@ -281,7 +281,9 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 
 ### 6.4 工具
 
-`POST /tools/{name}`：body 为工具参数，返回 §5.1 的结果格式。只接受 §5.3 列出的名称。
+`POST /tools/{name}`：body 为工具参数，返回 §5.1 的结果格式（工具级错误也是 HTTP 200）。只接受 §5.3 列出的名称，未知名称 404。
+
+`GET /context`：skills 与角色清单（用于系统提示词）。`GET /forge/options`：sampler、scheduler、upscaler、checkpoint、preset 的可选值。
 
 ### 6.5 附图
 
