@@ -10,6 +10,21 @@
 
   const RAIL = 28;
   let viewport = $state(window.innerWidth);
+  // height covered by an on-screen keyboard; iPad Safari does not shrink the layout viewport for it
+  let keyboard = $state(0);
+
+  $effect(() => {
+    const visual = window.visualViewport;
+    if (!visual) return;
+    // pinch zoom also shrinks the visual viewport; only an unzoomed shrink is a keyboard
+    const update = () => (keyboard = Math.abs(visual.scale - 1) > 0.01 ? 0 : Math.max(0, Math.round(window.innerHeight - visual.height - visual.offsetTop)));
+    visual.addEventListener("resize", update);
+    visual.addEventListener("scroll", update);
+    return () => {
+      visual.removeEventListener("resize", update);
+      visual.removeEventListener("scroll", update);
+    };
+  });
   let menuOpen = $state(false);
   let dragging = $state(false);
   let noticeTimer = 0;
@@ -79,7 +94,7 @@
 
 <svelte:window onresize={() => (viewport = window.innerWidth)} onclick={onWindowClick} />
 
-<aside class="pa-root" class:pa-light={!dark} class:pa-overlay={overlay} class:pa-dragging={dragging} style:width="{width}px" onfocusin={onPanelFocus}>
+<aside class="pa-root" class:pa-light={!dark} class:pa-overlay={overlay} class:pa-dragging={dragging} style:width="{width}px" style:bottom="{keyboard}px" onfocusin={onPanelFocus}>
   {#if !app.panel.open}
     <button type="button" class="pa-rail" title={zh.expand} aria-label={zh.expand} onclick={() => update({ open: true })}>
       <Icon name="message" />

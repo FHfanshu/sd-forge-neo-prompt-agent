@@ -509,3 +509,13 @@ data/                          运行数据，不入库
 - Enter 发送，Shift+Enter 换行；输入法组合输入中按 Enter 不发送。
 - 焦点环：`0 0 0 2px var(--pa-accent)` 半透明，仅键盘焦点显示。
 - 动效只用于：标签展开（120ms 高度/透明度）、旋转图标；遵守 `prefers-reduced-motion`。
+
+### 12.5 触屏与平板
+
+主要使用场景之一是平板通过局域网以普通 HTTP 访问 WebUI。
+- 不依赖悬停：`(hover: none)` 下消息操作按钮和代码块复制按钮常显。
+- 触控尺寸：`(pointer: coarse)` 下工具行按钮 36px，选择器条目、菜单行 ≥40px，推理强度滑条 36px 高；拖宽手柄命中区 20px，且 `touch-action: none`。
+- 工具行不换行：按钮保持尺寸，只截断模型名。
+- 软键盘：用 `visualViewport` 计算被键盘遮挡的高度，把面板底部抬起；双指缩放时（scale ≠ 1）不抬。
+- 复制：`navigator.clipboard` 只在安全上下文可用，HTTP 局域网访问时退回临时 textarea + `execCommand("copy")`。
+- 视口 < 900px 自动切到覆盖模式。

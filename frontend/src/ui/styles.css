@@ -62,7 +62,7 @@
 .pa-rail { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; padding-top: 14px; color: var(--pa-muted); position: relative; }
 .pa-rail:hover { color: var(--pa-text); background: var(--pa-hover); }
 .pa-rail-dot { position: absolute; top: 36px; width: 6px; height: 6px; border-radius: 50%; background: var(--pa-accent); }
-.pa-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 2; }
+.pa-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 2; touch-action: none; }
 .pa-resize:hover, .pa-dragging .pa-resize { background: var(--pa-accent-soft); }
 
 /* header */
@@ -237,3 +237,27 @@ select.pa-input option { background: var(--pa-bg-raised); }
 .pa-models { display: flex; flex-direction: column; gap: 4px; }
 .pa-model-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 7px; background: var(--pa-bg-sunken); border: 1px solid var(--pa-line); font-size: 12px; color: var(--pa-text); }
 .pa-model-row .pa-check { margin-left: auto; }
+
+/* touch screens (tablets): nothing may depend on hover, and targets need finger size */
+@media (hover: none) {
+  .pa-actions, .pa-md .pa-code-copy { opacity: 1; }
+}
+@media (pointer: coarse) {
+  .pa-icon-btn, .pa-send { width: 36px; height: 36px; }
+  .pa-outline-chip, .pa-picker-btn { height: 36px; padding: 0 12px; }
+  .pa-composer-row { gap: 6px; }
+  .pa-picker-item { padding: 10px 10px; }
+  .pa-menu-row, .pa-list-row { min-height: 40px; }
+  .pa-chip { min-height: 32px; }
+  .pa-actions button { min-width: 32px; min-height: 32px; }
+  .pa-resize { left: -10px; width: 20px; }
+  .pa-slider { height: 36px; }
+  .pa-slider-thumb { width: 30px; height: 36px; margin: -18px 0 0 -15px; }
+  .pa-effort-pop { width: 300px; }
+}
+
+/* the toolbar never wraps: buttons keep their size, only the model name truncates */
+.pa-composer-row > * { flex-shrink: 0; white-space: nowrap; }
+.pa-composer-row > .pa-spacer, .pa-composer-row > .pa-hint { flex-shrink: 1; min-width: 0; }
+.pa-composer-row > .pa-picker:has(.pa-picker-label) { flex-shrink: 1; min-width: 60px; }
+.pa-composer-row .pa-picker-btn { max-width: 100%; }

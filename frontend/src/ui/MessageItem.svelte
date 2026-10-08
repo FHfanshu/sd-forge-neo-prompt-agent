@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from "../api";
   import { editAndResend, retry } from "../controller";
+  import { copyText } from "../lib/clipboard";
   import { renderMarkdown } from "../lib/markdown";
   import { app } from "../state.svelte";
   import type { Message } from "../types";
@@ -21,13 +22,9 @@
   const html = $derived(!isLive && message.role === "assistant" && message.content ? renderMarkdown(message.content) : "");
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(message.content);
-      copied = true;
-      setTimeout(() => (copied = false), 1200);
-    } catch {
-      // clipboard may be unavailable on plain-http origins
-    }
+    if (!(await copyText(message.content))) return;
+    copied = true;
+    setTimeout(() => (copied = false), 1200);
   }
 
   function startEdit() {
@@ -41,9 +38,14 @@
   }
 
   function onMarkdownClick(event: MouseEvent) {
-    const button = (event.target as HTMLElement).closest(".pa-code-copy");
+    const button = (event.target as HTMLElement).closest<HTMLElement>(".pa-code-copy");
     const code = button?.parentElement?.querySelector("code");
-    if (code) void navigator.clipboard?.writeText(code.textContent ?? "").catch(() => {});
+    if (!button || !code) return;
+    void copyText(code.textContent ?? "").then((ok) => {
+      if (!ok) return;
+      button.textContent = "已复制";
+      setTimeout(() => (button.textContent = "复制"), 1200);
+    });
   }
 </script>
 
