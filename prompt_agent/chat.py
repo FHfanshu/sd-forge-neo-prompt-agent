@@ -75,7 +75,7 @@ class ChatProxy:
 
     async def open_stream(self, body: dict[str, Any]) -> AsyncIterator[bytes]:
         """Connect upstream and return a byte iterator. Errors before the first byte raise ToolError."""
-        profile = self.profiles.get(str(body.get("profile_id") or ""))
+        profile = self.profiles.resolve(str(body.get("profile_id") or ""), str(body.get("model") or ""))
         api_key = self.profiles.api_key(profile["id"])
         url, headers, payload = upstream_request(profile, api_key, body)
         client = self._client()

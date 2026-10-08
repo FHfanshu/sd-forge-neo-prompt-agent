@@ -45,6 +45,7 @@ function harness(responses: Array<(signal: AbortSignal) => Promise<Response>>, o
     imageUrl: async (aid) => `data:image/jpeg;base64,${aid}`,
     newId: () => `m${++id}`,
     profileId: "p",
+    model: "m",
     vision: true,
     systemPrompt: "sys",
     tools: [],

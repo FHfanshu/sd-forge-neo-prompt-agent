@@ -113,7 +113,7 @@ def build_router(profiles: ProfileStore, sessions: SessionStore, chat: ChatProxy
     @guarded
     async def create_session(request: Request):
         body = await _json(request)
-        return await run_in_threadpool(sessions.create_session, str(body.get("title") or ""), body.get("profile_id"), body.get("id"))
+        return await run_in_threadpool(sessions.create_session, str(body.get("title") or ""), body.get("profile_id"), body.get("id"), body.get("model"))
 
     @router.post("/sessions/recover")
     @guarded

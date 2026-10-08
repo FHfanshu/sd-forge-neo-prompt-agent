@@ -31,14 +31,14 @@ class ApiTest(unittest.TestCase):
         app = FastAPI()
         app.include_router(build_router(self.profiles, self.sessions, chat, Tools(self.profiles, self.sessions), lambda: {"sampler": ["Euler"]}))
         self.client = TestClient(app)
-        self.profile = self.profiles.upsert(None, {"name": "p", "base_url": "https://llm.test/v1", "model": "real-model",
+        self.profile = self.profiles.upsert(None, {"name": "p", "base_url": "https://llm.test/v1", "models": ["real-model"],
                                                    "api_key": "sk-123", "reasoning_effort": "high"})
 
     def tearDown(self):
         self.data.cleanup()
 
     def test_chat_forwards_with_stored_model_and_key(self):
-        body = {"profile_id": self.profile["id"], "model": "evil", "base_url": "http://evil", "messages": [{"role": "user", "content": "x"}],
+        body = {"profile_id": self.profile["id"], "model": "real-model", "base_url": "http://evil", "messages": [{"role": "user", "content": "x"}],
                 "tools": [{"type": "function", "function": {"name": "t", "parameters": {}}}]}
         response = self.client.post("/prompt-agent/v2/chat", json=body)
         self.assertEqual(response.status_code, 200)
@@ -52,9 +52,15 @@ class ApiTest(unittest.TestCase):
         self.assertTrue(payload["stream"])
         self.assertNotIn("base_url", payload)
 
+    def test_chat_rejects_model_not_configured_for_provider(self):
+        body = {"profile_id": self.profile["id"], "model": "evil", "messages": [{"role": "user", "content": "x"}]}
+        response = self.client.post("/prompt-agent/v2/chat", json=body)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.upstream, [])
+
     def test_chat_upstream_error_is_sanitized(self):
         self.reply = lambda request: httpx.Response(401, json={"error": {"message": "bad key sk-123"}})
-        response = self.client.post("/prompt-agent/v2/chat", json={"profile_id": self.profile["id"], "messages": [{"role": "user", "content": "x"}]})
+        response = self.client.post("/prompt-agent/v2/chat", json={"profile_id": self.profile["id"], "model": "real-model", "messages": [{"role": "user", "content": "x"}]})
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["error"]["code"], "AUTH")
         self.assertNotIn("sk-123", response.text)
@@ -64,7 +70,7 @@ class ApiTest(unittest.TestCase):
             raise httpx.ConnectError("nope")
 
         self.reply = boom
-        response = self.client.post("/prompt-agent/v2/chat", json={"profile_id": self.profile["id"], "messages": [{"role": "user", "content": "x"}]})
+        response = self.client.post("/prompt-agent/v2/chat", json={"profile_id": self.profile["id"], "model": "real-model", "messages": [{"role": "user", "content": "x"}]})
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["error"]["code"], "NETWORK")
 
@@ -108,7 +114,7 @@ class ApiTest(unittest.TestCase):
 class ChatUnitTest(unittest.TestCase):
     def test_upstream_request_requires_messages(self):
         with self.assertRaises(ToolError):
-            upstream_request({"model": "m", "base_url": "http://x"}, "", {"messages": []})
+            upstream_request({"models": ["m"], "base_url": "http://x"}, "", {"messages": []})
 
     def test_context_length_error_code(self):
         error = sanitize_error(400, b'{"error":{"message":"maximum context length exceeded"}}', [])
@@ -128,11 +134,11 @@ class ChatUnitTest(unittest.TestCase):
         data = TempData()
         try:
             profiles = data.profiles()
-            profile = profiles.upsert(None, {"name": "p", "base_url": "http://x", "model": "m"})
+            profile = profiles.upsert(None, {"name": "p", "base_url": "http://x", "models": ["m"]})
             proxy = ChatProxy(profiles, transport=httpx.MockTransport(lambda r: httpx.Response(200, stream=Stream())))
 
             async def consume_one():
-                iterator = await proxy.open_stream({"profile_id": profile["id"], "messages": [{"role": "user", "content": "x"}]})
+                iterator = await proxy.open_stream({"profile_id": profile["id"], "model": "m", "messages": [{"role": "user", "content": "x"}]})
                 first = await iterator.__anext__()
                 await iterator.aclose()  # client disconnect
                 return first

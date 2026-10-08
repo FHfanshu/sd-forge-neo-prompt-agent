@@ -110,7 +110,7 @@ async function executeTool(call: ToolCall, signal: AbortSignal) {
     }
   }
   const result = await api.tool(call.name, args, signal);
-  const wantsImage = call.name === "read_attachment" && result.ok && args.include_image === true && app.profile?.vision;
+  const wantsImage = call.name === "read_attachment" && result.ok && args.include_image === true && app.model?.vision;
   return { result, imageAttachmentId: wantsImage ? String(args.attachment_id) : undefined };
 }
 
@@ -156,10 +156,11 @@ async function ensureSession(firstText: string): Promise<string> {
     }
     return app.sessionId;
   }
-  const session = await api.createSession({ title: titleFrom(firstText), profile_id: app.profileId || null });
+  const session = await api.createSession({ title: titleFrom(firstText), profile_id: app.profileId || null, model: app.model?.id ?? null });
   app.sessions = [session, ...app.sessions];
   app.sessionId = session.id;
   app.draftProfileId = null;
+  app.draftModel = null;
   rememberSession(session.id);
   return session.id;
 }
@@ -179,18 +180,22 @@ export async function deleteSession(id: string): Promise<void> {
   if (app.sessionId === id) await openSession(null);
 }
 
-export async function chooseProfile(profileId: string): Promise<void> {
+export async function chooseModel(profileId: string, model: string): Promise<void> {
   if (app.sessionId) {
-    const updated = await api.updateSession(app.sessionId, { profile_id: profileId });
+    const updated = await api.updateSession(app.sessionId, { profile_id: profileId, model });
     app.sessions = app.sessions.map((s) => (s.id === updated.id ? updated : s));
-  } else app.draftProfileId = profileId;
+  } else {
+    app.draftProfileId = profileId;
+    app.draftModel = model;
+  }
 }
 
 // -- turns ----------------------------------------------------------------------------
 
 async function startTurn(): Promise<void> {
   const profile = app.profile;
-  if (!profile) {
+  const model = app.model;
+  if (!profile || !model) {
     notify(zh.noProfile);
     return;
   }
@@ -222,7 +227,8 @@ async function startTurn(): Promise<void> {
         imageUrl: imageDataUrl,
         newId,
         profileId: profile.id,
-        vision: profile.vision,
+        model: model.id,
+        vision: model.vision,
         systemPrompt: buildSystemPrompt(promptContext),
         tools: openAiTools(),
       },
@@ -239,7 +245,7 @@ export async function send(text: string): Promise<boolean> {
   const content = text.trim();
   const attachments: AttachmentRef[] = app.drafts.map(({ id, width, height }) => ({ id, width, height }));
   if (app.busy || (!content && !attachments.length)) return false;
-  if (!app.profile) {
+  if (!app.model) {
     notify(zh.noProfile);
     return false;
   }

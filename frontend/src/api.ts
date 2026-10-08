@@ -43,8 +43,8 @@ export const api = {
   saveSettings: (body: Record<string, unknown>) => call<Settings>("PUT", "/settings", body),
 
   sessions: () => call<{ sessions: Session[] }>("GET", "/sessions"),
-  createSession: (body: { id?: string; title?: string; profile_id?: string | null }) => call<Session>("POST", "/sessions", body),
-  updateSession: (id: string, body: { title?: string; profile_id?: string | null }) => call<Session>("PATCH", `/sessions/${id}`, body),
+  createSession: (body: { id?: string; title?: string; profile_id?: string | null; model?: string | null }) => call<Session>("POST", "/sessions", body),
+  updateSession: (id: string, body: { title?: string; profile_id?: string | null; model?: string | null }) => call<Session>("PATCH", `/sessions/${id}`, body),
   deleteSession: (id: string) => call("DELETE", `/sessions/${id}`),
   recover: () => call<{ recovered: number }>("POST", "/sessions/recover"),
   messages: (id: string, beforeSeq?: number) =>

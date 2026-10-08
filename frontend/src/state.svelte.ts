@@ -1,4 +1,4 @@
-import type { Message, Profile, Session, Settings, TurnState } from "./types";
+import type { Message, ModelEntry, Profile, Session, Settings, TurnState } from "./types";
 
 export type PanelMode = "squeeze" | "overlay";
 
@@ -66,6 +66,7 @@ class AppState {
   sessions = $state.raw<Session[]>([]);
   sessionId = $state<string | null>(null);
   draftProfileId = $state<string | null>(null);
+  draftModel = $state<string | null>(null);
   messages = $state.raw<Message[]>([]);
   visibleCount = $state(PAGE_SIZE);
   live = $state({ id: "", content: "", reasoning: "" });
@@ -92,6 +93,13 @@ class AppState {
 
   get profile(): Profile | null {
     return this.profiles.find((p) => p.id === this.profileId) ?? null;
+  }
+
+  /** Selected model of the selected provider; falls back to the provider's first model. */
+  get model(): ModelEntry | null {
+    const models = this.profile?.models ?? [];
+    const wanted = this.session ? this.session.model : this.draftModel;
+    return models.find((m) => m.id === wanted) ?? models[0] ?? null;
   }
 
   get busy(): boolean {

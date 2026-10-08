@@ -3,23 +3,30 @@
   import { errorText } from "../agent/loop";
   import { refreshProfiles } from "../controller";
   import { app } from "../state.svelte";
-  import type { Profile } from "../types";
+  import type { ModelEntry, Profile } from "../types";
   import { zh } from "../zh";
   import Icon from "./Icon.svelte";
 
-  type Form = { id: string | null; name: string; base_url: string; model: string; api_key: string; clear_key: boolean; reasoning_effort: string; vision: boolean; temperature: string; max_tokens: string; has_api_key: boolean };
+  type Form = { id: string | null; name: string; base_url: string; models: ModelEntry[]; api_key: string; clear_key: boolean; reasoning_effort: string; temperature: string; max_tokens: string; has_api_key: boolean };
 
   let form = $state<Form | null>(null);
   let models = $state<string[]>([]);
   let status = $state("");
   let civitaiKey = $state("");
+  let newModel = $state("");
+
+  function addModel(id = newModel.trim()) {
+    if (!form || !id || form.models.some((m) => m.id === id)) return;
+    form.models = [...form.models, { id, vision: false }];
+    newModel = "";
+  }
 
   function edit(profile: Profile | null) {
     status = "";
     models = [];
     form = profile
-      ? { ...profile, api_key: "", clear_key: false, temperature: profile.temperature?.toString() ?? "", max_tokens: profile.max_tokens?.toString() ?? "" }
-      : { id: null, name: "", base_url: "https://api.openai.com/v1", model: "", api_key: "", clear_key: false, reasoning_effort: "", vision: false, temperature: "", max_tokens: "", has_api_key: false };
+      ? { ...profile, models: profile.models.map((m) => ({ ...m })), api_key: "", clear_key: false, temperature: profile.temperature?.toString() ?? "", max_tokens: profile.max_tokens?.toString() ?? "" }
+      : { id: null, name: "", base_url: "https://api.openai.com/v1", models: [], api_key: "", clear_key: false, reasoning_effort: "", temperature: "", max_tokens: "", has_api_key: false };
   }
 
   async function save() {
@@ -27,9 +34,8 @@
     const body: Record<string, unknown> = {
       name: form.name,
       base_url: form.base_url,
-      model: form.model,
+      models: form.models,
       reasoning_effort: form.reasoning_effort,
-      vision: form.vision,
       temperature: form.temperature === "" ? null : Number(form.temperature),
       max_tokens: form.max_tokens === "" ? null : Number(form.max_tokens),
     };
@@ -85,14 +91,24 @@
     <div class="pa-form">
       <label><span>{zh.profileName}</span><input class="pa-input" bind:value={form.name} maxlength="40" /></label>
       <label><span>{zh.baseUrl}</span><input class="pa-input" bind:value={form.base_url} placeholder="https://api.deepseek.com" /></label>
-      <label>
-        <span>{zh.model}</span>
+      <div class="pa-form-block">
+        <span>{zh.models}</span>
+        <div class="pa-models">
+          {#each form.models as model, index (model.id)}
+            <div class="pa-model-row">
+              <span class="pa-picker-name">{model.id}</span>
+              <label class="pa-check"><input type="checkbox" bind:checked={form.models[index].vision} />{zh.visionShort}</label>
+              <button type="button" class="pa-icon-btn pa-sm" aria-label={zh.delete} onclick={() => form && (form.models = form.models.filter((m) => m.id !== model.id))}><Icon name="x" size={12} /></button>
+            </div>
+          {/each}
+        </div>
         <div class="pa-inline">
-          <input class="pa-input" bind:value={form.model} list="pa-model-list" />
+          <input class="pa-input" bind:value={newModel} list="pa-model-list" placeholder={zh.modelPlaceholder} onkeydown={(e) => e.key === "Enter" && (e.preventDefault(), addModel())} />
+          <button type="button" class="pa-text-btn" disabled={!newModel.trim()} onclick={() => addModel()}>{zh.addModel}</button>
           <button type="button" class="pa-text-btn" disabled={!form.id} title={form.id ? "" : "先保存再获取"} onclick={fetchModels}>{zh.fetchModels}</button>
         </div>
         <datalist id="pa-model-list">{#each models as model}<option value={model}></option>{/each}</datalist>
-      </label>
+      </div>
       <label>
         <span>{zh.apiKey}</span>
         <input class="pa-input" type="password" autocomplete="off" bind:value={form.api_key} placeholder={form.has_api_key ? zh.apiKeySaved : ""} />
@@ -110,7 +126,6 @@
         <label><span>{zh.temperature}</span><input class="pa-input" bind:value={form.temperature} inputmode="decimal" /></label>
         <label><span>{zh.maxTokens}</span><input class="pa-input" bind:value={form.max_tokens} inputmode="numeric" /></label>
       </div>
-      <label class="pa-check"><input type="checkbox" bind:checked={form.vision} />{zh.vision}</label>
       <div class="pa-form-actions">
         {#if form.id}<button type="button" class="pa-text-btn pa-danger" onclick={remove}><Icon name="trash" size={13} />{zh.delete}</button>{/if}
         <span class="pa-spacer"></span>
@@ -126,7 +141,7 @@
         <div class="pa-list-row">
           <button type="button" class="pa-menu-main" onclick={() => edit(profile)}>
             <span class="pa-menu-title">{profile.name}</span>
-            <span class="pa-menu-time">{profile.model}{profile.has_api_key ? "" : " · 无 Key"}</span>
+            <span class="pa-menu-time">{profile.models.length} 个模型{profile.has_api_key ? "" : ` · ${zh.noKey}`}</span>
           </button>
           {#if profile.id === app.defaultProfileId}
             <span class="pa-tag">{zh.isDefault}</span>

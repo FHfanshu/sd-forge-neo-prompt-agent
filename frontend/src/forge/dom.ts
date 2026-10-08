@@ -71,8 +71,9 @@ export function readDropdown(rootEl: HTMLElement): string | null {
   return input ? input.value : null;
 }
 
+/** Short wait for Gradio to re-render. Not requestAnimationFrame: that pauses in background tabs. */
 function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  return new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 /** Select a Gradio 4 dropdown option the way a user would (focus → mousedown on the option). */

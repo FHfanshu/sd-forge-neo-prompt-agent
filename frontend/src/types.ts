@@ -33,17 +33,22 @@ export interface Session {
   id: string;
   title: string;
   profile_id: string | null;
+  model: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface ModelEntry {
+  id: string;
+  vision: boolean;
 }
 
 export interface Profile {
   id: string;
   name: string;
   base_url: string;
-  model: string;
+  models: ModelEntry[];
   reasoning_effort: "" | "low" | "medium" | "high";
-  vision: boolean;
   temperature: number | null;
   max_tokens: number | null;
   has_api_key: boolean;

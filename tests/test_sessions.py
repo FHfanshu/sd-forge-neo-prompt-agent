@@ -47,6 +47,12 @@ class SessionStoreTest(unittest.TestCase):
         self.assertEqual(statuses, {"a": "interrupted", "b": "complete"})
         self.assertEqual(self.store.list_messages(sid)["messages"][0]["content"], "partial")
 
+    def test_session_model_column(self):
+        session = self.store.create_session("t", "p1", model="m1")
+        updated = self.store.update_session(session["id"], {"model": "m2"})
+        self.assertEqual(updated["model"], "m2")
+        self.assertEqual(self.store.get_session(session["id"])["model"], "m2")
+
     def test_delete_from_seq(self):
         sid = self.session["id"]
         for index in range(4):

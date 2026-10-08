@@ -4,6 +4,7 @@
   import { app } from "../state.svelte";
   import { zh } from "../zh";
   import Icon from "./Icon.svelte";
+  import ModelPicker from "./ModelPicker.svelte";
 
   let text = $state("");
   let textarea: HTMLTextAreaElement;
@@ -64,6 +65,7 @@
     bind:value={text}
     rows="1"
     placeholder={zh.placeholder}
+    title={zh.hint}
     oninput={resize}
     onkeydown={onKeydown}
     onpaste={onPaste}
@@ -74,7 +76,8 @@
     <button type="button" class="pa-icon-btn" title={zh.attach} aria-label={zh.attach} onclick={() => fileInput.click()}><Icon name="paperclip" /></button>
     <button type="button" class="pa-outline-chip" onclick={() => attachLatestOutput()}><Icon name="photo" size={14} />{zh.latestOutput}</button>
     <span class="pa-spacer"></span>
-    <span class="pa-hint">{app.turnNote || zh.hint}</span>
+    {#if app.turnNote}<span class="pa-hint">{app.turnNote}</span>{/if}
+    <ModelPicker />
     <button type="button" class="pa-send" aria-label={app.busy ? zh.stop : zh.send} title={app.busy ? zh.stop : zh.send} onclick={submit}>
       <Icon name={app.busy ? "stop" : "arrow-up"} size={15} />
     </button>

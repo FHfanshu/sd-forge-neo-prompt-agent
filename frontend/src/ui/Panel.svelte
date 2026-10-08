@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { chooseProfile, onPanelFocus, openSession } from "../controller";
+  import { onPanelFocus, openSession } from "../controller";
   import { app, savePanel } from "../state.svelte";
   import { zh } from "../zh";
   import Composer from "./Composer.svelte";
@@ -16,7 +16,6 @@
 
   const overlay = $derived(app.panel.mode === "overlay" || viewport < 900);
   const width = $derived(app.panel.open ? Math.min(app.panel.width, Math.max(320, viewport - 40)) : RAIL);
-  const profileState = $derived(app.lastError || !app.profile ? "bad" : app.turnNote ? "warn" : "ok");
 
   // squeeze mode: make room on the page body; restore on teardown
   $effect(() => {
@@ -84,14 +83,6 @@
         <button type="button" class="pa-title-btn" onclick={() => (menuOpen = !menuOpen)}>
           <span class="pa-title">{app.session?.title || zh.newSession}</span><Icon name="chevron-down" size={14} />
         </button>
-        <label class="pa-model">
-          <span class="pa-dot pa-dot-{profileState}"></span>
-          <select value={app.profileId} disabled={app.busy || !app.profiles.length} onchange={(e) => chooseProfile(e.currentTarget.value)}>
-            {#if !app.profiles.length}<option value="">{zh.noProfile}</option>{/if}
-            {#each app.profiles as profile (profile.id)}<option value={profile.id}>{profile.name}</option>{/each}
-          </select>
-          <Icon name="chevron-down" size={12} />
-        </label>
       {/if}
       <span class="pa-spacer"></span>
       {#if app.view === "chat"}

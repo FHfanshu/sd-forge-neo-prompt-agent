@@ -41,6 +41,7 @@ SCHEMA = [
     );
     CREATE INDEX messages_session_seq ON messages(session_id, seq);
     """,
+    "ALTER TABLE sessions ADD COLUMN model TEXT;",
 ]
 
 
@@ -85,11 +86,13 @@ class SessionStore:
             raise ToolError("NOT_FOUND", "会话不存在", status=404)
         return dict(row)
 
-    def create_session(self, title: str = "", profile_id: str | None = None, session_id: str | None = None) -> dict[str, Any]:
+    def create_session(self, title: str = "", profile_id: str | None = None, session_id: str | None = None, model: str | None = None) -> dict[str, Any]:
         stamp = now_ms()
-        session = {"id": session_id or new_id("s-"), "title": str(title or "")[:80], "profile_id": profile_id, "created_at": stamp, "updated_at": stamp}
+        session = {"id": session_id or new_id("s-"), "title": str(title or "")[:80], "profile_id": profile_id, "model": model,
+                   "created_at": stamp, "updated_at": stamp}
         with self._lock, self._connect() as db:
-            db.execute("INSERT INTO sessions VALUES (:id, :title, :profile_id, :created_at, :updated_at)", session)
+            db.execute("INSERT INTO sessions (id, title, profile_id, model, created_at, updated_at)"
+                       " VALUES (:id, :title, :profile_id, :model, :created_at, :updated_at)", session)
         return session
 
     def update_session(self, session_id: str, changes: dict[str, Any]) -> dict[str, Any]:
@@ -98,9 +101,11 @@ class SessionStore:
             current["title"] = str(changes["title"] or "")[:80]
         if "profile_id" in changes:
             current["profile_id"] = changes["profile_id"] or None
+        if "model" in changes:
+            current["model"] = str(changes["model"] or "")[:200] or None
         current["updated_at"] = now_ms()
         with self._lock, self._connect() as db:
-            db.execute("UPDATE sessions SET title = :title, profile_id = :profile_id, updated_at = :updated_at WHERE id = :id", current)
+            db.execute("UPDATE sessions SET title = :title, profile_id = :profile_id, model = :model, updated_at = :updated_at WHERE id = :id", current)
         return current
 
     def delete_session(self, session_id: str) -> None:

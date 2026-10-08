@@ -34,13 +34,46 @@ def normalize_base_url(value: Any) -> str:
     return url
 
 
+def legacy_base_url(endpoint: Any) -> str:
+    """v1 appended /v1 unless the endpoint already named a version (DeepSeek excepted); keep that meaning."""
+    value = re.sub(r"/chat/completions$", "", str(endpoint or "").strip().rstrip("/"))
+    parsed = urlparse(value)
+    path = parsed.path.rstrip("/").lower()
+    if parsed.netloc.lower() == "api.deepseek.com" or path.endswith(("/v1", "/v1beta", "/openai")):
+        return value
+    return value + "/v1"
+
+
+def _models(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 100:
+        raise ToolError("INVALID_ARGS", "至少要有 1 个模型（最多 100 个）")
+    models, seen = [], set()
+    for item in raw:
+        item = item if isinstance(item, dict) else {"id": item}
+        model_id = str(item.get("id") or "").strip()
+        if not 1 <= len(model_id) <= 200:
+            raise ToolError("INVALID_ARGS", "模型名需要 1–200 个字符")
+        if model_id in seen:
+            raise ToolError("INVALID_ARGS", f"模型重复：{model_id}")
+        seen.add(model_id)
+        models.append({"id": model_id, "vision": bool(item.get("vision"))})
+    return models
+
+
+def _normalized(profile: dict[str, Any]) -> dict[str, Any]:
+    """Accept the early single-model shape (model + vision) written by the first v2 build."""
+    if "models" not in profile and profile.get("model"):
+        profile = {**profile, "models": [{"id": profile["model"], "vision": bool(profile.get("vision"))}]}
+    profile = {k: v for k, v in profile.items() if k not in ("model", "vision")}
+    profile.setdefault("models", [])
+    return profile
+
+
 def _validated(raw: dict[str, Any], profile_id: str) -> dict[str, Any]:
     name = str(raw.get("name") or "").strip()
-    model = str(raw.get("model") or "").strip()
     if not 1 <= len(name) <= 40:
         raise ToolError("INVALID_ARGS", "名称需要 1–40 个字符")
-    if not 1 <= len(model) <= 200:
-        raise ToolError("INVALID_ARGS", "模型名需要 1–200 个字符")
+    models = _models(raw.get("models"))
     effort = str(raw.get("reasoning_effort") or "")
     if effort not in REASONING_EFFORTS:
         raise ToolError("INVALID_ARGS", "推理强度只能是 low、medium、high 或留空")
@@ -68,9 +101,8 @@ def _validated(raw: dict[str, Any], profile_id: str) -> dict[str, Any]:
         "id": profile_id,
         "name": name,
         "base_url": normalize_base_url(raw.get("base_url")),
-        "model": model,
+        "models": models,
         "reasoning_effort": effort,
-        "vision": bool(raw.get("vision")),
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
@@ -98,7 +130,7 @@ class ProfileStore:
     # -- state -------------------------------------------------------------
     def _state(self) -> dict[str, Any]:
         state = read_json(self.profiles_path, {})
-        profiles = [p for p in state.get("profiles", []) if isinstance(p, dict) and p.get("id")]
+        profiles = [_normalized(p) for p in state.get("profiles", []) if isinstance(p, dict) and p.get("id")]
         return {"profiles": profiles, "default_id": state.get("default_id") or ""}
 
     def _secrets(self) -> dict[str, str]:
@@ -122,10 +154,9 @@ class ProfileStore:
                 profile = _validated(
                     {
                         "name": str(item.get("display_name") or item.get("model_id") or "导入的配置")[:40],
-                        "base_url": item.get("endpoint"),
-                        "model": item.get("model_id"),
+                        "base_url": legacy_base_url(item.get("endpoint")),
+                        "models": [{"id": item.get("model_id"), "vision": (item.get("capabilities") or {}).get("vision", False)}],
                         "reasoning_effort": effort if effort in REASONING_EFFORTS else "",
-                        "vision": (item.get("capabilities") or {}).get("vision", False),
                         "temperature": params.get("temperature"),
                         "max_tokens": params.get("max_tokens"),
                     },
@@ -157,6 +188,14 @@ class ProfileStore:
             if profile["id"] == profile_id:
                 return profile
         raise ToolError("NOT_FOUND", "找不到这个模型配置", status=404)
+
+    def resolve(self, profile_id: str, model: str) -> dict[str, Any]:
+        """The provider plus one of its configured models; the browser can only pick from this list."""
+        profile = self.get(profile_id)
+        match = next((m for m in profile["models"] if m["id"] == model), None)
+        if match is None:
+            raise ToolError("INVALID_ARGS", f"{profile['name']} 没有配置模型：{model}")
+        return {**profile, "model": match["id"], "vision": match["vision"]}
 
     def upsert(self, profile_id: str | None, raw: dict[str, Any]) -> dict[str, Any]:
         with self._lock:

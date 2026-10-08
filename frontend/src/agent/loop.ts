@@ -25,6 +25,7 @@ export interface LoopDeps {
   imageUrl: (attachmentId: string) => Promise<string>;
   newId: () => string;
   profileId: string;
+  model: string;
   vision: boolean;
   systemPrompt: string;
   tools: unknown[];
@@ -86,6 +87,7 @@ export async function runTurn(deps: LoopDeps, signal: AbortSignal): Promise<void
       deps.setState("requesting");
       const body = {
         profile_id: deps.profileId,
+        model: deps.model,
         messages: await buildContext(deps.history(), { systemPrompt: deps.systemPrompt, vision: deps.vision, imageUrl: deps.imageUrl }),
         tools: deps.tools,
       };
