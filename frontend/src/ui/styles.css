@@ -156,7 +156,7 @@
 .pa-composer textarea { min-height: 60px; }
 .pa-composer textarea::placeholder { color: var(--pa-muted); }
 .pa-composer-row { display: flex; align-items: center; gap: 4px; }
-.pa-outline-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--pa-line-strong) !important; color: var(--pa-text-2) !important; font-size: 12px; align-self: flex-start; }
+.pa-outline-chip { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--pa-line-strong) !important; color: var(--pa-text-2) !important; font-size: 12px; }
 .pa-outline-chip:hover { background: var(--pa-hover) !important; }
 .pa-hint { font-size: 11px; color: var(--pa-muted); margin-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pa-send { width: 28px; height: 28px; border-radius: 8px; background: var(--pa-accent) !important; color: var(--pa-on-accent) !important; display: inline-flex; align-items: center; justify-content: center; flex: none; }
@@ -199,7 +199,7 @@ select.pa-input option { background: var(--pa-bg-raised); }
 
 /* model picker */
 .pa-picker { position: relative; min-width: 0; }
-.pa-picker-btn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 999px; background: var(--pa-chip) !important; color: var(--pa-text-2) !important; font-size: 12px; max-width: 190px; }
+.pa-picker-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 999px; background: var(--pa-chip) !important; color: var(--pa-text-2) !important; font-size: 12px; max-width: 190px; }
 .pa-picker-btn:hover:not(:disabled) { background: var(--pa-hover) !important; color: var(--pa-text) !important; }
 .pa-picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pa-picker-menu { position: absolute; right: 0; bottom: calc(100% + 6px); width: 280px; max-height: 360px; overflow-y: auto; z-index: 7; background: var(--pa-bg-raised); border: 1px solid var(--pa-line); border-radius: 10px; padding: 4px; }
