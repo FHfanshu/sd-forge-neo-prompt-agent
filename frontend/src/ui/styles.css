@@ -150,9 +150,10 @@
 .pa-to-bottom { position: absolute; bottom: 118px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--pa-bg-raised) !important; border: 1px solid var(--pa-line) !important; color: var(--pa-text-2) !important; }
 
 /* composer */
-.pa-composer { flex: none; margin: 6px 12px 12px; background: var(--pa-bg-raised); border: 1px solid var(--pa-line); border-radius: 14px; padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
+.pa-composer { flex: none; margin: 6px 12px 12px; background: var(--pa-bg-raised); border: 1px solid var(--pa-line); border-radius: 14px; padding: 12px 14px 10px; display: flex; flex-direction: column; gap: 10px; }
 .pa-composer:focus-within { border-color: var(--pa-focus); }
 .pa-composer textarea, .pa-edit textarea { width: 100%; resize: none; background: transparent; border: 0; color: var(--pa-text); font: inherit; line-height: 20px; padding: 0; max-height: 172px; }
+.pa-composer textarea { min-height: 60px; }
 .pa-composer textarea::placeholder { color: var(--pa-muted); }
 .pa-composer-row { display: flex; align-items: center; gap: 4px; }
 .pa-outline-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--pa-line-strong) !important; color: var(--pa-text-2) !important; font-size: 12px; align-self: flex-start; }
