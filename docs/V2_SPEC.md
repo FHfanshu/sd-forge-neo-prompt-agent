@@ -89,7 +89,7 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 |---|---|
 | 用户消息 | 纯文本（保留换行）+ 附图缩略图（点击新标签页打开原图） |
 | 助手正文 | 流式中：纯文本追加；完成后：Markdown 渲染一次（经 HTML 清洗），代码块带复制按钮 |
-| 推理内容 | 默认折叠为一行"思考 · N 字"，点开显示纯文本；流式中折叠行显示"思考中…" |
+| 推理内容 | 默认折叠为一行"思考 · N tokens"，点开显示纯文本；流式中折叠行显示"思考中…"。token 数优先取 `usage.completion_tokens_details.reasoning_tokens`，没有时由服务端调用该服务的 `/tokenize` 精确计数；都拿不到才退回"思考 · N 字" |
 | 工具调用 | 一行：状态图标 + 中文名 + 简短摘要；点开显示参数与结果 JSON（截断 4000 字） |
 | 提示词修改 | 工具行摘要为"正向提示词 +12 −3"；点开显示行内红绿 diff |
 | 错误 | 消息底部红色一行错误文案 + "重试"按钮（重发该轮的用户消息） |
@@ -278,6 +278,8 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 
 `POST /chat`：`{profile_id, model, messages, tools, reasoning_effort?}` → 透传上游 `text/event-stream`。`model` 必须是该服务商已配置的模型之一，否则 400。
 - 服务端设置 `stream: true`、`stream_options.include_usage`、`temperature`，忽略浏览器传来的同名字段。`reasoning_effort` 优先用请求体里的值（必须在允许列表里，否则 400），否则用服务商设置。
+
+`POST /tokens`：`{profile_id, model, text}` → `{tokens}`。用该服务自己的分词器计数：请求 `base_url` 去掉 `/v1` 后的 `/tokenize`（llama.cpp 接口），5 秒超时；不支持的服务记在内存里不再请求，返回 `UNSUPPORTED`。地址只来自已保存的配置。浏览器端再加 3 秒超时，失败不影响本轮。
 - 请求体上限 32 MB。
 - 客户端断开时服务端必须关闭上游连接。
 - 上游非 2xx：读取错误体，清洗后返回同状态码的 JSON 错误。

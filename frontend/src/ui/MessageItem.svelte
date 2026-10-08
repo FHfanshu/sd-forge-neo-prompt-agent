@@ -83,7 +83,7 @@
         {#if reasoning}
           <button type="button" class="pa-chip" class:pa-chip-live={isLive && !text} aria-expanded={thinkingOpen} onclick={() => (thinkingOpen = !thinkingOpen)}>
             <Icon name={isLive && !text ? "loader" : "sparkles"} size={13} spin={isLive && !text} />
-            <span>{isLive && !text ? zh.thinking : zh.thought(reasoning.length)}</span>
+            <span>{isLive && !text ? zh.thinking : zh.thought(message.usage?.reasoning_tokens, reasoning.length)}</span>
           </button>
           {#if thinkingOpen}<div class="pa-chip-detail"><div class="pa-reasoning">{reasoning}</div></div>{/if}
         {/if}

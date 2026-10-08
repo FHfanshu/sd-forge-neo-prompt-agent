@@ -29,6 +29,8 @@ export interface LoopDeps {
   /** Per-request override; empty uses the provider setting. */
   reasoningEffort?: string;
   vision: boolean;
+  /** Exact token count from the provider's tokenizer; used when usage lacks reasoning_tokens. */
+  countTokens?: (text: string) => Promise<number>;
   systemPrompt: string;
   tools: unknown[];
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -80,6 +82,16 @@ export function errorText(error: unknown): string {
   }
   if (error instanceof TypeError) return `连接失败：${error.message}`;
   return error instanceof Error ? error.message : String(error);
+}
+
+async function withReasoningTokens(usage: Record<string, number> | null, reasoning: string, deps: LoopDeps): Promise<Record<string, number> | null> {
+  if (!reasoning || usage?.reasoning_tokens != null || !deps.countTokens) return usage;
+  try {
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000));
+    return { ...usage, reasoning_tokens: await Promise.race([deps.countTokens(reasoning), timeout]) };
+  } catch {
+    return usage; // the provider has no tokenizer endpoint: the UI falls back to a character count
+  }
 }
 
 /** Run one user turn to completion. Always returns; every exit leaves no message in `streaming`. */
@@ -134,7 +146,14 @@ export async function runTurn(deps: LoopDeps, signal: AbortSignal): Promise<void
         reader.releaseLock?.();
       }
       const calls = parser.result.toolCalls.map((call, index) => ({ ...call, id: call.id || `call_${round}_${index}` }));
-      current = { ...current, status: "complete", content: parser.result.content, reasoning: parser.result.reasoning, tool_calls: calls.length ? calls : null, usage: parser.result.usage };
+      current = {
+        ...current,
+        status: "complete",
+        content: parser.result.content,
+        reasoning: parser.result.reasoning,
+        tool_calls: calls.length ? calls : null,
+        usage: await withReasoningTokens(parser.result.usage, parser.result.reasoning, deps),
+      };
       deps.update(current, true);
       current = null;
       if (!calls.length) return;

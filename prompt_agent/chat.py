@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, AsyncIterator
 
 import httpx
@@ -72,6 +73,7 @@ class ChatProxy:
     def __init__(self, profiles: ProfileStore, transport: httpx.AsyncBaseTransport | None = None):
         self.profiles = profiles
         self.transport = transport
+        self._no_tokenize: set[str] = set()
 
     def _client(self) -> httpx.AsyncClient:
         timeout = httpx.Timeout(READ_TIMEOUT, connect=CONNECT_TIMEOUT)
@@ -108,6 +110,32 @@ class ChatProxy:
                 await client.aclose()
 
         return iterate()
+
+    async def count_tokens(self, profile_id: str, model: str, text: str) -> int:
+        """Exact token count from the provider's own tokenizer (llama.cpp style POST /tokenize).
+
+        Used when the stream's usage does not report reasoning tokens. The URL comes from the
+        stored profile; servers without the endpoint are remembered and not asked again.
+        """
+        profile = self.profiles.resolve(profile_id, model)
+        root = re.sub(r"/v1$", "", profile["base_url"])
+        if root in self._no_tokenize:
+            raise ToolError("UNSUPPORTED", "这个服务不提供 tokenize")
+        api_key = self.profiles.api_key(profile["id"])
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        async with self._client() as client:
+            try:
+                response = await client.post(f"{root}/tokenize", json={"content": text}, headers=headers, timeout=5.0)
+            except httpx.HTTPError as error:
+                raise ToolError("NETWORK", f"连接模型服务失败：{type(error).__name__}", status=502) from None
+        try:
+            tokens = response.json().get("tokens") if response.status_code < 400 else None
+        except ValueError:
+            tokens = None
+        if not isinstance(tokens, list):
+            self._no_tokenize.add(root)
+            raise ToolError("UNSUPPORTED", "这个服务不提供 tokenize")
+        return len(tokens)
 
     async def list_models(self, profile_id: str) -> list[str]:
         profile = self.profiles.get(profile_id)

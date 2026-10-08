@@ -71,7 +71,7 @@ export class SseParser {
       const message = typeof payload.error === "string" ? payload.error : payload.error.message ?? "模型服务返回错误";
       throw new Error(String(message));
     }
-    if (payload?.usage) this.result.usage = payload.usage;
+    if (payload?.usage) this.result.usage = normalizeUsage(payload.usage);
     const choice = payload?.choices?.[0];
     if (!choice) return;
     if (choice.finish_reason) this.result.finishReason = choice.finish_reason;
@@ -131,4 +131,13 @@ export class SseParser {
     this.pendingContent = "";
     if (rest) this.emitContent(rest, delta, final);
   }
+}
+
+/** Flat numeric usage; OpenAI-style providers nest the reasoning token count. */
+export function normalizeUsage(raw: Record<string, unknown>): Record<string, number> {
+  const usage: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) if (typeof value === "number") usage[key] = value;
+  const details = raw.completion_tokens_details as Record<string, unknown> | undefined;
+  if (typeof details?.reasoning_tokens === "number") usage.reasoning_tokens = details.reasoning_tokens;
+  return usage;
 }

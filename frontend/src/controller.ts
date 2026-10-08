@@ -268,6 +268,7 @@ async function startTurn(): Promise<void> {
         profileId: profile.id,
         model: model.id,
         reasoningEffort: app.effort,
+        countTokens: (text) => api.countTokens(profile.id, model.id, text).then((r) => r.tokens),
         vision: model.vision,
         systemPrompt: buildSystemPrompt(promptContext),
         tools: openAiTools(),

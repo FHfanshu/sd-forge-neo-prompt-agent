@@ -19,7 +19,7 @@ export const zh = {
   latestOutput: "最新出图",
   hint: "Enter 发送 · Shift+Enter 换行",
   thinking: "思考中…",
-  thought: (n: number) => `思考 · ${n} 字`,
+  thought: (tokens: number | undefined, chars: number) => (tokens != null ? `思考 · ${tokens} tokens` : `思考 · ${chars} 字`),
   requesting: "等待回复…",
   stopped: "已停止",
   interrupted: "已中断",

@@ -56,6 +56,19 @@ function harness(responses: Array<(signal: AbortSignal) => Promise<Response>>, o
 }
 
 describe("runTurn", () => {
+  it("records reasoning tokens from usage, else from the tokenizer, else leaves them out", async () => {
+    const reasoned = (usage?: unknown) =>
+      sse({ choices: [{ delta: { reasoning_content: "think" } }] }, { choices: [{ delta: { content: "ok" } }] }, ...(usage ? [{ choices: [], usage }] : []));
+    const run = async (body: string, countTokens?: () => Promise<number>) => {
+      const h = harness([async () => streamResponse(body)], { countTokens });
+      await runTurn(h.deps, new AbortController().signal);
+      return h.messages.at(-1)!.usage;
+    };
+    expect((await run(reasoned({ completion_tokens: 9, completion_tokens_details: { reasoning_tokens: 7 } }), async () => 99))?.reasoning_tokens).toBe(7);
+    expect((await run(reasoned({ completion_tokens: 9 }), async () => 5))?.reasoning_tokens).toBe(5);
+    expect((await run(reasoned({ completion_tokens: 9 }), async () => Promise.reject(new Error("no"))))?.reasoning_tokens).toBeUndefined();
+  });
+
   it("completes a plain reply and returns to idle", async () => {
     const h = harness([async () => streamResponse(text("Hello"))]);
     await runTurn(h.deps, new AbortController().signal);

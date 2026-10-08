@@ -125,6 +125,28 @@ class ChatUnitTest(unittest.TestCase):
         with self.assertRaises(ToolError):
             upstream_request(profile, "", {**body, "reasoning_effort": "max"})
 
+    def test_count_tokens_uses_tokenize_and_remembers_unsupported(self):
+        calls = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(str(request.url))
+            if request.url.host == "llama":
+                return httpx.Response(200, json={"tokens": [1, 2, 3]})
+            return httpx.Response(404, json={"error": "not found"})
+
+        data = TempData()
+        self.addCleanup(data.cleanup)
+        profiles = data.profiles()
+        local = profiles.upsert(None, {"name": "l", "base_url": "http://llama:8080/v1", "models": [{"id": "m"}]})
+        remote = profiles.upsert(None, {"name": "r", "base_url": "http://remote/v1", "models": [{"id": "m"}]})
+        proxy = ChatProxy(profiles, transport=httpx.MockTransport(handler))
+        self.assertEqual(asyncio.run(proxy.count_tokens(local["id"], "m", "think")), 3)
+        self.assertEqual(calls[-1], "http://llama:8080/tokenize")
+        for _ in range(2):
+            with self.assertRaises(ToolError):
+                asyncio.run(proxy.count_tokens(remote["id"], "m", "think"))
+        self.assertEqual(sum("remote" in c for c in calls), 1)
+
     def test_context_length_error_code(self):
         error = sanitize_error(400, b'{"error":{"message":"maximum context length exceeded"}}', [])
         self.assertEqual(error.code, "CONTEXT_LENGTH")

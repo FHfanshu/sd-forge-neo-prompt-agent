@@ -39,6 +39,7 @@ export const api = {
   deleteProfile: (id: string) => call("DELETE", `/profiles/${id}`),
   setDefaultProfile: (id: string) => call("PUT", "/profiles/default", { id }),
   listModels: (id: string) => call<{ models: string[] }>("POST", `/profiles/${id}/models`),
+  countTokens: (profileId: string, model: string, text: string) => call<{ tokens: number }>("POST", "/tokens", { profile_id: profileId, model, text }),
   settings: () => call<Settings>("GET", "/settings"),
   saveSettings: (body: Record<string, unknown>) => call<Settings>("PUT", "/settings", body),
 

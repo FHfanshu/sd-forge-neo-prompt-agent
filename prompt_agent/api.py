@@ -105,6 +105,15 @@ def build_router(profiles: ProfileStore, sessions: SessionStore, chat: ChatProxy
         stream = await chat.open_stream(body)
         return StreamingResponse(stream, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+    @router.post("/tokens")
+    @guarded
+    async def count_tokens(request: Request):
+        body = await _json(request, MAX_CHAT_BODY)
+        text = body.get("text")
+        if not isinstance(text, str):
+            raise ToolError("INVALID_ARGS", "text 必须是字符串")
+        return {"tokens": await chat.count_tokens(str(body.get("profile_id") or ""), str(body.get("model") or ""), text)}
+
     # -- sessions ----------------------------------------------------------------
     @router.get("/sessions")
     @guarded
