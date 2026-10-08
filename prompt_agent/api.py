@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import threading
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
@@ -199,3 +200,14 @@ def mount(app: FastAPI) -> None:
     profiles = ProfileStore()
     sessions = SessionStore()
     app.include_router(build_router(profiles, sessions, ChatProxy(profiles), Tools(profiles, sessions), generation_options))
+    threading.Thread(target=_warm_resource_index, name="prompt-agent-index", daemon=True).start()
+
+
+def _warm_resource_index() -> None:
+    """Parse LoRA training metadata once in the background so the first search is fast."""
+    from .knowledge.resources import INDEX
+
+    try:
+        INDEX.docs()
+    except Exception:  # noqa: BLE001 - a cold index is rebuilt on first search anyway
+        LOGGER.exception("prompt agent: warming the resource index failed")

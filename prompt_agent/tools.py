@@ -49,7 +49,8 @@ class Tools:
         self.handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "read_attachment": self.read_attachment,
             "search_resources": lambda a: resources.search_resources(
-                _choice(a, "kind", resources.KINDS), _text(a, "query", 200, required=False), _int(a, "limit", 20, 1, 50)
+                _choice(a, "kind", ("", *resources.KINDS), ""), _text(a, "query", 200, required=False),
+                _text(a, "base_model", 60, required=False), _int(a, "limit", 20, 1, 50),
             ),
             "inspect_resource": lambda a: resources.inspect_resource(_choice(a, "kind", resources.KINDS), _text(a, "name", 300)),
             "model_info": self.lookup_model,

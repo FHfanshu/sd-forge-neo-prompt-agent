@@ -8,7 +8,8 @@ import httpx
 from helpers import ROOT
 
 from prompt_agent.common import ToolError
-from prompt_agent.knowledge import characters, resources, skills
+from prompt_agent.knowledge import characters, index, lora_meta, resources, skills
+from prompt_agent.knowledge.index import ResourceIndex
 from prompt_agent.knowledge.model_info import ModelInfo, html_to_text
 
 SHA = "a" * 64
@@ -46,14 +47,56 @@ class WildcardTest(unittest.TestCase):
             root = Path(folder)
             (root / "hair").mkdir()
             (root / "hair" / "color.txt").write_text("# c\nred\n\nblue\n", encoding="utf-8")
+            index = ResourceIndex(lambda: ([], [], [], resources.wildcard_names(root)))
             with mock.patch("prompt_agent.forge.wildcard_root", return_value=root):
-                found = resources.search_resources("wildcard", "hair")
-                self.assertEqual(found["items"][0]["summary"], "__hair/color__")
+                found = resources.search_resources("wildcard", "hair", index=index)
+                self.assertEqual(found["items"][0]["token"], "__hair/color__")
                 inspected = resources.inspect_resource("wildcard", "__hair/color__")
                 self.assertEqual(inspected["values"], ["red", "blue"])
                 for bad in ("../secret", "/etc/passwd", "hair/../../x"):
                     with self.assertRaises(ToolError):
                         resources.inspect_resource("wildcard", bad)
+
+
+def _lora(name: str, folder: str, epoch: int | None = None, base: str = "anima") -> dict:
+    tags = {"﻿moqing": 9, "blue horns": 10, "dragon boy": 10, "smile": 2}
+    metadata = {
+        "ss_output_name": "oc_run", "ss_base_model_version": base, "ss_network_module": "networks.lokr",
+        "ss_tag_frequency": json.dumps({"2_moqing": tags}), "ss_dataset_dirs": json.dumps({"2_moqing": {"n_repeats": 2, "img_count": 10}}),
+    }
+    if epoch is not None:
+        metadata["ss_epoch"] = str(epoch)
+    return {"name": name, "alias": name, "filename": f"/models/Lora/{folder}/{name}.safetensors", "metadata": metadata}
+
+
+class ResourceIndexTest(unittest.TestCase):
+    def test_summary_infers_triggers_identity_tags_and_training(self):
+        summary = lora_meta.summarize("oc_run-000003", _lora("oc_run-000003", "oc", 3)["metadata"])
+        self.assertEqual(summary["trigger_candidates"], ["moqing"])
+        concept = summary["concepts"][0]
+        self.assertEqual((concept["name"], concept["images"]), ("moqing", 10))
+        self.assertEqual(concept["identity_tags"], ["blue horns", "dragon boy", "moqing"])
+        self.assertEqual((summary["training"]["network"], summary["training"]["epoch"]), ("LoKr", 3))
+        self.assertEqual(lora_meta.epoch_of("run_768", {}), None)
+        self.assertEqual(lora_meta.epoch_of("run-000012", {}), 12)
+
+    def test_epochs_group_into_one_family_and_phrases_rank(self):
+        loras = [_lora(f"oc_run-00000{i}", "oc", i) for i in (1, 2, 3)] + [_lora("other", "misc", base="sdxl")]
+        loras[-1]["metadata"]["ss_output_name"] = "other"
+        styles = [{"name": "moqing", "prompt": "moqing, blue horns", "negative_prompt": ""}]
+        docs = index.build(loras, [], styles, [], [Path("/models/Lora")])
+        families = [d for d in docs if d["kind"] == "lora"]
+        self.assertEqual(len(families), 2)
+        run = next(d for d in families if d["family"] == "oc_run")
+        self.assertEqual((run["name"], len(run["versions"]), run["folder"]), ("oc_run-000003", 3, "oc"))
+        found = index.search(docs, "blue horns", kind="lora")
+        self.assertEqual([i["name"] for i in found["items"]], ["oc_run-000003", "other"])
+        self.assertIn("concept: blue horns", found["items"][0]["matched"])
+        self.assertEqual(found["items"][0]["usage"], "<lora:oc_run-000003:1>")
+        self.assertEqual([i["name"] for i in index.search(docs, "", kind="lora", base_model="sdxl")["items"]], ["other"])
+        mixed = index.search(docs, "moqing")
+        self.assertEqual({i["kind"] for i in mixed["items"]}, {"lora", "style"})
+        self.assertTrue(index.search(docs, "moqing, nothing-here")["partial"])
 
 
 class ModelInfoTest(unittest.TestCase):

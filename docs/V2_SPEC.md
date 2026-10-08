@@ -200,8 +200,14 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 - `pnginfo` 结构：`{status: "ok"|"missing"|"unsupported"|"error", positive, negative, parameters: {...}, raw}`。PNG 读文本块；WebP/JPEG 读 EXIF UserComment（Forge 的 WebP 输出就存在这里）。
 - 发给模型的用户消息里，每张附图都带 `[附图 attachment_id=…]` 标签，模型据此调用 `read_attachment`。
 
-**`search_resources`** `{kind: "style"|"lora"|"wildcard", query?, limit?≤50}` → `[{name, summary}]`
-**`inspect_resource`** `{kind, name}` → style：正/负提示词；lora：激活词、推荐权重、说明（来自 sidecar）；wildcard：前 100 行。
+**本地资源索引**（`knowledge/index.py`、`knowledge/lora_meta.py`）
+- 内存索引，覆盖 LoRA、checkpoint、style 预设、wildcard 名称。LoRA 文件列表（名称、路径、mtime）或 styles 变化时重建；每个 LoRA 的解析结果按 (路径, mtime) 缓存，Forge 启动后在后台线程预热。不写磁盘。
+- LoRA 信息来自 safetensors 头部的 kohya 训练元数据：底模、网络类型（LoRA/LoKr/LyCORIS）、dim/alpha、epoch、步数、学习率、分辨率、训练图数；每个训练概念（`N_name` 文件夹）的图片数、频次最高的 25 个标签、出现在 ≥80% 图片里的 identity 标签。触发词候选：`modelspec.trigger_phrase`，以及同时作为标签出现的概念名。再合并 Forge 的 sidecar 卡片（激活词、推荐权重、备注）。
+- 版本分组：同一文件夹里 `ss_output_name` 相同（缺失时用去掉 `-000012` / `_e12` 后缀的文件名）的文件算一个训练批次，搜索返回批次，代表文件取最大 epoch。
+- 排序：按逗号/顿号切成短语，整句命中优先，否则按词部分命中；字段权重 名称/触发词 6 > 文件夹 4 > 概念与 identity 标签 3 > 训练标签 2 > 其余文本 1；先返回命中全部短语的结果，没有时才返回部分命中（`partial: true`）。每条结果带 `matched` 说明命中字段。
+
+**`search_resources`** `{query?, kind?: "lora"|"checkpoint"|"style"|"wildcard", base_model?, limit?≤50}` → `{total, partial, items: [{kind, name, matched, ...}]}`；LoRA 条目含 `family`、`folder`、`base_model`、`triggers`、`version_count`、`usage`（`<lora:name:1>`）。
+**`inspect_resource`** `{kind, name}` → style：正/负提示词；lora（文件名或批次名）：用法、底模、触发词候选、sidecar 卡片、训练参数、各概念标签与频次、全部版本；checkpoint：底模；wildcard：前 100 行。
 
 **`model_info`** `{kind: "checkpoint"|"lora", name, refresh?}`
 - `name` 必须在 Forge 当前的模型列表中。
@@ -236,7 +242,9 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 - 先读后写，用最新 hash；非空字段只能打补丁；负向不生效时要说明，不擅自改 CFG。
 - 工具报错时修正参数或重新读取后再试，不盲目重复同一失败写入。
 - 角色/实体先查 styles 和角色定义，再查 Danbooru；不凭记忆编造。
-- 切换 checkpoint 或按模型写提示词前，先用 `model_info` 了解底模和用法。
+- 不编造 LoRA/style/wildcard 名称：先 `search_resources`，用前 `inspect_resource`，核对底模与当前 checkpoint 是否匹配，带上触发词，用返回的 usage 语法；多个 epoch 时优先沿用提示词里已有的版本。
+- checkpoint 名含 turbo/lightning/hyper/lcm/dmd/flash 视为少步蒸馏模型，偏离其 CFG/步数设定前先提醒。
+- 切换 checkpoint 或按模型写提示词前，先了解底模和用法；`model_info` 只用于从 Civitai 下载的模型，本地训练的 LoRA 用 `inspect_resource`。
 - 回复简短，不复述已改内容，用用户的语言。
 
 删除：`generate_image`、`load_tools`、`prompt_toolkit` 相关段落。新增：**你不能出图；需要看效果时请用户点击生成，再用 `read_latest_image` 查看。**
@@ -409,7 +417,7 @@ CREATE TABLE attachments (
 scripts/prompt_agent.py        Forge 钩子，只注册路由
 prompt_agent/                  Python 包（不使用 backend/ 名称，避免与 Forge 的 backend 包冲突）
   api.py chat.py profiles.py secrets.py settings.py sessions.py attachments.py pnginfo.py
-  knowledge/ resources.py model_info.py danbooru.py skills.py characters.py
+  knowledge/ index.py lora_meta.py resources.py model_info.py danbooru.py skills.py characters.py
 frontend/                      前端源码与构建配置
 javascript/prompt_agent.js     构建产物（唯一一个浏览器脚本，不手改）
 tests/                         Python 测试

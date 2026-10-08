@@ -57,7 +57,8 @@ def checkpoints() -> list[dict[str, Any]]:
     from modules import sd_models
 
     return [
-        {"name": info.name, "title": info.title, "model_name": info.model_name, "filename": str(info.filename)}
+        {"name": info.name, "title": info.title, "model_name": info.model_name, "filename": str(info.filename),
+         "metadata": getattr(info, "metadata", None) or {}}
         for info in sd_models.checkpoints_list.values()
     ]
 

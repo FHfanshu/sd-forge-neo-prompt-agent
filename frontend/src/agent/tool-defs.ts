@@ -60,19 +60,19 @@ export const TOOL_DEFS: { name: string; label: string; description: string; para
   {
     name: "search_resources",
     label: "搜索资源",
-    description: "搜索 Forge 的 styles（角色触发词常在这里）、LoRA、wildcards。",
-    parameters: obj({ kind: { type: "string", enum: ["style", "lora", "wildcard"] }, query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 50 } }, ["kind"]),
+    description: "检索本地资源：LoRA（按训练批次分组，匹配文件名、文件夹、推断的触发词、训练概念和训练标签）、checkpoint、style 预设（角色触发词常在这里）、wildcard。query 用空格分隔多个词，优先用英文标签或角色/触发词；结果按相关度排序并说明命中字段。kind 留空搜全部；base_model 按底模过滤（如 anima、sdxl）。",
+    parameters: obj({ query: { type: "string" }, kind: { type: "string", enum: ["lora", "checkpoint", "style", "wildcard"] }, base_model: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 50 } }, []),
   },
   {
     name: "inspect_resource",
     label: "查看资源",
-    description: "查看一个 style 的提示词、LoRA 的激活词与说明，或 wildcard 的取值。",
-    parameters: obj({ kind: { type: "string", enum: ["style", "lora", "wildcard"] }, name: { type: "string" } }, ["kind", "name"]),
+    description: "查看资源详情：style 的完整正/负提示词；LoRA 的用法、底模、推断触发词、各训练概念的标签（含频次）、训练参数和全部版本（epoch）；checkpoint 的底模；wildcard 的取值。LoRA 的 name 可以是文件名或训练批次名。",
+    parameters: obj({ kind: { type: "string", enum: ["lora", "checkpoint", "style", "wildcard"] }, name: { type: "string" } }, ["kind", "name"]),
   },
   {
     name: "model_info",
     label: "模型信息",
-    description: "查询 checkpoint 或 LoRA 的底模、触发词、标签和作者使用说明（本地说明文件 → 本地缓存 → Civitai）。name 用参数选项或资源搜索里的名字。",
+    description: "查询从 Civitai 下载的 checkpoint 或 LoRA 的作者说明、触发词和推荐设置（本地说明文件 → 本地缓存 → Civitai，首次需计算文件哈希，较慢）。本地训练的 LoRA 用 inspect_resource 即可，不要调用这个。",
     parameters: obj({ kind: { type: "string", enum: ["checkpoint", "lora"] }, name: { type: "string" }, refresh: { type: "boolean" } }, ["kind", "name"]),
   },
   {
