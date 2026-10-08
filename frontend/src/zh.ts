@@ -34,6 +34,7 @@ export const zh = {
   emptyTitle: "开始写提示词",
   emptyBody: "描述你想要的画面，或附一张图让我分析。我能读写提示词和全部生成参数，但出图要你自己点 Generate。",
   noProfile: "还没有可用的模型配置，去设置里添加一个",
+  sessionGone: "这个会话已在别处删除，已切到新会话",
   noModel: "选择模型",
   noKey: "无 Key",
   visionShort: "看图",

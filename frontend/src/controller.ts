@@ -120,6 +120,13 @@ async function executeTool(call: ToolCall, signal: AbortSignal) {
 
 export async function refreshSessions(): Promise<void> {
   app.sessions = (await api.sessions()).sessions;
+  if (app.sessionId && !app.busy && !app.sessions.some((s) => s.id === app.sessionId)) await sessionGone();
+}
+
+/** The open session was deleted elsewhere (another tab, device, or by hand): start a new one. */
+async function sessionGone(): Promise<void> {
+  notify(zh.sessionGone);
+  await openSession(null);
 }
 
 export async function openSession(id: string | null): Promise<void> {
@@ -203,12 +210,21 @@ export function chooseEffort(effort: string): void {
 export async function chooseModel(profileId: string, model: string): Promise<void> {
   rememberModel(profileId, model);
   if (app.sessionId) {
-    const updated = await api.updateSession(app.sessionId, { profile_id: profileId, model });
-    app.sessions = app.sessions.map((s) => (s.id === updated.id ? updated : s));
-  } else {
-    app.draftProfileId = profileId;
-    app.draftModel = model;
+    try {
+      const updated = await api.updateSession(app.sessionId, { profile_id: profileId, model });
+      app.sessions = app.sessions.map((s) => (s.id === updated.id ? updated : s));
+      return;
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 404)) {
+        notify(errorText(error));
+        return;
+      }
+      // the new draft session picks up the model remembered above
+      await sessionGone();
+    }
   }
+  app.draftProfileId = profileId;
+  app.draftModel = model;
 }
 
 // -- turns ----------------------------------------------------------------------------
