@@ -48,7 +48,7 @@
   onclick={() => (open = !open)}
 >
   {#if running && !result}<Icon name="loader" size={13} spin />{:else if failed || !result}<Icon name="alert" size={13} />{:else}<Icon name={TOOL_ICONS[call.name] ?? "tool"} size={13} />{/if}
-  <span>{TOOL_LABELS[call.name] ?? call.name}</span>
+  <span class:pa-shimmer={running && !result}>{TOOL_LABELS[call.name] ?? call.name}</span>
   {#if !running && !result}
     <span class="pa-chip-hint">未完成</span>
   {:else if diff}

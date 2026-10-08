@@ -81,7 +81,7 @@
     <ModelPicker />
     <EffortPicker />
     <button type="button" class="pa-send" aria-label={app.busy ? zh.stop : zh.send} title={app.busy ? zh.stop : zh.send} onclick={submit}>
-      <Icon name={app.busy ? "stop" : "arrow-up"} size={15} />
+      {#key app.busy}<span class="pa-swap"><Icon name={app.busy ? "stop" : "arrow-up"} size={15} /></span>{/key}
     </button>
   </div>
   <input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onchange={(e) => { addFiles(e.currentTarget.files); e.currentTarget.value = ""; }} />

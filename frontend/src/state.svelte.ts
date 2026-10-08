@@ -17,6 +17,8 @@ export interface DraftAttachment {
 const PANEL_KEY = "pa2.panel";
 const SESSION_KEY = "pa2.session";
 export const PAGE_SIZE = 60;
+/** Messages created after this page load animate in; history renders without motion. */
+export const LOADED_AT = Date.now();
 
 function loadPanel(): PanelPrefs {
   const fallback: PanelPrefs = { open: true, mode: "squeeze", width: 400 };

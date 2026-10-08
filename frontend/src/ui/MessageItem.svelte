@@ -3,7 +3,7 @@
   import { editAndResend, retry } from "../controller";
   import { copyText } from "../lib/clipboard";
   import { renderMarkdown } from "../lib/markdown";
-  import { app } from "../state.svelte";
+  import { app, LOADED_AT } from "../state.svelte";
   import type { Message } from "../types";
   import { zh } from "../zh";
   import Icon from "./Icon.svelte";
@@ -17,6 +17,7 @@
   let copied = $state(false);
 
   const isLive = $derived(message.status === "streaming");
+  const fresh = $derived(message.created_at > LOADED_AT);
   const text = $derived(isLive && app.live.id === message.id ? app.live.content : message.content);
   const reasoning = $derived(isLive && app.live.id === message.id ? app.live.reasoning : message.reasoning);
   const html = $derived(!isLive && message.role === "assistant" && message.content ? renderMarkdown(message.content) : "");
@@ -50,7 +51,7 @@
 </script>
 
 {#if message.role === "user"}
-  <div class="pa-user">
+  <div class="pa-user" class:pa-enter={fresh}>
     {#if message.attachments?.length}
       <div class="pa-thumbs">
         {#each message.attachments as attachment (attachment.id)}
@@ -77,13 +78,13 @@
     {/if}
   </div>
 {:else if message.role === "assistant"}
-  <div class="pa-assistant">
+  <div class="pa-assistant" class:pa-enter={fresh}>
     {#if reasoning || message.tool_calls?.length}
       <div class="pa-chips">
         {#if reasoning}
           <button type="button" class="pa-chip" class:pa-chip-live={isLive && !text} aria-expanded={thinkingOpen} onclick={() => (thinkingOpen = !thinkingOpen)}>
             <Icon name={isLive && !text ? "loader" : "sparkles"} size={13} spin={isLive && !text} />
-            <span>{isLive && !text ? zh.thinking : zh.thought(message.usage?.reasoning_tokens, reasoning.length)}</span>
+            <span class:pa-shimmer={isLive && !text}>{isLive && !text ? zh.thinking : zh.thought(message.usage?.reasoning_tokens, reasoning.length)}</span>
           </button>
           {#if thinkingOpen}<div class="pa-chip-detail"><div class="pa-reasoning">{reasoning}</div></div>{/if}
         {/if}

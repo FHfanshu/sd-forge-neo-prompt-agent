@@ -195,9 +195,39 @@ select.pa-input option { background: var(--pa-bg-raised); }
 .pa-note { font-size: 12px; color: var(--pa-text-2); background: var(--pa-chip); border-radius: 8px; padding: 8px 10px; }
 .pa-notice { position: absolute; left: 12px; right: 12px; bottom: 120px; background: var(--pa-bg-raised); border: 1px solid var(--pa-line); border-radius: 10px; padding: 8px 12px; font-size: 12px; color: var(--pa-text); z-index: 6; }
 
+/* motion: transform/opacity only, 120-220ms, never on history or layout */
+@keyframes pa-rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes pa-pop { from { opacity: 0; transform: translateY(4px) scale(0.97); } }
+@keyframes pa-drop { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+@keyframes pa-fade-in { from { opacity: 0; } }
+@keyframes pa-swap-in { from { opacity: 0; transform: scale(0.6) rotate(-20deg); } }
+@keyframes pa-shimmer-move { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes pa-pulse-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pa-warn) 60%, transparent); } 100% { box-shadow: 0 0 0 5px transparent; } }
+.pa-enter { animation: pa-rise 200ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pa-picker-menu, .pa-effort-pop { transform-origin: bottom right; animation: pa-pop 150ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pa-menu { transform-origin: top center; animation: pa-drop 150ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pa-notice { animation: pa-rise 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pa-settings, .pa-scroll { animation: pa-fade-in 140ms ease-out; }
+.pa-swap { display: inline-flex; animation: pa-swap-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pa-send { transition: transform 90ms ease, filter 120ms; }
+.pa-send:active { transform: scale(0.9); }
+.pa-shimmer {
+  color: transparent;
+  background: linear-gradient(90deg, var(--pa-text-2) 30%, var(--pa-text) 50%, var(--pa-text-2) 70%) 0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: pa-shimmer-move 1.6s linear infinite;
+}
+.pa-pulse { animation: pa-pulse-ring 1.2s ease-out infinite; }
+/* overlay mode floats over Forge, so its width can animate without reflowing the page */
+.pa-root.pa-overlay:not(.pa-dragging) { transition: width 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
 @media (prefers-reduced-motion: reduce) {
   .pa-spin, .pa-cursor { animation: none; }
   .pa-chip-detail { animation: none; }
+  .pa-enter, .pa-picker-menu, .pa-effort-pop, .pa-menu, .pa-notice, .pa-settings, .pa-scroll, .pa-swap, .pa-pulse { animation: none; }
+  .pa-shimmer { animation: none; color: var(--pa-text); background: none; }
+  .pa-root.pa-overlay, .pa-send { transition: none; }
 }
 
 /* model picker */

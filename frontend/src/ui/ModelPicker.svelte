@@ -34,7 +34,7 @@
 
 <div class="pa-picker" bind:this={root}>
   <button type="button" class="pa-picker-btn" disabled={app.busy} aria-haspopup="listbox" aria-expanded={open} title={app.profile ? `${app.profile.name} / ${app.model?.id} · ${app.turnNote || describe(current)}` : zh.noProfile} onclick={toggle}>
-    <span class="pa-dot pa-dot-{status}"></span>
+    <span class="pa-dot pa-dot-{status}" class:pa-pulse={!!app.turnNote}></span>
     <span class="pa-picker-label">{app.model?.id ?? zh.noModel}</span>
     <Icon name="chevron-up" size={11} />
   </button>
