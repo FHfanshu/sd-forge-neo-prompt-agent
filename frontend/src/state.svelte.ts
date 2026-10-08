@@ -70,6 +70,26 @@ export function rememberedModel(): { profileId: string | null; model: string | n
   }
 }
 
+const EFFORT_KEY = "pa2.effort";
+
+/** Per provider/model reasoning effort chosen in the picker; "" means the provider setting. */
+function loadEfforts(): Record<string, string> {
+  try {
+    const value = JSON.parse(localStorage.getItem(EFFORT_KEY) ?? "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveEfforts(efforts: Record<string, string>): void {
+  try {
+    localStorage.setItem(EFFORT_KEY, JSON.stringify(efforts));
+  } catch {
+    // ignore
+  }
+}
+
 export function rememberedSession(): string | null {
   try {
     return localStorage.getItem(SESSION_KEY);
@@ -101,6 +121,7 @@ class AppState {
   drafts = $state.raw<DraftAttachment[]>([]);
   notice = $state("");
   lastError = $state(false);
+  efforts = $state.raw<Record<string, string>>(loadEfforts());
 
   get session(): Session | null {
     return this.sessions.find((s) => s.id === this.sessionId) ?? null;
@@ -120,6 +141,10 @@ class AppState {
     const models = this.profile?.models ?? [];
     const wanted = this.session ? this.session.model : this.draftModel;
     return models.find((m) => m.id === wanted) ?? models[0] ?? null;
+  }
+
+  get effort(): string {
+    return this.efforts[`${this.profileId}/${this.model?.id ?? ""}`] ?? "";
   }
 
   get busy(): boolean {

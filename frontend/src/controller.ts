@@ -5,7 +5,7 @@ import { openAiTools } from "./agent/tool-defs";
 import type { StreamDelta } from "./agent/sse";
 import * as dom from "./forge/dom";
 import * as forgeTools from "./forge/tools";
-import { app, PAGE_SIZE, rememberedModel, rememberedSession, rememberModel, rememberSession } from "./state.svelte";
+import { app, PAGE_SIZE, rememberedModel, rememberedSession, rememberModel, rememberSession, saveEfforts } from "./state.svelte";
 import type { AttachmentRef, Message, ToolCall } from "./types";
 import { zh } from "./zh";
 
@@ -193,6 +193,13 @@ export async function deleteSession(id: string): Promise<void> {
   if (app.sessionId === id) await openSession(null);
 }
 
+export function chooseEffort(effort: string): void {
+  const key = `${app.profileId}/${app.model?.id ?? ""}`;
+  const { [key]: _old, ...rest } = app.efforts;
+  app.efforts = effort ? { ...rest, [key]: effort } : rest;
+  saveEfforts(app.efforts);
+}
+
 export async function chooseModel(profileId: string, model: string): Promise<void> {
   rememberModel(profileId, model);
   if (app.sessionId) {
@@ -243,6 +250,7 @@ async function startTurn(): Promise<void> {
         newId,
         profileId: profile.id,
         model: model.id,
+        reasoningEffort: app.effort,
         vision: model.vision,
         systemPrompt: buildSystemPrompt(promptContext),
         tools: openAiTools(),

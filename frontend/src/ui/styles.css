@@ -50,6 +50,8 @@
 .pa-root button:disabled { cursor: default; opacity: 0.45; }
 .pa-root :focus { outline: none; }
 .pa-root :focus-visible { box-shadow: 0 0 0 2px var(--pa-focus); border-radius: 7px; }
+/* text fields always match :focus-visible; their container or border already shows focus */
+.pa-root textarea:focus-visible, .pa-root input:not([type=checkbox]):focus-visible, .pa-root select:focus-visible { box-shadow: none !important; }
 .pa-root.pa-dragging { user-select: none; }
 .pa-icon { flex: none; display: block; }
 .pa-spin { animation: pa-spin 0.9s linear infinite; }
@@ -208,6 +210,11 @@ select.pa-input option { background: var(--pa-bg-raised); }
 .pa-picker-current { color: var(--pa-text) !important; }
 .pa-picker-check { width: 13px; flex: none; color: var(--pa-accent); }
 .pa-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-picker-effort { font-size: 11px; color: var(--pa-accent-text); }
+.pa-effort { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 8px 6px; }
+.pa-effort button { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; color: var(--pa-text-2); background: var(--pa-chip); }
+.pa-effort button:hover { background: var(--pa-hover); }
+.pa-effort button.pa-effort-on { background: var(--pa-accent-soft); color: var(--pa-accent-text); }
 .pa-picker-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--pa-muted); }
 .pa-picker-empty { width: 100%; padding: 8px; font-size: 12px; color: var(--pa-text-2) !important; text-align: left; }
 .pa-models { display: flex; flex-direction: column; gap: 4px; }

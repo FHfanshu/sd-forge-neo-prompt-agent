@@ -7,7 +7,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from .common import ToolError, clip
-from .profiles import ProfileStore
+from .profiles import REASONING_EFFORTS, ProfileStore
 
 LOGGER = logging.getLogger("prompt_agent")
 CONNECT_TIMEOUT = 15.0
@@ -28,8 +28,12 @@ def upstream_request(profile: dict[str, Any], api_key: str, body: dict[str, Any]
     tools = body.get("tools")
     if isinstance(tools, list) and tools:
         payload["tools"] = tools
-    if profile.get("reasoning_effort"):
-        payload["reasoning_effort"] = profile["reasoning_effort"]
+    # the composer may override the provider's effort per request; values differ by model template
+    effort = body.get("reasoning_effort") or profile.get("reasoning_effort")
+    if effort not in REASONING_EFFORTS:
+        raise ToolError("INVALID_ARGS", f"不支持的推理强度：{effort}")
+    if effort:
+        payload["reasoning_effort"] = effort
     if profile.get("temperature") is not None:
         payload["temperature"] = profile["temperature"]
     if profile.get("max_tokens"):
@@ -59,7 +63,7 @@ def sanitize_error(status: int, raw: bytes, secrets: list[str]) -> ToolError:
             message = message.replace(secret, "***")
     code = {401: "AUTH", 403: "AUTH", 429: "RATE_LIMIT"}.get(status, "UPSTREAM")
     lowered = message.lower()
-    if "context" in lowered and ("length" in lowered or "too long" in lowered or "maximum" in lowered):
+    if "context" in lowered and any(word in lowered for word in ("length", "too long", "maximum", "size", "window")):
         code = "CONTEXT_LENGTH"
     return ToolError(code, clip(message.strip() or f"HTTP {status}", 600), status=status if status >= 400 else 502)
 

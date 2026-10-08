@@ -39,7 +39,7 @@
 
 1. 顶栏：会话标题（点开会话列表）、新会话、模式切换、设置、折叠。
 2. 消息区：消息列表，见 §3.4。
-3. 输入区：附图预览条、`📎 附图` 和 `🖼 最新出图` 按钮、输入框；右下角是模型选择器（按服务商分组列出各自的模型，不合并、不做路由）和发送/停止按钮。
+3. 输入区：附图预览条、`📎 附图` 和 `🖼 最新出图` 按钮、输入框；右下角是模型选择器（按服务商分组列出各自的模型，不合并、不做路由；底部一行选推理强度，按服务商/模型记在浏览器里，「默认」即用服务商设置）和发送/停止按钮。
 4. 设置视图：在面板内替换消息区显示，顶栏出现"返回"。
 
 ### 2.3 挂载
@@ -73,7 +73,7 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 
 - 首字节之前遇到网络错误、HTTP 429 或 5xx：最多重试 2 次，间隔 1 秒、3 秒；顶栏状态显示"重试中（1/2）"。
 - 首字节之后断流：不重试，消息标记 `error`，保留已收到内容。
-- 上游返回上下文超长错误时，错误文案提示"对话过长，请新建会话"。
+- 上游返回上下文超长错误时（含 llama.cpp 的 "exceeds the available context size"），错误文案带上游原文，并提示新建会话或检查本地 llama.cpp 每槽位上下文（-c ÷ -np）。
 
 ### 3.3 发给模型的上下文
 
@@ -258,12 +258,12 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 | POST | `/profiles/{id}/models` | 调上游 `GET {base_url}/models` 返回模型 id 列表，用作连接测试 |
 | GET/PUT | `/settings` | `{civitai_enabled, has_civitai_key}`；PUT 可带 `civitai_api_key` |
 
-配置字段：`id`（服务端生成）、`name`（1–40 字）、`base_url`（http/https，末尾的 `/chat/completions` 会被去掉）、`models`（1–100 个 `{id, vision}`，id 不重复）、`reasoning_effort`（`""|low|medium|high`）、`temperature`（可空，0–2）、`max_tokens`（可空，256–200000）。旧格式（单个 `model` + `vision`）读取时自动转换。
+配置字段：`id`（服务端生成）、`name`（1–40 字）、`base_url`（http/https，末尾的 `/chat/completions` 会被去掉）、`models`（1–100 个 `{id, vision}`，id 不重复）、`reasoning_effort`（`""|none|low|medium|high|xhigh`，可用值取决于模型的对话模板；`""` 表示不发送。旧配置里的 `none` 导入为 `""`）、`temperature`（可空，0–2）、`max_tokens`（可空，256–200000）。旧格式（单个 `model` + `vision`）读取时自动转换。
 
 ### 6.2 对话
 
-`POST /chat`：`{profile_id, model, messages, tools}` → 透传上游 `text/event-stream`。`model` 必须是该服务商已配置的模型之一，否则 400。
-- 服务端设置 `stream: true`、`stream_options.include_usage`、`reasoning_effort`、`temperature`，忽略浏览器传来的同名字段。
+`POST /chat`：`{profile_id, model, messages, tools, reasoning_effort?}` → 透传上游 `text/event-stream`。`model` 必须是该服务商已配置的模型之一，否则 400。
+- 服务端设置 `stream: true`、`stream_options.include_usage`、`temperature`，忽略浏览器传来的同名字段。`reasoning_effort` 优先用请求体里的值（必须在允许列表里，否则 400），否则用服务商设置。
 - 请求体上限 32 MB。
 - 客户端断开时服务端必须关闭上游连接。
 - 上游非 2xx：读取错误体，清洗后返回同状态码的 JSON 错误。
@@ -396,7 +396,7 @@ CREATE TABLE attachments (
 | 未配置 | 还没有可用的模型配置，去设置里添加一个 |
 | 网络错误 | 连接模型服务失败：{原因} |
 | 401/403 | API Key 无效或没有权限 |
-| 上下文超长 | 对话过长，请新建会话 |
+| 上下文超长 | 超出模型上下文长度（上游原文），提示新建会话或调整本地 -c / -np / --kv-unified |
 | 停止 | 已停止 |
 
 ---

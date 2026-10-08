@@ -68,3 +68,6 @@ export interface ToolResult {
 }
 
 export type TurnState = "idle" | "requesting" | "streaming" | "tool_running";
+
+/** reasoning_effort values a provider may accept; which ones work depends on the model's chat template. */
+export const EFFORTS = ["none", "low", "medium", "high", "xhigh"] as const;

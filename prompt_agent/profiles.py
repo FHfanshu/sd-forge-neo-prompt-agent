@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from .common import ToolError, data_dir, new_id, read_json, write_json
 
-REASONING_EFFORTS = ("", "low", "medium", "high")
+REASONING_EFFORTS = ("", "none", "low", "medium", "high", "xhigh")
 CIVITAI_SECRET = "civitai"
 
 
@@ -150,6 +150,7 @@ class ProfileStore:
                 continue
             params = item.get("parameters") or {}
             effort = str(params.get("reasoning_effort") or "")
+            effort = "" if effort == "none" else effort  # v1 used "none" for "do not send"
             try:
                 profile = _validated(
                     {

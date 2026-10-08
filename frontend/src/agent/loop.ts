@@ -26,6 +26,8 @@ export interface LoopDeps {
   newId: () => string;
   profileId: string;
   model: string;
+  /** Per-request override; empty uses the provider setting. */
+  reasoningEffort?: string;
   vision: boolean;
   systemPrompt: string;
   tools: unknown[];
@@ -70,7 +72,9 @@ function retryable(error: unknown): boolean {
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.code === "AUTH") return "API Key 无效或没有权限";
-    if (error.code === "CONTEXT_LENGTH") return "对话过长，请新建会话";
+    if (error.code === "CONTEXT_LENGTH") {
+      return `超出模型上下文长度（${error.message}）。长对话请新建会话；本地 llama.cpp 每个槽位只有 -c ÷ -np，可调大 -c、减小 -np 或加 --kv-unified`;
+    }
     if (error.code === "NETWORK") return `连接模型服务失败：${error.message}`;
     return error.message;
   }
@@ -88,6 +92,7 @@ export async function runTurn(deps: LoopDeps, signal: AbortSignal): Promise<void
       const body = {
         profile_id: deps.profileId,
         model: deps.model,
+        ...(deps.reasoningEffort ? { reasoning_effort: deps.reasoningEffort } : {}),
         messages: await buildContext(deps.history(), { systemPrompt: deps.systemPrompt, vision: deps.vision, imageUrl: deps.imageUrl }),
         tools: deps.tools,
       };

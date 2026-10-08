@@ -116,9 +116,21 @@ class ChatUnitTest(unittest.TestCase):
         with self.assertRaises(ToolError):
             upstream_request({"models": ["m"], "base_url": "http://x"}, "", {"messages": []})
 
+    def test_reasoning_effort_override(self):
+        profile = {"model": "m", "base_url": "http://x", "reasoning_effort": "low"}
+        body = {"messages": [{"role": "user", "content": "hi"}]}
+        self.assertEqual(upstream_request(profile, "", body)[2]["reasoning_effort"], "low")
+        self.assertEqual(upstream_request(profile, "", {**body, "reasoning_effort": "xhigh"})[2]["reasoning_effort"], "xhigh")
+        self.assertNotIn("reasoning_effort", upstream_request({**profile, "reasoning_effort": ""}, "", body)[2])
+        with self.assertRaises(ToolError):
+            upstream_request(profile, "", {**body, "reasoning_effort": "max"})
+
     def test_context_length_error_code(self):
         error = sanitize_error(400, b'{"error":{"message":"maximum context length exceeded"}}', [])
         self.assertEqual(error.code, "CONTEXT_LENGTH")
+        # llama.cpp wording when a slot is smaller than the request
+        llama = b'{"error":{"message":"request (4388 tokens) exceeds the available context size (4096 tokens)"}}'
+        self.assertEqual(sanitize_error(400, llama, []).code, "CONTEXT_LENGTH")
 
     def test_stream_closes_upstream(self):
         closed = []

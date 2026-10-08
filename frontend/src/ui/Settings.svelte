@@ -3,7 +3,7 @@
   import { errorText } from "../agent/loop";
   import { refreshProfiles } from "../controller";
   import { app } from "../state.svelte";
-  import type { ModelEntry, Profile } from "../types";
+  import { EFFORTS, type ModelEntry, type Profile } from "../types";
   import { zh } from "../zh";
   import Icon from "./Icon.svelte";
 
@@ -120,7 +120,7 @@
         <label>
           <span>{zh.reasoning}</span>
           <select class="pa-input" bind:value={form.reasoning_effort}>
-            <option value="">{zh.reasoningDefault}</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option>
+            <option value="">{zh.reasoningDefault}</option>{#each EFFORTS as effort}<option value={effort}>{effort}</option>{/each}
           </select>
         </label>
         <label><span>{zh.temperature}</span><input class="pa-input" bind:value={form.temperature} inputmode="decimal" /></label>
