@@ -78,6 +78,12 @@ class ResourceIndexTest(unittest.TestCase):
         self.assertEqual(concept["identity_tags"], ["blue horns", "dragon boy", "moqing"])
         self.assertEqual((summary["training"]["network"], summary["training"]["epoch"]), ("LoKr", 3))
         self.assertEqual(lora_meta.epoch_of("run_768", {}), None)
+        # "trigger || caption" style tags still yield the trigger
+        joined = {"ss_tag_frequency": json.dumps({"2_lingren": {"lingren || 1boy": 5, "red eyemarks": 5}}),
+                  "ss_training_finished_at": "1790121203.9", "modelspec.date": "2026-09-23T07:53:23"}
+        summary = lora_meta.summarize("x", joined)
+        self.assertEqual(summary["trigger_candidates"], ["lingren"])
+        self.assertRegex(summary["training"]["trained_at"], r"^2026-09-2\d \d\d:\d\d$")
         self.assertEqual(lora_meta.epoch_of("run-000012", {}), 12)
 
     def test_epochs_group_into_one_family_and_phrases_rank(self):
@@ -97,6 +103,10 @@ class ResourceIndexTest(unittest.TestCase):
         mixed = index.search(docs, "moqing")
         self.assertEqual({i["kind"] for i in mixed["items"]}, {"lora", "style"})
         self.assertTrue(index.search(docs, "moqing, nothing-here")["partial"])
+        run["trained_at"], other = "2026-07-24 10:00", next(d for d in families if d["family"] == "other")
+        other["trained_at"] = "2026-09-23 07:53"
+        newest = index.search(docs, "", kind="lora", sort="newest")
+        self.assertEqual([i["name"] for i in newest["items"]], ["other", "oc_run-000003"])
 
 
 class ModelInfoTest(unittest.TestCase):

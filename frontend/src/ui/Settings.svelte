@@ -6,6 +6,7 @@
   import { EFFORTS, type ModelEntry, type Profile } from "../types";
   import { zh } from "../zh";
   import Icon from "./Icon.svelte";
+  import MemoryEditor from "./MemoryEditor.svelte";
 
   type Form = { id: string | null; name: string; base_url: string; models: ModelEntry[]; api_key: string; clear_key: boolean; reasoning_effort: string; temperature: string; max_tokens: string; has_api_key: boolean };
 
@@ -166,5 +167,7 @@
       </div>
     </label>
     {#if status}<div class="pa-status">{status}</div>{/if}
+
+    <MemoryEditor />
   {/if}
 </div>

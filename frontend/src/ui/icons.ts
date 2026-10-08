@@ -53,4 +53,5 @@ export const TOOL_ICONS: Record<string, string> = {
   load_skill: "book",
   list_characters: "user",
   get_character: "user",
+  edit_memory: "book",
 };

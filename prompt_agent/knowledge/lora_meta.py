@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from typing import Any
 
 # kohya saves intermediate epochs as name-000001; some trainers use _e12 / -epoch12
@@ -68,9 +69,11 @@ def concepts(metadata: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         counts: dict[str, int] = {}
         for tag, count in tags.items():
-            clean = _clean_tag(tag)
-            if clean:
-                counts[clean] = counts.get(clean, 0) + int(_number(count) or 0)
+            # some caption styles join sections with "||" ("moqing || 1boy"); count each part as a tag
+            for part in str(tag).split("||"):
+                clean = _clean_tag(part)
+                if clean:
+                    counts[clean] = counts.get(clean, 0) + int(_number(count) or 0)
         ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         info = dirs.get(folder) if isinstance(dirs.get(folder), dict) else {}
         images = int(_number(info.get("img_count")) or 0) or (ranked[0][1] if ranked else 0)
@@ -105,6 +108,15 @@ def trigger_candidates(metadata: dict[str, Any], found: list[dict[str, Any]]) ->
     return [c for c in candidates if not (c.casefold() in seen or seen.add(c.casefold()))]
 
 
+def trained_at(metadata: dict[str, Any]) -> str:
+    """When training finished, as local "YYYY-MM-DD HH:MM", or "" when unknown."""
+    finished = _number(metadata.get("ss_training_finished_at"))
+    if finished:
+        return datetime.fromtimestamp(float(finished)).strftime("%Y-%m-%d %H:%M")
+    date = str(metadata.get("modelspec.date") or "")
+    return date[:16].replace("T", " ") if re.match(r"\d{4}-\d{2}-\d{2}", date) else ""
+
+
 def summarize(name: str, metadata: dict[str, Any] | None) -> dict[str, Any]:
     metadata = metadata or {}
     found = concepts(metadata)
@@ -118,6 +130,7 @@ def summarize(name: str, metadata: dict[str, Any] | None) -> dict[str, Any]:
         "resolution": str(metadata.get("modelspec.resolution") or metadata.get("ss_resolution") or ""),
         "train_images": _number(metadata.get("ss_num_train_images")),
         "trained_on": str(metadata.get("ss_sd_model_name") or ""),
+        "trained_at": trained_at(metadata),
         "comment": "" if str(metadata.get("ss_training_comment") or "") in ("", "None") else str(metadata["ss_training_comment"])[:500],
     }
     return {

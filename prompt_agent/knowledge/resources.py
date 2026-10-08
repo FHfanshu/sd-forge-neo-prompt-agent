@@ -18,10 +18,11 @@ def wildcard_names(root: Path) -> list[str]:
     return sorted(names, key=str.casefold)
 
 
-def search_resources(kind: str = "", query: str = "", base_model: str = "", limit: int = 20, index: ResourceIndex = INDEX) -> dict[str, Any]:
+def search_resources(kind: str = "", query: str = "", base_model: str = "", limit: int = 20, sort: str = "relevance",
+                     index: ResourceIndex = INDEX) -> dict[str, Any]:
     if kind and kind not in KINDS:
         raise ToolError("INVALID_ARGS", f"kind 只能是 {'、'.join(KINDS)}，或留空搜索全部")
-    return search(index.docs(), query, kind, base_model, max(1, min(int(limit or 20), 50)))
+    return search(index.docs(), query, kind, base_model, max(1, min(int(limit or 20), 50)), sort)
 
 
 def _lora_detail(doc: dict[str, Any]) -> dict[str, Any]:
@@ -43,6 +44,7 @@ def _lora_detail(doc: dict[str, Any]) -> dict[str, Any]:
         "name": item["name"],
         "family": doc["family"],
         "folder": doc["folder"],
+        "trained_at": doc.get("trained_at", ""),
         "usage": f"<lora:{item['name']}:1>",
         "base_model": summary["base_model"],
         "trigger_candidates": summary["trigger_candidates"],

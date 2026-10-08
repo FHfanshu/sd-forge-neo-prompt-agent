@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -36,6 +37,11 @@ def _folder(filename: str, roots: list[Path]) -> str:
         except ValueError:
             continue
     return path.parent.name
+
+
+def _date(filename: str) -> str:
+    mtime = _mtime(filename)
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)) if mtime else ""
 
 
 def _lora_roots() -> list[Path]:
@@ -67,7 +73,7 @@ def _lora_docs(loras: list[dict[str, Any]], roots: list[Path]) -> list[dict[str,
         families.setdefault(key, []).append({**item, "summary": summary, "folder": folder})
     docs = []
     for (folder, _), members in families.items():
-        members.sort(key=lambda m: (m["summary"]["training"].get("epoch") or 0, m["name"]))
+        members.sort(key=lambda m: (m["summary"]["training"].get("epoch") or 0, m["summary"]["training"].get("trained_at", ""), m["name"]))
         latest = members[-1]
         summary = latest["summary"]
         concept_tags = [tag for concept in summary["concepts"] for tag in concept["identity_tags"]]
@@ -78,6 +84,8 @@ def _lora_docs(loras: list[dict[str, Any]], roots: list[Path]) -> list[dict[str,
             "family": summary["output_name"] or lora_meta.EPOCH_SUFFIX.sub("", latest["name"]),
             "folder": folder,
             "base_model": summary["base_model"],
+            # file mtime stands in when the metadata has no training timestamp
+            "trained_at": summary["training"].get("trained_at") or _date(latest["filename"]),
             "triggers": summary["trigger_candidates"],
             "versions": [{"name": m["name"], "epoch": m["summary"]["training"].get("epoch")} for m in members],
             "fields": {
@@ -137,7 +145,7 @@ def _score(doc: dict[str, Any], phrases: list[str]) -> tuple[float, float, list[
     return matched, score, list(dict.fromkeys(reasons))
 
 
-def search(docs: list[dict[str, Any]], query: str, kind: str = "", base_model: str = "", limit: int = 20) -> dict[str, Any]:
+def search(docs: list[dict[str, Any]], query: str, kind: str = "", base_model: str = "", limit: int = 20, sort: str = "relevance") -> dict[str, Any]:
     phrases = [" ".join(p.split()).casefold() for p in PHRASE_SPLIT.split(str(query or "")) if p.strip()]
     base = base_model.casefold().strip()
     hits = []
@@ -150,7 +158,10 @@ def search(docs: list[dict[str, Any]], query: str, kind: str = "", base_model: s
         if phrases and not matched:
             continue
         hits.append((matched, score, doc, reasons))
-    hits.sort(key=lambda hit: (-hit[0], -hit[1], hit[2]["kind"], hit[2]["name"].casefold()))
+    # newest first among equal relevance; sort="newest" orders matches by training date only
+    hits.sort(key=lambda hit: hit[2].get("trained_at", ""), reverse=True)
+    if sort != "newest":
+        hits.sort(key=lambda hit: (-hit[0], -hit[1]))
     full = [hit for hit in hits if hit[0] >= len(phrases)]
     chosen = full or hits  # fall back to partial matches only when nothing matches every phrase
     items = [_public(doc, reasons) for _, _, doc, reasons in chosen[:limit]]

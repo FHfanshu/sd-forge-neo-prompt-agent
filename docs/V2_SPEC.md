@@ -202,11 +202,11 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 
 **本地资源索引**（`knowledge/index.py`、`knowledge/lora_meta.py`）
 - 内存索引，覆盖 LoRA、checkpoint、style 预设、wildcard 名称。LoRA 文件列表（名称、路径、mtime）或 styles 变化时重建；每个 LoRA 的解析结果按 (路径, mtime) 缓存，Forge 启动后在后台线程预热。不写磁盘。
-- LoRA 信息来自 safetensors 头部的 kohya 训练元数据：底模、网络类型（LoRA/LoKr/LyCORIS）、dim/alpha、epoch、步数、学习率、分辨率、训练图数；每个训练概念（`N_name` 文件夹）的图片数、频次最高的 25 个标签、出现在 ≥80% 图片里的 identity 标签。触发词候选：`modelspec.trigger_phrase`，以及同时作为标签出现的概念名。再合并 Forge 的 sidecar 卡片（激活词、推荐权重、备注）。
+- LoRA 信息来自 safetensors 头部的 kohya 训练元数据：底模、网络类型（LoRA/LoKr/LyCORIS）、dim/alpha、epoch、步数、学习率、分辨率、训练图数；每个训练概念（`N_name` 文件夹）的图片数、频次最高的 25 个标签、出现在 ≥80% 图片里的 identity 标签。触发词候选：`modelspec.trigger_phrase`，以及同时作为标签出现的概念名（标签里的 `||` 视为分隔符，如 `lingren || 1boy`）。训练完成时间取 `ss_training_finished_at`，其次 `modelspec.date`，都没有时用文件修改时间。再合并 Forge 的 sidecar 卡片（激活词、推荐权重、备注）。
 - 版本分组：同一文件夹里 `ss_output_name` 相同（缺失时用去掉 `-000012` / `_e12` 后缀的文件名）的文件算一个训练批次，搜索返回批次，代表文件取最大 epoch。
 - 排序：按逗号/顿号切成短语，整句命中优先，否则按词部分命中；字段权重 名称/触发词 6 > 文件夹 4 > 概念与 identity 标签 3 > 训练标签 2 > 其余文本 1；先返回命中全部短语的结果，没有时才返回部分命中（`partial: true`）。每条结果带 `matched` 说明命中字段。
 
-**`search_resources`** `{query?, kind?: "lora"|"checkpoint"|"style"|"wildcard", base_model?, limit?≤50}` → `{total, partial, items: [{kind, name, matched, ...}]}`；LoRA 条目含 `family`、`folder`、`base_model`、`triggers`、`version_count`、`usage`（`<lora:name:1>`）。
+**`search_resources`** `{query?, kind?: "lora"|"checkpoint"|"style"|"wildcard", base_model?, sort?: "relevance"|"newest", limit?≤50}` → `{total, partial, items: [{kind, name, matched, ...}]}`；LoRA 条目含 `family`、`folder`、`base_model`、`trained_at`、`triggers`、`version_count`、`usage`（`<lora:name:1>`）。相关度相同时新训练的在前；`sort: "newest"` 只按训练完成时间排序。
 **`inspect_resource`** `{kind, name}` → style：正/负提示词；lora（文件名或批次名）：用法、底模、触发词候选、sidecar 卡片、训练参数、各概念标签与频次、全部版本；checkpoint：底模；wildcard：前 100 行。
 
 **`model_info`** `{kind: "checkpoint"|"lora", name, refresh?}`
@@ -230,6 +230,11 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 **`list_characters`** `{}` → `[{name, short_description}]`
 **`get_character`** `{name}` → 角色 JSON + 匹配的 `bindings/*.json`。
 
+**`edit_memory`** `{op: "append"|"replace"|"delete", text?, find?}`
+- 记忆是一个普通 Markdown 文件 `data/prompt-agent/MEMORY.md`，用户可直接编辑，也可在设置里编辑；全文每轮注入系统提示词（`/context` 每轮重新读取）。
+- append 追加到末尾；replace/delete 要求 `find` 在文件里恰好出现一次，否则返回 `STALE`/`AMBIGUOUS` 并附当前全文。上限 8000 字，超出返回 `FULL`。
+- 用途：用户纠正或说明的长期事实与偏好（如"最新的多合一 LoRA 是哪个"）。不记一次性请求、提示词或密钥。
+
 ### 5.4 系统提示词
 
 从旧版 `FORGE_AGENT_SYSTEM_PROMPT` 迁移，规则保留：
@@ -242,6 +247,7 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 - 先读后写，用最新 hash；非空字段只能打补丁；负向不生效时要说明，不擅自改 CFG。
 - 工具报错时修正参数或重新读取后再试，不盲目重复同一失败写入。
 - 角色/实体先查 styles 和角色定义，再查 Danbooru；不凭记忆编造。
+- 记忆里的事实优先于自己的推断；用户纠正或给出长期事实/偏好时用 `edit_memory` 更新，过时内容替换或删除而不是追加矛盾条目。
 - 不编造 LoRA/style/wildcard 名称：先 `search_resources`，用前 `inspect_resource`，核对底模与当前 checkpoint 是否匹配，带上触发词，用返回的 usage 语法；多个 epoch 时优先沿用提示词里已有的版本。
 - checkpoint 名含 turbo/lightning/hyper/lcm/dmd/flash 视为少步蒸馏模型，偏离其 CFG/步数设定前先提醒。
 - 切换 checkpoint 或按模型写提示词前，先了解底模和用法；`model_info` 只用于从 Civitai 下载的模型，本地训练的 LoRA 用 `inspect_resource`。
@@ -293,7 +299,7 @@ idle ──发送──▶ requesting ──首字节──▶ streaming ──�
 
 `POST /tools/{name}`：body 为工具参数，返回 §5.1 的结果格式（工具级错误也是 HTTP 200）。只接受 §5.3 列出的名称，未知名称 404。
 
-`GET /context`：skills 与角色清单（用于系统提示词）。`GET /forge/options`：sampler、scheduler、upscaler、checkpoint、preset 的可选值。
+`GET /context`：skills、角色清单与记忆全文（用于系统提示词）。`GET /memory` → `{text, path, max_chars}`；`PUT /memory` `{text}` 整文件保存（设置页用）。`GET /forge/options`：sampler、scheduler、upscaler、checkpoint、preset 的可选值。
 
 ### 6.5 附图
 
@@ -318,6 +324,7 @@ settings-v2.json          civitai_enabled 等
 v2.sqlite3                会话与消息
 attachments/<session>/<id>.<ext>
 model-info/<sha256>.json
+MEMORY.md                 agent 记忆（普通 Markdown）
 ```
 
 旧文件（`profiles.json`、`secrets.dpapi.json`、`sessions.sqlite3`）只读，v2 不修改、不删除。

@@ -61,7 +61,7 @@ export const TOOL_DEFS: { name: string; label: string; description: string; para
     name: "search_resources",
     label: "搜索资源",
     description: "检索本地资源：LoRA（按训练批次分组，匹配文件名、文件夹、推断的触发词、训练概念和训练标签）、checkpoint、style 预设（角色触发词常在这里）、wildcard。query 用空格分隔多个词，优先用英文标签或角色/触发词；结果按相关度排序并说明命中字段。kind 留空搜全部；base_model 按底模过滤（如 anima、sdxl）。",
-    parameters: obj({ query: { type: "string" }, kind: { type: "string", enum: ["lora", "checkpoint", "style", "wildcard"] }, base_model: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 50 } }, []),
+    parameters: obj({ query: { type: "string" }, kind: { type: "string", enum: ["lora", "checkpoint", "style", "wildcard"] }, base_model: { type: "string" }, sort: { type: "string", enum: ["relevance", "newest"], description: "newest 按训练完成时间从新到旧" }, limit: { type: "integer", minimum: 1, maximum: 50 } }, []),
   },
   {
     name: "inspect_resource",
@@ -74,6 +74,12 @@ export const TOOL_DEFS: { name: string; label: string; description: string; para
     label: "模型信息",
     description: "查询从 Civitai 下载的 checkpoint 或 LoRA 的作者说明、触发词和推荐设置（本地说明文件 → 本地缓存 → Civitai，首次需计算文件哈希，较慢）。本地训练的 LoRA 用 inspect_resource 即可，不要调用这个。",
     parameters: obj({ kind: { type: "string", enum: ["checkpoint", "lora"] }, name: { type: "string" }, refresh: { type: "boolean" } }, ["kind", "name"]),
+  },
+  {
+    name: "edit_memory",
+    label: "更新记忆",
+    description: "编辑记忆文件 MEMORY.md（Markdown，全文已在系统提示里）。append 在末尾追加 text；replace 把 find 精确匹配的原文换成 text；delete 删除 find 匹配的原文。find 必须在文件里恰好出现一次。",
+    parameters: obj({ op: { type: "string", enum: ["append", "replace", "delete"] }, text: { type: "string" }, find: { type: "string" } }, ["op"]),
   },
   {
     name: "danbooru_search",

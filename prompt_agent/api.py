@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from . import attachments
 from .chat import ChatProxy
 from .common import ToolError
+from .memory import MAX_CHARS as MAX_MEMORY_CHARS
 from .profiles import ProfileStore
 from .sessions import SessionStore
 from .tools import Tools
@@ -183,6 +184,17 @@ def build_router(profiles: ProfileStore, sessions: SessionStore, chat: ChatProxy
     @guarded
     async def context():
         return await run_in_threadpool(tools.context)
+
+    @router.get("/memory")
+    @guarded
+    async def get_memory():
+        return {"text": tools.memory.read(), "path": str(tools.memory.path), "max_chars": MAX_MEMORY_CHARS}
+
+    @router.put("/memory")
+    @guarded
+    async def put_memory(request: Request):
+        body = await _json(request)
+        return await run_in_threadpool(tools.memory.write, str(body.get("text") or ""))
 
     @router.get("/forge/options")
     @guarded

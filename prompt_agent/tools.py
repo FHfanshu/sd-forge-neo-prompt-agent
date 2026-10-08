@@ -7,6 +7,8 @@ from typing import Any, Callable
 from .common import ToolError
 from .knowledge import characters, danbooru, resources, skills
 from .knowledge.model_info import ModelInfo
+from .memory import OPS as MEMORY_OPS
+from .memory import MemoryStore
 from .profiles import CIVITAI_SECRET, ProfileStore
 from .sessions import SessionStore
 
@@ -42,15 +44,17 @@ def _int(args: dict[str, Any], key: str, default: int, low: int, high: int) -> i
 
 
 class Tools:
-    def __init__(self, profiles: ProfileStore, sessions: SessionStore, model_info: ModelInfo | None = None):
+    def __init__(self, profiles: ProfileStore, sessions: SessionStore, model_info: ModelInfo | None = None, memory: MemoryStore | None = None):
         self.profiles = profiles
         self.sessions = sessions
         self.model_info = model_info or ModelInfo()
+        self.memory = memory or MemoryStore(profiles.root / "MEMORY.md")
         self.handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "read_attachment": self.read_attachment,
             "search_resources": lambda a: resources.search_resources(
                 _choice(a, "kind", ("", *resources.KINDS), ""), _text(a, "query", 200, required=False),
                 _text(a, "base_model", 60, required=False), _int(a, "limit", 20, 1, 50),
+                _choice(a, "sort", ("relevance", "newest"), "relevance"),
             ),
             "inspect_resource": lambda a: resources.inspect_resource(_choice(a, "kind", resources.KINDS), _text(a, "name", 300)),
             "model_info": self.lookup_model,
@@ -62,6 +66,9 @@ class Tools:
             "load_skill": lambda a: skills.load_skill(_text(a, "name", 100), _text(a, "reference", 100, required=False)),
             "list_characters": lambda a: {"ok": True, "characters": characters.list_characters()},
             "get_character": lambda a: characters.get_character(_text(a, "name", 100)),
+            "edit_memory": lambda a: self.memory.edit(
+                _choice(a, "op", MEMORY_OPS), _text(a, "text", 2000, required=False), _text(a, "find", 2000, required=False)
+            ),
         }
 
     def run(self, name: str, args: Any) -> dict[str, Any]:
@@ -97,4 +104,4 @@ class Tools:
 
     def context(self) -> dict[str, Any]:
         """Skill and character listings for the system prompt."""
-        return {"skills": skills.list_skills(), "characters": characters.list_characters()}
+        return {"skills": skills.list_skills(), "characters": characters.list_characters(), "memory": self.memory.read()}

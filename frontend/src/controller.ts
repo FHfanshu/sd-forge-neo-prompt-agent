@@ -225,7 +225,8 @@ async function startTurn(): Promise<void> {
   const signal = abort.signal;
   try {
     await historyReady;
-    if (!promptContext) promptContext = await api.context().catch(() => null);
+    // refetched every turn: the memory file may have changed (agent edits, settings, or by hand)
+    promptContext = (await api.context().catch(() => null)) ?? promptContext;
     await runTurn(
       {
         history: () => app.messages,

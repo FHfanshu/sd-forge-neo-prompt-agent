@@ -67,7 +67,9 @@ export const api = {
   modelImageUrl: (id: string) => `${BASE}/attachments/${id}/model`,
 
   tool: (name: string, args: unknown, signal?: AbortSignal) => call<ToolResult>("POST", `/tools/${name}`, args, signal),
-  context: () => call<{ skills: { name: string; description: string; references: string[] }[]; characters: { name: string; short_description: string }[] }>("GET", "/context"),
+  context: () => call<{ skills: { name: string; description: string; references: string[] }[]; characters: { name: string; short_description: string }[]; memory: string }>("GET", "/context"),
+  memory: () => call<{ text: string; path: string; max_chars: number }>("GET", "/memory"),
+  saveMemory: (text: string) => call<{ ok: boolean; chars: number }>("PUT", "/memory", { text }),
   forgeOptions: () => call<Record<string, string[]>>("GET", "/forge/options"),
 
   async chat(body: unknown, signal: AbortSignal): Promise<Response> {
