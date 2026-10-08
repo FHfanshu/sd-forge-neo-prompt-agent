@@ -4,6 +4,7 @@
   import { app } from "../state.svelte";
   import { zh } from "../zh";
   import Icon from "./Icon.svelte";
+  import EffortPicker from "./EffortPicker.svelte";
   import ModelPicker from "./ModelPicker.svelte";
 
   let text = $state("");
@@ -78,6 +79,7 @@
     <span class="pa-spacer"></span>
     {#if app.turnNote}<span class="pa-hint">{app.turnNote}</span>{/if}
     <ModelPicker />
+    <EffortPicker />
     <button type="button" class="pa-send" aria-label={app.busy ? zh.stop : zh.send} title={app.busy ? zh.stop : zh.send} onclick={submit}>
       <Icon name={app.busy ? "stop" : "arrow-up"} size={15} />
     </button>

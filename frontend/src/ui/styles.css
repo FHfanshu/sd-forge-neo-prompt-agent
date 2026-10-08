@@ -210,11 +210,26 @@ select.pa-input option { background: var(--pa-bg-raised); }
 .pa-picker-current { color: var(--pa-text) !important; }
 .pa-picker-check { width: 13px; flex: none; color: var(--pa-accent); }
 .pa-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pa-picker-effort { font-size: 11px; color: var(--pa-accent-text); }
-.pa-effort { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 8px 6px; }
-.pa-effort button { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; color: var(--pa-text-2); background: var(--pa-chip); }
-.pa-effort button:hover { background: var(--pa-hover); }
-.pa-effort button.pa-effort-on { background: var(--pa-accent-soft); color: var(--pa-accent-text); }
+.pa-picker-btn.pa-effort-set { color: var(--pa-text) !important; }
+/* reasoning effort popover: snapping slider, modelled on Claude desktop */
+.pa-effort-pop { position: absolute; right: 0; bottom: calc(100% + 6px); width: 280px; z-index: 7; background: var(--pa-bg-raised); border: 1px solid var(--pa-line-strong); border-radius: 12px; padding: 14px 14px 4px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); }
+.pa-effort-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.pa-effort-title { color: var(--pa-muted); font-size: 12.5px; }
+.pa-effort-value { font-size: 13.5px; font-weight: 500; color: var(--pa-text); }
+.pa-effort-help { width: 17px; height: 17px; flex: none; border-radius: 50%; border: 1.5px solid var(--pa-muted); color: var(--pa-muted); font-size: 10.5px; font-weight: 500; display: grid; place-items: center; cursor: help; }
+.pa-effort-ends { display: flex; justify-content: space-between; color: var(--pa-muted); font-size: 11.5px; margin-bottom: 8px; }
+.pa-slider { position: relative; height: 28px; touch-action: none; cursor: pointer; border-radius: 8px; }
+.pa-slider-track { position: absolute; inset: 0; border-radius: 8px; background: var(--pa-bg-sunken); overflow: hidden; }
+.pa-slider-fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--pa-text) 14%, var(--pa-bg-sunken)), color-mix(in srgb, var(--pa-text) 24%, var(--pa-bg-sunken))); transition: width .18s ease; }
+.pa-slider-dot { position: absolute; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--pa-muted); pointer-events: none; }
+.pa-slider-dot.pa-slider-tick { width: 2px; height: 10px; margin: -5px 0 0 -1px; border-radius: 1px; background: var(--pa-text-2); }
+.pa-slider-thumb { position: absolute; top: 50%; width: 24px; height: 28px; margin: -14px 0 0 -12px; border-radius: 8px; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); transition: left .18s ease, transform .1s; pointer-events: none; }
+.pa-slider.pa-dragging .pa-slider-thumb, .pa-slider.pa-dragging .pa-slider-fill { transition: none; }
+.pa-slider.pa-dragging .pa-slider-thumb { transform: scale(1.06); }
+.pa-slider:focus-visible { box-shadow: none; }
+.pa-slider:focus-visible .pa-slider-thumb { box-shadow: 0 0 0 3px var(--pa-focus); }
+.pa-slider-marks { position: relative; height: 26px; }
+.pa-slider-rec { position: absolute; top: 6px; transform: translateX(-50%); font-size: 11.5px; color: var(--pa-text-2); white-space: nowrap; }
 .pa-picker-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--pa-muted); }
 .pa-picker-empty { width: 100%; padding: 8px; font-size: 12px; color: var(--pa-text-2) !important; text-align: left; }
 .pa-models { display: flex; flex-direction: column; gap: 4px; }

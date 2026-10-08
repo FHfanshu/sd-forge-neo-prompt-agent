@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { chooseEffort, chooseModel } from "../controller";
-  import { EFFORTS } from "../types";
+  import { chooseModel } from "../controller";
   import { app } from "../state.svelte";
   import { zh } from "../zh";
   import Icon from "./Icon.svelte";
@@ -26,7 +25,6 @@
   <button type="button" class="pa-picker-btn" disabled={app.busy} aria-haspopup="listbox" aria-expanded={open} title={app.profile ? `${app.profile.name} / ${app.model?.id}` : zh.noProfile} onclick={() => (open = !open)}>
     <span class="pa-dot pa-dot-{status}"></span>
     <span class="pa-picker-label">{app.model?.id ?? zh.noModel}</span>
-    {#if app.effort}<span class="pa-picker-effort">{app.effort}</span>{/if}
     <Icon name="chevron-up" size={11} />
   </button>
   {#if open}
@@ -48,14 +46,6 @@
           </button>
         {/each}
       {/each}
-      {#if app.model}
-        <div class="pa-picker-group"><span>{zh.reasoning}</span></div>
-        <div class="pa-effort" role="radiogroup" aria-label={zh.reasoning}>
-          {#each ["", ...EFFORTS] as effort}
-            <button type="button" role="radio" aria-checked={app.effort === effort} class:pa-effort-on={app.effort === effort} onclick={() => chooseEffort(effort)}>{effort || zh.reasoningDefault}</button>
-          {/each}
-        </div>
-      {/if}
     </div>
   {/if}
 </div>
