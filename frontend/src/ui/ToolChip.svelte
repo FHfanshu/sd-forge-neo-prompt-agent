@@ -47,9 +47,11 @@
   aria-expanded={open}
   onclick={() => (open = !open)}
 >
-  {#if running && !result}<Icon name="loader" size={13} spin />{:else if failed}<Icon name="alert" size={13} />{:else}<Icon name={TOOL_ICONS[call.name] ?? "tool"} size={13} />{/if}
+  {#if running && !result}<Icon name="loader" size={13} spin />{:else if failed || !result}<Icon name="alert" size={13} />{:else}<Icon name={TOOL_ICONS[call.name] ?? "tool"} size={13} />{/if}
   <span>{TOOL_LABELS[call.name] ?? call.name}</span>
-  {#if diff}
+  {#if !running && !result}
+    <span class="pa-chip-hint">未完成</span>
+  {:else if diff}
     <span class="pa-add">+{diff.added}</span><span class="pa-del">−{diff.removed}</span>
   {:else if summary}
     <span class="pa-chip-hint">{summary}</span>

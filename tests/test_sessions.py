@@ -87,6 +87,20 @@ class SessionStoreTest(unittest.TestCase):
         with self.assertRaises(ToolError):
             self.store.get_attachment(saved["id"])
 
+    def test_webp_exif_user_comment_is_read(self):
+        import io
+
+        from PIL import Image
+
+        text = "1girl\nNegative prompt: bad\nSteps: 20, Sampler: Euler a, Seed: 7"
+        exif = Image.Exif()
+        exif.get_ifd(0x8769)[0x9286] = b"UNICODE\x00" + text.encode("utf-16-be")
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8)).save(buffer, format="WEBP", exif=exif)
+        info = attachments.pnginfo_summary(buffer.getvalue())
+        self.assertEqual((info["status"], info["positive"], info["negative"]), ("ok", "1girl", "bad"))
+        self.assertEqual(info["parameters"]["steps"], 20)
+
     def test_attachment_rejects_bad_input(self):
         sid = self.session["id"]
         with self.assertRaises(ToolError):

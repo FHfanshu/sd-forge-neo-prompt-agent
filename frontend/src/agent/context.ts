@@ -46,8 +46,10 @@ export async function buildContext(history: Message[], options: ContextOptions):
   const imageParts = async (message: Message): Promise<Part[]> => {
     const parts: Part[] = [];
     for (const attachment of message.attachments ?? []) {
-      if (showImages.has(message.id)) parts.push({ type: "image_url", image_url: { url: await options.imageUrl(attachment.id) } });
-      else parts.push({ type: "text", text: `[图片 ${attachment.id} 已省略，可用 read_attachment 读取]` });
+      if (showImages.has(message.id)) {
+        parts.push({ type: "text", text: `[附图 attachment_id=${attachment.id}]` });
+        parts.push({ type: "image_url", image_url: { url: await options.imageUrl(attachment.id) } });
+      } else parts.push({ type: "text", text: `[附图 attachment_id=${attachment.id}，图片已省略，可用 read_attachment 读取]` });
     }
     return parts;
   };

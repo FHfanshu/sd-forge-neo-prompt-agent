@@ -17,13 +17,18 @@
   const overlay = $derived(app.panel.mode === "overlay" || viewport < 900);
   const width = $derived(app.panel.open ? Math.min(app.panel.width, Math.max(320, viewport - 40)) : RAIL);
 
-  // squeeze mode: make room on the page body; restore on teardown
+  // squeeze mode: narrow Forge's <gradio-app> (its width is pinned to the viewport, so body padding
+  // would only add horizontal scroll); restore on teardown
   $effect(() => {
-    const body = document.body;
-    const original = body.style.paddingRight;
-    body.style.paddingRight = overlay ? original : `${width}px`;
+    const host = document.querySelector<HTMLElement>("gradio-app") ?? document.body;
+    const original = { width: host.style.width, maxWidth: host.style.maxWidth };
+    if (!overlay) {
+      host.style.width = `calc(100% - ${width}px)`;
+      host.style.maxWidth = `calc(100% - ${width}px)`;
+    }
     return () => {
-      body.style.paddingRight = original;
+      host.style.width = original.width;
+      host.style.maxWidth = original.maxWidth;
     };
   });
 

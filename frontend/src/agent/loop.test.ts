@@ -155,7 +155,8 @@ describe("buildContext", () => {
     expect(urls).toContain("url:a4");
     expect(urls).toContain("url:a2");
     expect(urls).not.toContain("url:a1");
-    expect(urls).toContain("[图片 a0 已省略");
+    expect(urls).toContain("attachment_id=a0，图片已省略");
+    expect(urls).toContain("[附图 attachment_id=a4]");
   });
 
   it("sends no images to non-vision models", async () => {

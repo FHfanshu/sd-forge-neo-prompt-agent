@@ -5,7 +5,7 @@ import { openAiTools } from "./agent/tool-defs";
 import type { StreamDelta } from "./agent/sse";
 import * as dom from "./forge/dom";
 import * as forgeTools from "./forge/tools";
-import { app, PAGE_SIZE, rememberedSession, rememberSession } from "./state.svelte";
+import { app, PAGE_SIZE, rememberedModel, rememberedSession, rememberModel, rememberSession } from "./state.svelte";
 import type { AttachmentRef, Message, ToolCall } from "./types";
 import { zh } from "./zh";
 
@@ -129,7 +129,10 @@ export async function openSession(id: string | null): Promise<void> {
   app.drafts = [];
   app.live.id = "";
   rememberSession(id);
-  if (!id) return;
+  if (!id) {
+    ({ profileId: app.draftProfileId, model: app.draftModel } = rememberedModel());
+    return;
+  }
   try {
     let page = await api.messages(id);
     let all = page.messages;
@@ -181,6 +184,7 @@ export async function deleteSession(id: string): Promise<void> {
 }
 
 export async function chooseModel(profileId: string, model: string): Promise<void> {
+  rememberModel(profileId, model);
   if (app.sessionId) {
     const updated = await api.updateSession(app.sessionId, { profile_id: profileId, model });
     app.sessions = app.sessions.map((s) => (s.id === updated.id ? updated : s));

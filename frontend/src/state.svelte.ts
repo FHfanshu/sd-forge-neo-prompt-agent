@@ -50,6 +50,26 @@ export function rememberSession(id: string | null): void {
   }
 }
 
+const MODEL_KEY = "pa2.model";
+
+/** Last provider/model the user picked; new sessions start with it. */
+export function rememberModel(profileId: string, model: string): void {
+  try {
+    localStorage.setItem(MODEL_KEY, JSON.stringify({ profileId, model }));
+  } catch {
+    // ignore
+  }
+}
+
+export function rememberedModel(): { profileId: string | null; model: string | null } {
+  try {
+    const value = JSON.parse(localStorage.getItem(MODEL_KEY) ?? "null");
+    return { profileId: typeof value?.profileId === "string" ? value.profileId : null, model: typeof value?.model === "string" ? value.model : null };
+  } catch {
+    return { profileId: null, model: null };
+  }
+}
+
 export function rememberedSession(): string | null {
   try {
     return localStorage.getItem(SESSION_KEY);
@@ -65,8 +85,8 @@ export function rememberedSession(): string | null {
 class AppState {
   sessions = $state.raw<Session[]>([]);
   sessionId = $state<string | null>(null);
-  draftProfileId = $state<string | null>(null);
-  draftModel = $state<string | null>(null);
+  draftProfileId = $state<string | null>(rememberedModel().profileId);
+  draftModel = $state<string | null>(rememberedModel().model);
   messages = $state.raw<Message[]>([]);
   visibleCount = $state(PAGE_SIZE);
   live = $state({ id: "", content: "", reasoning: "" });
